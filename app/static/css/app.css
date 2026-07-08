@@ -1,0 +1,17 @@
+body {
+  background: #f8f9fa;
+}
+
+.sidebar {
+  width: 240px;
+}
+
+.nav-link {
+  color: #334155;
+  border-radius: 6px;
+}
+
+.nav-link:hover {
+  background: #e9ecef;
+  color: #0f172a;
+}
