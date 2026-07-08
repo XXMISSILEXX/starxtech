@@ -36,7 +36,7 @@ function initReportSections() {
   const addSection = () => {
     const index = nextIndex();
     const section = document.createElement("div");
-    section.className = "report-section border rounded p-3 mb-3";
+    section.className = "report-section p-3 mb-3";
     section.dataset.sectionRow = "";
     section.innerHTML = `
       <div class="row g-3">
@@ -54,7 +54,7 @@ function initReportSections() {
           </select>
         </div>
         <div class="col-md-3 d-flex align-items-end justify-content-md-end">
-          <button class="btn btn-outline-danger btn-sm" type="button" data-remove-section>Remove</button>
+          <button class="btn btn-outline-danger btn-sm" type="button" data-remove-section><i class="bi bi-trash me-1"></i>Remove</button>
         </div>
         <div class="col-12">
           <label class="form-label">Content</label>
@@ -119,10 +119,30 @@ function initDashboardCharts() {
           },
           options: {
             responsive: true,
+            maintainAspectRatio: false,
             plugins: {
               legend: {
                 display: chartType === "pie",
                 position: "bottom",
+                labels: {
+                  boxWidth: 12,
+                  boxHeight: 12,
+                  color: "#475569",
+                  font: {
+                    family: "Inter, system-ui, sans-serif",
+                    weight: "600",
+                  },
+                },
+              },
+              tooltip: {
+                backgroundColor: "#0f172a",
+                padding: 12,
+                titleFont: {
+                  family: "Inter, system-ui, sans-serif",
+                },
+                bodyFont: {
+                  family: "Inter, system-ui, sans-serif",
+                },
               },
             },
             scales:
@@ -130,8 +150,20 @@ function initDashboardCharts() {
                 ? {
                     y: {
                       beginAtZero: true,
+                      grid: {
+                        color: "#e2e8f0",
+                      },
                       ticks: {
+                        color: "#64748b",
                         precision: 0,
+                      },
+                    },
+                    x: {
+                      grid: {
+                        display: false,
+                      },
+                      ticks: {
+                        color: "#64748b",
                       },
                     },
                   }

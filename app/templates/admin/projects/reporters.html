@@ -5,10 +5,10 @@
 
 {% block content %}
 <div class="mb-3">
-  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.projects_index') }}">Back to projects</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-arrow-left me-1"></i>Back to projects</a>
 </div>
 
-<form method="post">
+<form method="post" class="form-card">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="list-group mb-3">
     {% for reporter in reporters %}
@@ -20,11 +20,11 @@
         <input class="form-check-input" type="checkbox" name="reporter_ids" value="{{ reporter.id }}" {% if reporter.id in assigned_ids %}checked{% endif %} {% if current_user.role != 'SUPER_ADMIN' %}disabled{% endif %}>
       </label>
     {% else %}
-      <div class="list-group-item text-muted">No active reporters.</div>
+      <div class="empty-state py-4"><i class="bi bi-people"></i>No active reporters.</div>
     {% endfor %}
   </div>
   {% if current_user.role == 'SUPER_ADMIN' %}
-    <button class="btn btn-primary" type="submit">Save assignments</button>
+    <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>Save assignments</button>
   {% endif %}
 </form>
 {% endblock %}

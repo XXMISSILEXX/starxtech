@@ -5,12 +5,12 @@
 
 {% block content %}
 <div class="mb-3 d-flex gap-2">
-  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.projects_index') }}">Back to projects</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-arrow-left me-1"></i>Back to projects</a>
 </div>
 
 {% if current_user.role == 'SUPER_ADMIN' %}
   {% set form_category = edit_category if edit_category is defined else none %}
-  <form method="post" action="{{ url_for('admin.categories_edit', project_id=project.id, category_id=form_category.id) if form_category else url_for('admin.categories_index', project_id=project.id) }}" class="row g-3 border rounded p-3 mb-4">
+  <form method="post" action="{{ url_for('admin.categories_edit', project_id=project.id, category_id=form_category.id) if form_category else url_for('admin.categories_index', project_id=project.id) }}" class="form-card row g-3 mb-4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="col-md-4">
       <label class="form-label" for="name">Name</label>
@@ -39,7 +39,7 @@
       <textarea class="form-control" id="description" name="description" rows="2">{{ request.form.get('description', form_category.description if form_category and form_category.description else '') }}</textarea>
     </div>
     <div class="col-12 d-flex gap-2">
-      <button class="btn btn-primary" type="submit">{{ 'Update category' if form_category else 'Create category' }}</button>
+      <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>{{ 'Update category' if form_category else 'Create category' }}</button>
       {% if form_category %}
         <a class="btn btn-outline-secondary" href="{{ url_for('admin.categories_index', project_id=project.id) }}">Cancel</a>
       {% endif %}
@@ -47,8 +47,8 @@
   </form>
 {% endif %}
 
-<div class="table-responsive">
-  <table class="table table-striped align-middle">
+<div class="table-card table-responsive">
+  <table class="table table-hover align-middle">
     <thead>
       <tr>
         <th>Name</th>
@@ -68,37 +68,39 @@
           <td>{{ category.sort_order }}</td>
           <td>
             {% if category.is_required %}
-              <span class="badge text-bg-warning">Required</span>
+              <span class="badge status-badge status-attention">Required</span>
             {% else %}
-              <span class="badge text-bg-secondary">Optional</span>
+              <span class="badge status-badge status-muted">Optional</span>
             {% endif %}
           </td>
           <td>
             {% if category.is_active %}
-              <span class="badge text-bg-success">Active</span>
+              <span class="badge status-badge status-good">Active</span>
             {% else %}
-              <span class="badge text-bg-secondary">Inactive</span>
+              <span class="badge status-badge status-muted">Inactive</span>
             {% endif %}
           </td>
           {% if current_user.role == 'SUPER_ADMIN' %}
             <td class="text-end">
               <div class="d-inline-flex gap-1">
-                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.categories_edit', project_id=project.id, category_id=category.id) }}">Edit</a>
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.categories_edit', project_id=project.id, category_id=category.id) }}"><i class="bi bi-pencil me-1"></i>Edit</a>
                 {% if category.is_active %}
                   <form method="post" action="{{ url_for('admin.categories_deactivate', project_id=project.id, category_id=category.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-danger" type="submit">Deactivate</button>
+                    <button class="btn btn-sm btn-outline-danger" type="submit"><i class="bi bi-toggle-off me-1"></i>Deactivate</button>
                   </form>
                 {% else %}
                   <form method="post" action="{{ url_for('admin.categories_activate', project_id=project.id, category_id=category.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-success" type="submit">Activate</button>
+                    <button class="btn btn-sm btn-outline-success" type="submit"><i class="bi bi-toggle-on me-1"></i>Activate</button>
                   </form>
                 {% endif %}
               </div>
             </td>
           {% endif %}
         </tr>
+      {% else %}
+        <tr><td colspan="{{ 5 if current_user.role == 'SUPER_ADMIN' else 4 }}"><div class="empty-state"><i class="bi bi-tags"></i>No categories found.</div></td></tr>
       {% endfor %}
     </tbody>
   </table>

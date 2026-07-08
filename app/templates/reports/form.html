@@ -7,7 +7,7 @@
 <form method="post" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-  <div class="row g-3 mb-4">
+  <div class="form-card row g-3 mb-4">
     <div class="col-md-4">
       <label class="form-label" for="report_date">Report date</label>
       <input class="form-control" id="report_date" name="report_date" type="date" value="{{ report.report_date or '' }}" {% if not can_write %}disabled{% endif %} required>
@@ -37,7 +37,7 @@
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h2 class="h5 mb-0">Sections</h2>
     {% if can_write %}
-      <button class="btn btn-outline-primary btn-sm" type="button" data-add-section>Add section</button>
+      <button class="btn btn-outline-primary btn-sm" type="button" data-add-section><i class="bi bi-plus-lg me-1"></i>Add section</button>
     {% endif %}
   </div>
 
@@ -48,7 +48,7 @@
     {% set active_sections = report.sections|selectattr('deleted_at', 'none')|sort(attribute='sort_order')|list %}
     {% for section in active_sections %}
       {% set section_index = loop.index0 %}
-      <div class="report-section border rounded p-3 mb-3" data-section-row>
+      <div class="report-section p-3 mb-3" data-section-row>
         <div class="row g-3">
           <div class="col-md-5">
             <label class="form-label">Category</label>
@@ -69,7 +69,7 @@
           </div>
           {% if can_write %}
             <div class="col-md-3 d-flex align-items-end justify-content-md-end">
-              <button class="btn btn-outline-danger btn-sm" type="button" data-remove-section>Remove</button>
+              <button class="btn btn-outline-danger btn-sm" type="button" data-remove-section><i class="bi bi-trash me-1"></i>Remove</button>
             </div>
           {% endif %}
           <div class="col-12">
@@ -84,7 +84,7 @@
             <div class="col-12 d-flex flex-wrap gap-2">
               {% for attachment in section.attachments %}
                 {% if not attachment.deleted_at %}
-                  <div class="border rounded p-2">
+                  <div class="attachment-card">
                     <a href="{{ url_for('attachments.view', attachment_id=attachment.id) }}" target="_blank" rel="noopener">
                       <img class="report-thumb" src="{{ url_for('attachments.view', attachment_id=attachment.id) }}" alt="{{ attachment.original_filename }}">
                     </a>
@@ -92,7 +92,7 @@
                       <form class="mt-2" method="post" action="{{ url_for('attachments.delete', attachment_id=attachment.id) }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="next" value="{{ url_for('reports.edit', report_id=report.id) }}">
-                        <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                        <button class="btn btn-sm btn-outline-danger" type="submit"><i class="bi bi-trash me-1"></i>Delete</button>
                       </form>
                     {% endif %}
                   </div>
@@ -107,7 +107,7 @@
 
   {% if can_write %}
     <div class="d-flex gap-2">
-      <button class="btn btn-primary" type="submit">Save report</button>
+      <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>Save report</button>
       <a class="btn btn-outline-secondary" href="{{ url_for('projects.reports', project_id=project.id) }}">Cancel</a>
     </div>
   {% endif %}

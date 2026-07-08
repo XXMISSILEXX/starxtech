@@ -5,8 +5,13 @@
 {% block public_content %}
   <div class="card shadow-sm">
     <div class="card-body p-4">
-      <h1 class="h4 mb-1">StarX Daily Report</h1>
-      <p class="text-muted mb-4">Sign in to continue.</p>
+      <div class="brand mb-4">
+        <div class="brand-mark">SX</div>
+        <div>
+          <h1 class="h4 mb-0">StarX Daily Report</h1>
+          <p class="text-muted mb-0">Sign in to continue.</p>
+        </div>
+      </div>
 
       <form method="post">
         {{ form.hidden_tag() }}

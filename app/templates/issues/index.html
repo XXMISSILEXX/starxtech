@@ -7,12 +7,12 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div class="text-muted">Persistent project issues.</div>
   {% if project and can_write %}
-    <a class="btn btn-primary" href="{{ url_for('projects.issues_create', project_id=project.id) }}">Create issue</a>
+    <a class="btn btn-primary" href="{{ url_for('projects.issues_create', project_id=project.id) }}"><i class="bi bi-plus-lg me-1"></i>Create issue</a>
   {% endif %}
 </div>
 
-<div class="table-responsive">
-  <table class="table table-striped align-middle">
+<div class="table-card table-responsive">
+  <table class="table table-hover align-middle">
     <thead>
       <tr>
         <th>Title</th>
@@ -30,24 +30,24 @@
         <tr>
           <td><a href="{{ url_for('issues.edit', issue_id=issue.id) }}">{{ issue.title }}</a></td>
           <td>{{ issue.project.code }}</td>
-          <td><span class="badge text-bg-warning">{{ issue.severity }}</span></td>
-          <td><span class="badge text-bg-secondary">{{ issue.status }}</span></td>
+          <td><span class="badge status-badge severity-{{ issue.severity|lower }}">{{ issue.severity }}</span></td>
+          <td><span class="badge status-badge status-{{ issue.status|lower }}">{{ issue.status }}</span></td>
           <td>{{ issue.opened_date }}</td>
           <td>{{ issue.due_date or '-' }}</td>
           <td>{{ issue.owner.full_name if issue.owner else '-' }}</td>
           <td class="text-end">
             <div class="d-inline-flex gap-1">
-              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('issues.edit', issue_id=issue.id) }}">Open</a>
+              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('issues.edit', issue_id=issue.id) }}"><i class="bi bi-eye me-1"></i>Open</a>
               {% if can_write %}
                 {% if issue.status != 'CLOSED' %}
                   <form method="post" action="{{ url_for('issues.close', issue_id=issue.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-secondary" type="submit">Close</button>
+                    <button class="btn btn-sm btn-outline-secondary" type="submit"><i class="bi bi-check2 me-1"></i>Close</button>
                   </form>
                 {% else %}
                   <form method="post" action="{{ url_for('issues.reopen', issue_id=issue.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-secondary" type="submit">Reopen</button>
+                    <button class="btn btn-sm btn-outline-secondary" type="submit"><i class="bi bi-arrow-counterclockwise me-1"></i>Reopen</button>
                   </form>
                 {% endif %}
               {% endif %}
@@ -55,7 +55,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="8" class="text-center text-muted py-4">No issues found.</td></tr>
+        <tr><td colspan="8"><div class="empty-state"><i class="bi bi-exclamation-diamond"></i>No issues found.</div></td></tr>
       {% endfor %}
     </tbody>
   </table>

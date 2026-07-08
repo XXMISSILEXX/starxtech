@@ -4,8 +4,8 @@
 {% block page_title %}Projects{% endblock %}
 
 {% block content %}
-<div class="table-responsive">
-  <table class="table table-striped align-middle">
+<div class="table-card table-responsive">
+  <table class="table table-hover align-middle">
     <thead>
       <tr>
         <th>Code</th>
@@ -19,14 +19,14 @@
         <tr>
           <td class="fw-semibold">{{ project.code }}</td>
           <td>{{ project.name }}</td>
-          <td><span class="badge text-bg-secondary">{{ project.status }}</span></td>
+          <td><span class="badge status-badge status-muted">{{ project.status }}</span></td>
           <td class="text-end">
-            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('projects.reports', project_id=project.id) }}">Open reports</a>
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('projects.reports', project_id=project.id) }}"><i class="bi bi-journal-text me-1"></i>Open reports</a>
           </td>
         </tr>
       {% else %}
         <tr>
-          <td colspan="4" class="text-center text-muted py-4">No projects available.</td>
+          <td colspan="4"><div class="empty-state"><i class="bi bi-building"></i>No projects available.</div></td>
         </tr>
       {% endfor %}
     </tbody>
