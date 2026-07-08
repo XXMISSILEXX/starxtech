@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}{% if issue.id %}Edit Issue{% else %}Create Issue{% endif %} - StarX Daily Report{% endblock %}
+{% block page_title %}{% if issue.id %}Edit Issue{% else %}Create Issue{% endif %}{% endblock %}
+
+{% block content %}
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row g-3">
+    <div class="col-md-8">
+      <label class="form-label" for="title">Title</label>
+      <input class="form-control" id="title" name="title" value="{{ issue.title or '' }}" {% if not can_write %}disabled{% endif %} required>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Project</label>
+      <input class="form-control" value="{{ project.code }} - {{ project.name }}" disabled>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label" for="severity">Severity</label>
+      <select class="form-select" id="severity" name="severity" {% if not can_write %}disabled{% endif %}>
+        {% for severity in severities %}
+          <option value="{{ severity }}" {% if issue.severity == severity %}selected{% endif %}>{{ severity }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label" for="status">Status</label>
+      <select class="form-select" id="status" name="status" {% if not can_write %}disabled{% endif %}>
+        {% for status in statuses %}
+          <option value="{{ status }}" {% if issue.status == status %}selected{% endif %}>{{ status }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label" for="opened_date">Opened date</label>
+      <input class="form-control" id="opened_date" name="opened_date" type="date" value="{{ issue.opened_date or '' }}" {% if not can_write %}disabled{% endif %} required>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label" for="due_date">Due date</label>
+      <input class="form-control" id="due_date" name="due_date" type="date" value="{{ issue.due_date or '' }}" {% if not can_write %}disabled{% endif %}>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="owner_user_id">Owner</label>
+      <select class="form-select" id="owner_user_id" name="owner_user_id" {% if not can_write %}disabled{% endif %}>
+        <option value="">No owner</option>
+        {% for owner in owners %}
+          <option value="{{ owner.id }}" {% if issue.owner_user_id == owner.id %}selected{% endif %}>{{ owner.full_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12">
+      <label class="form-label" for="description">Description</label>
+      <textarea class="form-control" id="description" name="description" rows="4" {% if not can_write %}disabled{% endif %}>{{ issue.description or '' }}</textarea>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2 mt-4">
+    {% if can_write %}
+      <button class="btn btn-primary" type="submit">Save issue</button>
+    {% endif %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('projects.issues', project_id=project.id) }}">Back</a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,194 @@
+from io import BytesIO
+
+from PIL import Image
+from werkzeug.datastructures import MultiDict
+
+from app.extensions import db
+from app.models import AuditLog, DailyReport, ReportAttachment
+
+
+def login(client, username_or_email, password="password123"):
+    return client.post(
+        "/login",
+        data={
+            "username_or_email": username_or_email,
+            "password": password,
+        },
+    )
+
+
+def image_upload(name="photo.jpg", image_format="JPEG"):
+    stream = BytesIO()
+    Image.new("RGB", (32, 32), color=(40, 120, 200)).save(stream, format=image_format)
+    stream.seek(0)
+    return stream, name
+
+
+def report_form(category_id=1, report_date="2026-07-08", content="Concrete poured."):
+    return MultiDict(
+        [
+            ("report_date", report_date),
+            ("overall_status", "UPDATED"),
+            ("highlight", "Daily progress updated."),
+            ("summary_note", "No major blockers."),
+            ("sections-0-category_id", str(category_id)),
+            ("sections-0-status", "GOOD"),
+            ("sections-0-content", content),
+        ]
+    )
+
+
+def test_reporter_creates_report_for_assigned_project(client, app):
+    login(client, "reporter")
+    data = report_form()
+    data.add("sections-0-images", image_upload())
+
+    response = client.post(
+        "/projects/1/reports/create",
+        data=data,
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 302
+    with app.app_context():
+        report = DailyReport.query.filter_by(project_id=1).one()
+        assert report.sections[0].content == "Concrete poured."
+        assert len(report.sections[0].attachments) == 1
+        assert AuditLog.query.filter_by(action="report.create", entity_id=report.id).count() == 1
+        assert AuditLog.query.filter_by(action="attachment.create").count() == 1
+
+
+def test_reporter_cannot_create_report_for_unassigned_project(client):
+    login(client, "reporter")
+
+    response = client.post("/projects/2/reports/create", data=report_form(category_id=3))
+
+    assert response.status_code == 403
+
+
+def test_viewer_admin_cannot_create_or_edit_report(client, app):
+    login(client, "super")
+    client.post("/projects/1/reports/create", data=report_form())
+    client.post("/logout")
+
+    login(client, "viewer")
+    create_response = client.post("/projects/1/reports/create", data=report_form("1", "2026-07-09"))
+    assert create_response.status_code == 403
+
+    with app.app_context():
+        report_id = DailyReport.query.filter_by(project_id=1).one().id
+
+    edit_response = client.post(f"/reports/{report_id}/edit", data=report_form())
+    assert edit_response.status_code == 403
+
+
+def test_duplicate_project_date_redirects_to_existing_edit_without_second_row(client, app):
+    login(client, "reporter")
+    first = client.post("/projects/1/reports/create", data=report_form())
+    assert first.status_code == 302
+
+    duplicate = client.post("/projects/1/reports/create", data=report_form(content="Second copy."))
+
+    assert duplicate.status_code == 302
+    assert "/reports/" in duplicate.headers["Location"]
+    assert duplicate.headers["Location"].endswith("/edit")
+    with app.app_context():
+        assert DailyReport.query.filter_by(project_id=1, report_date="2026-07-08").count() == 1
+
+
+def test_duplicate_section_category_fails(client):
+    login(client, "reporter")
+    data = report_form()
+    data.add("sections-1-category_id", "1")
+    data.add("sections-1-status", "INFO")
+    data.add("sections-1-content", "Duplicate category.")
+
+    response = client.post("/projects/1/reports/create", data=data)
+
+    assert response.status_code == 400
+    assert b"Duplicate section category" in response.data
+
+
+def test_upload_more_than_three_images_for_one_section_fails(client):
+    login(client, "reporter")
+    data = report_form()
+    for index in range(4):
+        data.add("sections-0-images", image_upload(f"photo-{index}.jpg"))
+
+    response = client.post(
+        "/projects/1/reports/create",
+        data=data,
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert b"at most 3 active images" in response.data
+
+
+def test_non_image_upload_fails(client):
+    login(client, "reporter")
+    data = report_form()
+    data.add("sections-0-images", (BytesIO(b"not an image"), "bad.jpg"))
+
+    response = client.post(
+        "/projects/1/reports/create",
+        data=data,
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert b"not a valid image" in response.data
+
+
+def test_attachment_view_enforces_project_read_permission(client, app):
+    login(client, "super")
+    data = report_form(category_id=3)
+    data.add("sections-0-images", image_upload())
+    client.post("/projects/2/reports/create", data=data, content_type="multipart/form-data")
+
+    with app.app_context():
+        attachment_id = ReportAttachment.query.one().id
+
+    client.post("/logout")
+    login(client, "reporter")
+    response = client.get(f"/attachments/{attachment_id}")
+
+    assert response.status_code == 403
+
+
+def test_attachment_delete_soft_deletes_and_audits(client, app):
+    login(client, "reporter")
+    data = report_form()
+    data.add("sections-0-images", image_upload())
+    client.post("/projects/1/reports/create", data=data, content_type="multipart/form-data")
+
+    with app.app_context():
+        attachment_id = ReportAttachment.query.one().id
+
+    response = client.post(f"/attachments/{attachment_id}/delete")
+
+    assert response.status_code == 302
+    with app.app_context():
+        attachment = db.session.get(ReportAttachment, attachment_id)
+        assert attachment.deleted_at is not None
+        assert AuditLog.query.filter_by(action="attachment.delete", entity_id=attachment_id).count() == 1
+
+
+def test_report_update_and_delete_write_audit_rows(client, app):
+    login(client, "super")
+    client.post("/projects/1/reports/create", data=report_form())
+    with app.app_context():
+        report_id = DailyReport.query.one().id
+
+    updated_data = report_form(content="Updated section content.")
+    updated_data["highlight"] = "Updated highlight."
+    updated = client.post(f"/reports/{report_id}/edit", data=updated_data)
+    assert updated.status_code == 302
+
+    deleted = client.post(f"/reports/{report_id}/delete")
+    assert deleted.status_code == 302
+    with app.app_context():
+        report = db.session.get(DailyReport, report_id)
+        assert report.deleted_at is not None
+        assert AuditLog.query.filter_by(action="report.update", entity_id=report_id).count() == 1
+        assert AuditLog.query.filter_by(action="report.delete", entity_id=report_id).count() == 1

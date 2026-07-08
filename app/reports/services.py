@@ -1,0 +1,343 @@
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+from flask import current_app, request
+from flask_login import current_user
+from PIL import Image, UnidentifiedImageError
+from werkzeug.datastructures import FileStorage
+from werkzeug.utils import secure_filename
+
+from app.admin.services import add_with_sqlite_id, audit
+from app.extensions import db
+from app.models import (
+    DailyReport,
+    DailyReportSection,
+    DailyReportStatus,
+    Project,
+    ReportAttachment,
+    ReportCategory,
+    SectionStatus,
+)
+
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
+IMAGE_FORMATS = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}
+MAX_IMAGE_WIDTH = 1920
+
+
+class ReportValidationError(ValueError):
+    pass
+
+
+def accessible_projects_query():
+    query = Project.query.filter(Project.deleted_at.is_(None))
+    if current_user.role == "REPORTER":
+        query = query.join(Project.user_assignments).filter_by(user_id=current_user.id)
+    return query.order_by(Project.code.asc(), Project.name.asc())
+
+
+def reports_query():
+    query = DailyReport.query.filter(DailyReport.deleted_at.is_(None)).join(DailyReport.project)
+    if current_user.role == "REPORTER":
+        query = query.join(Project.user_assignments).filter_by(user_id=current_user.id)
+    return query
+
+
+def categories_for_create(project_id):
+    return (
+        ReportCategory.query.filter(
+            ReportCategory.project_id == project_id,
+            ReportCategory.deleted_at.is_(None),
+            ReportCategory.is_active.is_(True),
+        )
+        .order_by(ReportCategory.sort_order.asc(), ReportCategory.name.asc())
+        .all()
+    )
+
+
+def categories_for_report(report):
+    used_ids = [section.report_category_id for section in report.sections]
+    query = ReportCategory.query.filter(
+        ReportCategory.project_id == report.project_id,
+        ReportCategory.deleted_at.is_(None),
+    ).filter((ReportCategory.is_active.is_(True)) | (ReportCategory.id.in_(used_ids or [0])))
+    return query.order_by(ReportCategory.sort_order.asc(), ReportCategory.name.asc()).all()
+
+
+def parse_report_date(value):
+    if not value:
+        raise ReportValidationError("Report date is required.")
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ReportValidationError("Report date must use YYYY-MM-DD format.") from exc
+
+
+def create_report(project, form, files):
+    report_date = parse_report_date(form.get("report_date", "").strip())
+    existing = DailyReport.query.filter_by(project_id=project.id, report_date=report_date).first()
+    if existing:
+        return existing, True
+
+    report = DailyReport(project_id=project.id, created_by_user_id=current_user.id)
+    add_with_sqlite_id(report)
+    _assign_report_fields(report, form)
+    report.report_date = report_date
+    db.session.flush()
+
+    section_inputs = parse_sections(form)
+    _replace_sections(report, section_inputs)
+    db.session.flush()
+    _save_section_uploads(report, files)
+    audit("report.create", "DailyReport", report.id, new_values=report_snapshot(report))
+    db.session.commit()
+    return report, False
+
+
+def update_report(report, form, files):
+    old_values = report_snapshot(report)
+    report.report_date = parse_report_date(form.get("report_date", "").strip())
+
+    duplicate = DailyReport.query.filter(
+        DailyReport.project_id == report.project_id,
+        DailyReport.report_date == report.report_date,
+        DailyReport.id != report.id,
+    ).first()
+    if duplicate:
+        raise ReportValidationError("Another report already exists for this project and date.")
+
+    _assign_report_fields(report, form)
+    report.updated_by_user_id = current_user.id
+    _replace_sections(report, parse_sections(form))
+    db.session.flush()
+    _save_section_uploads(report, files)
+    audit("report.update", "DailyReport", report.id, old_values, report_snapshot(report))
+    db.session.commit()
+    return report
+
+
+def delete_report(report):
+    old_values = report_snapshot(report)
+    report.deleted_at = db.func.now()
+    audit("report.delete", "DailyReport", report.id, old_values, {"deleted_at": True})
+    db.session.commit()
+
+
+def delete_attachment(attachment):
+    attachment.deleted_at = db.func.now()
+    audit(
+        "attachment.delete",
+        "ReportAttachment",
+        attachment.id,
+        old_values={"daily_report_section_id": attachment.daily_report_section_id},
+        new_values={"deleted_at": True},
+    )
+    db.session.commit()
+
+
+def parse_sections(form):
+    indexes = set()
+    for key in form.keys():
+        if key.startswith("sections-"):
+            parts = key.split("-")
+            if len(parts) >= 3 and parts[1].isdigit():
+                indexes.add(int(parts[1]))
+
+    sections = []
+    seen_categories = set()
+    for index in sorted(indexes):
+        category_raw = form.get(f"sections-{index}-category_id", "").strip()
+        status = form.get(f"sections-{index}-status", "").strip()
+        content = form.get(f"sections-{index}-content", "").strip()
+        if not category_raw and not status and not content:
+            continue
+        if not category_raw:
+            raise ReportValidationError("Each submitted section must select a category.")
+        if not content:
+            raise ReportValidationError("Each submitted section must include content.")
+        if status not in [item.value for item in SectionStatus]:
+            raise ReportValidationError("Invalid section status.")
+        try:
+            category_id = int(category_raw)
+        except ValueError as exc:
+            raise ReportValidationError("Invalid section category.") from exc
+        if category_id in seen_categories:
+            raise ReportValidationError("Duplicate section category in the same report.")
+        seen_categories.add(category_id)
+        sections.append(
+            {
+                "index": index,
+                "report_category_id": category_id,
+                "status": status,
+                "content": content,
+                "sort_order": len(sections),
+            }
+        )
+    return sections
+
+
+def validate_categories(project_id, section_inputs):
+    category_ids = {section["report_category_id"] for section in section_inputs}
+    if not category_ids:
+        return
+    valid_count = ReportCategory.query.filter(
+        ReportCategory.project_id == project_id,
+        ReportCategory.id.in_(category_ids),
+        ReportCategory.deleted_at.is_(None),
+    ).count()
+    if valid_count != len(category_ids):
+        raise ReportValidationError("All section categories must belong to this project.")
+
+
+def report_snapshot(report):
+    return {
+        "project_id": report.project_id,
+        "report_date": report.report_date.isoformat() if report.report_date else None,
+        "overall_status": report.overall_status,
+        "highlight": report.highlight,
+        "summary_note": report.summary_note,
+    }
+
+
+def active_attachments(section):
+    return [attachment for attachment in section.attachments if attachment.deleted_at is None]
+
+
+def _assign_report_fields(report, form):
+    overall_status = form.get("overall_status", "").strip()
+    highlight = form.get("highlight", "").strip()
+    if overall_status not in [item.value for item in DailyReportStatus]:
+        raise ReportValidationError("Invalid report status.")
+    if not highlight:
+        raise ReportValidationError("Highlight is required.")
+    report.overall_status = overall_status
+    report.highlight = highlight
+    report.summary_note = form.get("summary_note", "").strip() or None
+
+
+def _replace_sections(report, section_inputs):
+    validate_categories(report.project_id, section_inputs)
+    existing_by_category = {section.report_category_id: section for section in report.sections}
+    submitted_category_ids = {section["report_category_id"] for section in section_inputs}
+
+    for section in report.sections:
+        if section.report_category_id not in submitted_category_ids:
+            section.deleted_at = db.func.now()
+            for attachment in section.attachments:
+                if attachment.deleted_at is None:
+                    attachment.deleted_at = db.func.now()
+
+    for section_input in section_inputs:
+        section = existing_by_category.get(section_input["report_category_id"])
+        if section is None:
+            section = DailyReportSection(
+                report_category_id=section_input["report_category_id"],
+            )
+            add_with_sqlite_id(section)
+            report.sections.append(section)
+        section.deleted_at = None
+        section.status = section_input["status"]
+        section.content = section_input["content"]
+        section.sort_order = section_input["sort_order"]
+        section._form_index = str(section_input["index"])
+
+
+def _save_section_uploads(report, files):
+    section_by_index = {}
+    for section in report.sections:
+        if section.deleted_at is None and hasattr(section, "_form_index"):
+            section_by_index[section._form_index] = section
+
+    for index, section in section_by_index.items():
+        uploads = [
+            file
+            for file in files.getlist(f"sections-{index}-images")
+            if file and file.filename
+        ]
+        if not uploads:
+            continue
+        current_count = len(active_attachments(section))
+        max_images = current_app.config["MAX_IMAGES_PER_SECTION"]
+        if current_count + len(uploads) > max_images:
+            raise ReportValidationError("Each section can have at most 3 active images.")
+        for upload in uploads:
+            attachment = _store_attachment(report, section, upload)
+            db.session.flush()
+            audit(
+                "attachment.create",
+                "ReportAttachment",
+                attachment.id,
+                new_values={"daily_report_section_id": section.id},
+            )
+
+
+def _store_attachment(report, section, upload: FileStorage):
+    original_filename = secure_filename(upload.filename or "")
+    extension = original_filename.rsplit(".", 1)[-1].lower() if "." in original_filename else ""
+    if extension not in ALLOWED_EXTENSIONS:
+        raise ReportValidationError("Only jpg, jpeg, png, and webp files are allowed.")
+
+    try:
+        image = Image.open(upload.stream)
+        image.verify()
+        upload.stream.seek(0)
+        image = Image.open(upload.stream)
+        image.load()
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ReportValidationError("Uploaded attachment is not a valid image.") from exc
+
+    image_format = image.format
+    if image_format not in IMAGE_FORMATS:
+        raise ReportValidationError("Only jpg, jpeg, png, and webp files are allowed.")
+    stored_extension = IMAGE_FORMATS[image_format]
+
+    image = _normalize_image(image, stored_extension)
+    if image.width > MAX_IMAGE_WIDTH:
+        new_height = int(image.height * (MAX_IMAGE_WIDTH / image.width))
+        image = image.resize((MAX_IMAGE_WIDTH, new_height), Image.Resampling.LANCZOS)
+
+    stored_filename = f"{uuid.uuid4().hex}.{stored_extension}"
+    target_dir = _attachment_dir(report, section)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / stored_filename
+    save_format = "JPEG" if stored_extension == "jpg" else stored_extension.upper()
+    image.save(target_path, format=save_format, quality=88, optimize=True)
+
+    attachment = ReportAttachment(
+        daily_report_section_id=section.id,
+        original_filename=original_filename or upload.filename,
+        stored_filename=stored_filename,
+        file_path=str(target_path),
+        mime_type=Image.MIME.get(save_format, f"image/{stored_extension}"),
+        file_size=target_path.stat().st_size,
+        image_width=image.width,
+        image_height=image.height,
+        uploaded_by_user_id=current_user.id,
+    )
+    add_with_sqlite_id(attachment)
+    return attachment
+
+
+def _normalize_image(image, stored_extension):
+    if stored_extension == "jpg":
+        if image.mode not in ("RGB", "L"):
+            return image.convert("RGB")
+        return image.copy()
+    if stored_extension == "png":
+        return image.copy()
+    return image.copy()
+
+
+def _attachment_dir(report, section):
+    report_date = report.report_date
+    slug = secure_filename(report.project.code or report.project.name).lower() or str(report.project_id)
+    root = Path(current_app.config["UPLOAD_ROOT"])
+    return (
+        root
+        / f"project_{report.project_id}_{slug}"
+        / f"{report_date:%Y}"
+        / f"{report_date:%m}"
+        / f"{report_date:%d}"
+        / f"report_{report.id}"
+        / f"section_{section.id}"
+    )

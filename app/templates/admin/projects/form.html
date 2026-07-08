@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit Project' if project else 'Create Project' }} - StarX Daily Report{% endblock %}
+{% block page_title %}{{ 'Edit Project' if project else 'Create Project' }}{% endblock %}
+
+{% block content %}
+{% set can_write = current_user.role == 'SUPER_ADMIN' %}
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-4">
+    <label class="form-label" for="code">Code</label>
+    <input class="form-control" id="code" name="code" required value="{{ request.form.get('code', project.code if project else '') }}" {% if not can_write %}disabled{% endif %}>
+  </div>
+  <div class="col-md-8">
+    <label class="form-label" for="name">Name</label>
+    <input class="form-control" id="name" name="name" required value="{{ request.form.get('name', project.name if project else '') }}" {% if not can_write %}disabled{% endif %}>
+  </div>
+  <div class="col-12">
+    <label class="form-label" for="description">Description</label>
+    <textarea class="form-control" id="description" name="description" rows="3" {% if not can_write %}disabled{% endif %}>{{ request.form.get('description', project.description if project and project.description else '') }}</textarea>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label" for="status">Status</label>
+    {% set selected_status = request.form.get('status', project.status if project else 'active') %}
+    <select class="form-select" id="status" name="status" required {% if not can_write %}disabled{% endif %}>
+      {% for status in statuses %}
+        <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ status }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label" for="start_date">Start date</label>
+    <input class="form-control" id="start_date" name="start_date" type="date" value="{{ request.form.get('start_date', project.start_date.isoformat() if project and project.start_date else '') }}" {% if not can_write %}disabled{% endif %}>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label" for="expected_end_date">Expected end date</label>
+    <input class="form-control" id="expected_end_date" name="expected_end_date" type="date" value="{{ request.form.get('expected_end_date', project.expected_end_date.isoformat() if project and project.expected_end_date else '') }}" {% if not can_write %}disabled{% endif %}>
+  </div>
+  <div class="col-12 d-flex gap-2">
+    {% if can_write %}
+      <button class="btn btn-primary" type="submit">Save</button>
+    {% endif %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin.projects_index') }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

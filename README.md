@@ -102,3 +102,12 @@ flask shell
 from app.models import User, Project, DailyReport
 User.query.count()
 ```
+
+## Production Operations
+
+- Ubuntu deployment guide: [DEPLOY_UBUNTU.md](DEPLOY_UBUNTU.md)
+- Smoke test checklist: [PRODUCTION_SMOKE_TEST.md](PRODUCTION_SMOKE_TEST.md)
+- Backup scripts:
+  - `scripts/backup_db.sh`
+  - `scripts/backup_uploads.sh`
+  - `scripts/restore_db.sh`

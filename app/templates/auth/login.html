@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Log in - StarX Daily Report{% endblock %}
+
+{% block public_content %}
+  <div class="card shadow-sm">
+    <div class="card-body p-4">
+      <h1 class="h4 mb-1">StarX Daily Report</h1>
+      <p class="text-muted mb-4">Sign in to continue.</p>
+
+      <form method="post">
+        {{ form.hidden_tag() }}
+
+        <div class="mb-3">
+          {{ form.username_or_email.label(class="form-label") }}
+          {{ form.username_or_email(class="form-control", autocomplete="username", autofocus=True) }}
+          {% for error in form.username_or_email.errors %}
+            <div class="invalid-feedback d-block">{{ error }}</div>
+          {% endfor %}
+        </div>
+
+        <div class="mb-3">
+          {{ form.password.label(class="form-label") }}
+          {{ form.password(class="form-control", autocomplete="current-password") }}
+          {% for error in form.password.errors %}
+            <div class="invalid-feedback d-block">{{ error }}</div>
+          {% endfor %}
+        </div>
+
+        <div class="form-check mb-3">
+          {{ form.remember(class="form-check-input") }}
+          {{ form.remember.label(class="form-check-label") }}
+        </div>
+
+        {{ form.submit(class="btn btn-primary w-100") }}
+      </form>
+    </div>
+  </div>
+{% endblock %}

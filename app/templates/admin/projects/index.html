@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Projects Admin - StarX Daily Report{% endblock %}
+{% block page_title %}Project Management{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div class="text-muted">Manage projects and reporter access.</div>
+  {% if current_user.role == 'SUPER_ADMIN' %}
+    <a class="btn btn-primary" href="{{ url_for('admin.projects_new') }}">Create project</a>
+  {% endif %}
+</div>
+
+<div class="table-responsive">
+  <table class="table table-striped align-middle">
+    <thead>
+      <tr>
+        <th>Code</th>
+        <th>Name</th>
+        <th>Status</th>
+        <th>Dates</th>
+        <th class="text-end">Manage</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for project in projects %}
+        <tr>
+          <td class="fw-semibold">{{ project.code }}</td>
+          <td>{{ project.name }}</td>
+          <td><span class="badge text-bg-info">{{ project.status }}</span></td>
+          <td>{{ project.start_date or '-' }} / {{ project.expected_end_date or '-' }}</td>
+          <td class="text-end">
+            <div class="d-inline-flex gap-1">
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.projects_reporters', project_id=project.id) }}">Reporters</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.categories_index', project_id=project.id) }}">Categories</a>
+              {% if current_user.role == 'SUPER_ADMIN' %}
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.projects_edit', project_id=project.id) }}">Edit</a>
+                {% if project.status != 'archived' %}
+                  <form method="post" action="{{ url_for('admin.projects_archive', project_id=project.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-outline-danger" type="submit">Archive</button>
+                  </form>
+                {% endif %}
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

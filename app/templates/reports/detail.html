@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Report {{ report.report_date }} - StarX Daily Report{% endblock %}
+{% block page_title %}{{ report.project.code }} - {{ report.report_date }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <div class="text-muted">{{ report.project.name }}</div>
+    <div class="mt-2"><span class="badge text-bg-info">{{ report.overall_status }}</span></div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if can_write %}
+      <a class="btn btn-outline-primary" href="{{ url_for('reports.edit', report_id=report.id) }}">Edit</a>
+    {% endif %}
+    {% if can_delete %}
+      <form method="post" action="{{ url_for('reports.delete', report_id=report.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-outline-danger" type="submit">Delete</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<section class="mb-4">
+  <h2 class="h6">Highlight</h2>
+  <p class="mb-0">{{ report.highlight }}</p>
+  {% if report.summary_note %}
+    <h2 class="h6 mt-3">Summary note</h2>
+    <p class="mb-0">{{ report.summary_note }}</p>
+  {% endif %}
+</section>
+
+<div class="row g-3">
+  {% for section in report.sections|sort(attribute='sort_order') %}
+    {% if not section.deleted_at %}
+      <div class="col-12">
+        <article class="card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h2 class="h6 mb-0">{{ section.report_category.name }}</h2>
+              <span class="badge text-bg-secondary">{{ section.status }}</span>
+            </div>
+            <p class="mb-3">{{ section.content }}</p>
+            <div class="d-flex flex-wrap gap-2">
+              {% for attachment in section.attachments %}
+                {% if not attachment.deleted_at %}
+                  <a href="{{ url_for('attachments.view', attachment_id=attachment.id) }}" target="_blank" rel="noopener">
+                    <img class="report-thumb" src="{{ url_for('attachments.view', attachment_id=attachment.id) }}" alt="{{ attachment.original_filename }}">
+                  </a>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </article>
+      </div>
+    {% endif %}
+  {% else %}
+    <div class="col-12 text-muted">No sections recorded.</div>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Project Reporters - StarX Daily Report{% endblock %}
+{% block page_title %}Reporters: {{ project.code }}{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.projects_index') }}">Back to projects</a>
+</div>
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="list-group mb-3">
+    {% for reporter in reporters %}
+      <label class="list-group-item d-flex justify-content-between align-items-center">
+        <span>
+          <span class="fw-semibold">{{ reporter.full_name }}</span>
+          <span class="text-muted small">{{ reporter.username }}</span>
+        </span>
+        <input class="form-check-input" type="checkbox" name="reporter_ids" value="{{ reporter.id }}" {% if reporter.id in assigned_ids %}checked{% endif %} {% if current_user.role != 'SUPER_ADMIN' %}disabled{% endif %}>
+      </label>
+    {% else %}
+      <div class="list-group-item text-muted">No active reporters.</div>
+    {% endfor %}
+  </div>
+  {% if current_user.role == 'SUPER_ADMIN' %}
+    <button class="btn btn-primary" type="submit">Save assignments</button>
+  {% endif %}
+</form>
+{% endblock %}

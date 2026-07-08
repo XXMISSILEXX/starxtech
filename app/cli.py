@@ -1,6 +1,7 @@
 import click
 from werkzeug.security import generate_password_hash
 
+from app.audit import log_audit
 from app.extensions import db
 from app.models import User, UserRole
 
@@ -31,5 +32,12 @@ def register_cli(app):
             is_active=True,
         )
         db.session.add(user)
+        db.session.flush()
+        log_audit(
+            "user.seed_admin",
+            "User",
+            user.id,
+            new_values={"username": user.username, "email": user.email, "role": user.role},
+        )
         db.session.commit()
         click.echo(f"Created SUPER_ADMIN: username={username}")

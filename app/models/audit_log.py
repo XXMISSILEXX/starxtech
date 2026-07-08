@@ -1,4 +1,5 @@
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.types import JSON
 
 from app.extensions import db
 from app.models.mixins import CreatedAtMixin
@@ -12,8 +13,8 @@ class AuditLog(CreatedAtMixin, db.Model):
     action = db.Column(db.String(100), nullable=False)
     entity_type = db.Column(db.String(100), nullable=False)
     entity_id = db.Column(db.BigInteger, nullable=True)
-    old_values_json = db.Column(JSONB, nullable=True)
-    new_values_json = db.Column(JSONB, nullable=True)
+    old_values_json = db.Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    new_values_json = db.Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     ip_address = db.Column(db.String(100), nullable=True)
     user_agent = db.Column(db.Text, nullable=True)
 

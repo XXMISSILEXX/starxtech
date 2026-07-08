@@ -1,0 +1,196 @@
+from datetime import date
+
+from app.extensions import db
+from app.models import AuditLog, DailyReport, IssueStatus, PersistentIssue
+
+
+def login(client, username_or_email, password="password123"):
+    return client.post(
+        "/login",
+        data={
+            "username_or_email": username_or_email,
+            "password": password,
+        },
+    )
+
+
+def seed_dashboard_data():
+    db.session.add_all(
+        [
+            DailyReport(
+                id=101,
+                project_id=1,
+                report_date=date(2026, 7, 1),
+                overall_status="GOOD",
+                highlight="Assigned good report",
+                created_by_user_id=3,
+            ),
+            DailyReport(
+                id=102,
+                project_id=1,
+                report_date=date(2026, 7, 2),
+                overall_status="PROCESSING",
+                highlight="Assigned processing report",
+                created_by_user_id=3,
+            ),
+            DailyReport(
+                id=103,
+                project_id=2,
+                report_date=date(2026, 7, 3),
+                overall_status="CRITICAL",
+                highlight="Unassigned critical report",
+                created_by_user_id=1,
+            ),
+            PersistentIssue(
+                id=201,
+                project_id=1,
+                title="Assigned open issue",
+                severity="HIGH",
+                status="OPEN",
+                opened_date=date(2026, 7, 1),
+                created_by_user_id=3,
+                owner_user_id=3,
+            ),
+            PersistentIssue(
+                id=202,
+                project_id=1,
+                title="Assigned closed issue",
+                severity="LOW",
+                status="CLOSED",
+                opened_date=date(2026, 7, 1),
+                closed_date=date(2026, 7, 2),
+                created_by_user_id=3,
+            ),
+            PersistentIssue(
+                id=203,
+                project_id=2,
+                title="Unassigned open issue",
+                severity="CRITICAL",
+                status="OPEN",
+                opened_date=date(2026, 7, 3),
+                created_by_user_id=1,
+            ),
+        ]
+    )
+    db.session.commit()
+
+
+def issue_form(title="New persistent issue", status="OPEN"):
+    return {
+        "title": title,
+        "description": "Needs follow-up.",
+        "severity": "MEDIUM",
+        "status": status,
+        "opened_date": "2026-07-08",
+        "due_date": "2026-07-15",
+        "owner_user_id": "3",
+    }
+
+
+def test_reporter_dashboard_does_not_leak_unassigned_project_data(client, app):
+    with app.app_context():
+        seed_dashboard_data()
+
+    login(client, "reporter")
+    response = client.get("/dashboard")
+
+    assert response.status_code == 200
+    assert b"Assigned good report" in response.data
+    assert b"Unassigned critical report" not in response.data
+    assert b"Assigned open issue" in response.data
+    assert b"Unassigned open issue" not in response.data
+
+    chart = client.get("/api/dashboard/status-chart")
+    assert chart.status_code == 200
+    payload = chart.get_json()
+    counts = dict(zip(payload["labels"], payload["counts"]))
+    assert counts["GOOD"] == 1
+    assert counts["PROCESSING"] == 1
+    assert counts["CRITICAL"] == 0
+
+
+def test_viewer_admin_sees_all_but_no_write_buttons(client, app):
+    with app.app_context():
+        seed_dashboard_data()
+
+    login(client, "viewer")
+    dashboard = client.get("/dashboard")
+    assert dashboard.status_code == 200
+    assert b"Unassigned critical report" in dashboard.data
+    assert b"Unassigned open issue" in dashboard.data
+
+    project_dashboard = client.get("/projects/1/dashboard")
+    assert project_dashboard.status_code == 200
+    assert b"Add report" not in project_dashboard.data
+
+    issues = client.get("/projects/1/issues")
+    assert issues.status_code == 200
+    assert b"Create issue" not in issues.data
+
+    blocked = client.post("/projects/1/issues/create", data=issue_form())
+    assert blocked.status_code == 403
+
+
+def test_dashboard_counts_are_correct_for_seed_data(client, app):
+    with app.app_context():
+        seed_dashboard_data()
+
+    login(client, "super")
+    response = client.get("/dashboard")
+
+    assert response.status_code == 200
+    assert b"Total reports" in response.data
+    assert b"Open issues" in response.data
+
+    chart = client.get("/api/dashboard/status-chart")
+    counts = dict(zip(chart.get_json()["labels"], chart.get_json()["counts"]))
+    assert counts["GOOD"] == 1
+    assert counts["PROCESSING"] == 1
+    assert counts["CRITICAL"] == 1
+
+    count_chart = client.get("/api/dashboard/report-count-chart?from_date=2026-07-01&to_date=2026-07-31")
+    assert count_chart.status_code == 200
+    assert count_chart.get_json()["counts"] == [1, 1, 1]
+
+
+def test_issue_create_edit_close_reopen_and_audit(client, app):
+    login(client, "reporter")
+
+    created = client.post("/projects/1/issues/create", data=issue_form())
+    assert created.status_code == 302
+
+    with app.app_context():
+        issue = PersistentIssue.query.filter_by(title="New persistent issue").one()
+        issue_id = issue.id
+        assert issue.owner_user_id == 3
+
+    edited = client.post(f"/issues/{issue_id}/edit", data=issue_form("Updated issue", "PROCESSING"))
+    assert edited.status_code == 302
+
+    closed = client.post(f"/issues/{issue_id}/close")
+    assert closed.status_code == 302
+    with app.app_context():
+        issue = db.session.get(PersistentIssue, issue_id)
+        assert issue.status == IssueStatus.CLOSED.value
+        assert issue.closed_date is not None
+
+    reopened = client.post(f"/issues/{issue_id}/reopen")
+    assert reopened.status_code == 302
+    with app.app_context():
+        issue = db.session.get(PersistentIssue, issue_id)
+        assert issue.status == IssueStatus.OPEN.value
+        assert issue.closed_date is None
+        assert AuditLog.query.filter_by(action="issue.create", entity_id=issue_id).count() == 1
+        assert AuditLog.query.filter_by(action="issue.update", entity_id=issue_id).count() == 1
+        assert AuditLog.query.filter_by(action="issue.close", entity_id=issue_id).count() == 1
+        assert AuditLog.query.filter_by(action="issue.reopen", entity_id=issue_id).count() == 1
+
+
+def test_reporter_cannot_access_unassigned_project_issues(client, app):
+    with app.app_context():
+        seed_dashboard_data()
+
+    login(client, "reporter")
+    assert client.get("/projects/2/issues").status_code == 403
+    assert client.get("/issues/203/edit").status_code == 403
+    assert client.post("/issues/203/close").status_code == 403
