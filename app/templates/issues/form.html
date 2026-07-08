@@ -1,64 +1,67 @@
 {% extends "base.html" %}
 
-{% block title %}{% if issue.id %}Edit Issue{% else %}Create Issue{% endif %} - StarX Daily Report{% endblock %}
-{% block page_title %}{% if issue.id %}Edit Issue{% else %}Create Issue{% endif %}{% endblock %}
+{% block title %}{% if issue.id %}Sửa vấn đề tồn đọng{% else %}Thêm vấn đề tồn đọng{% endif %} - StarX Daily Report{% endblock %}
+{% block page_title %}{% if issue.id %}Sửa vấn đề tồn đọng{% else %}Thêm vấn đề tồn đọng{% endif %}{% endblock %}
 
 {% block content %}
 <form method="post" class="form-card">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="row g-3">
     <div class="col-md-8">
-      <label class="form-label" for="title">Title</label>
+      <label class="form-label" for="title">Tiêu đề</label>
       <input class="form-control" id="title" name="title" value="{{ issue.title or '' }}" {% if not can_write %}disabled{% endif %} required>
     </div>
     <div class="col-md-4">
-      <label class="form-label">Project</label>
+      <label class="form-label">Dự án</label>
       <input class="form-control" value="{{ project.code }} - {{ project.name }}" disabled>
     </div>
     <div class="col-md-3">
-      <label class="form-label" for="severity">Severity</label>
+      <label class="form-label" for="severity">Mức độ</label>
       <select class="form-select" id="severity" name="severity" {% if not can_write %}disabled{% endif %}>
         {% for severity in severities %}
-          <option value="{{ severity }}" {% if issue.severity == severity %}selected{% endif %}>{{ severity }}</option>
+          <option value="{{ severity }}" {% if issue.severity == severity %}selected{% endif %}>{{ severity|status_label }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="col-md-3">
-      <label class="form-label" for="status">Status</label>
+      <label class="form-label" for="status">Trạng thái</label>
       <select class="form-select" id="status" name="status" {% if not can_write %}disabled{% endif %}>
         {% for status in statuses %}
-          <option value="{{ status }}" {% if issue.status == status %}selected{% endif %}>{{ status }}</option>
+          <option value="{{ status }}" {% if issue.status == status %}selected{% endif %}>{{ status|status_label }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="col-md-3">
-      <label class="form-label" for="opened_date">Opened date</label>
+      <label class="form-label" for="opened_date">Ngày mở</label>
       <input class="form-control" id="opened_date" name="opened_date" type="date" value="{{ issue.opened_date or '' }}" {% if not can_write %}disabled{% endif %} required>
     </div>
     <div class="col-md-3">
-      <label class="form-label" for="due_date">Due date</label>
+      <label class="form-label" for="due_date">Hạn xử lý</label>
       <input class="form-control" id="due_date" name="due_date" type="date" value="{{ issue.due_date or '' }}" {% if not can_write %}disabled{% endif %}>
     </div>
     <div class="col-md-6">
-      <label class="form-label" for="owner_user_id">Owner</label>
+      <label class="form-label" for="owner_user_id">Người phụ trách</label>
       <select class="form-select" id="owner_user_id" name="owner_user_id" {% if not can_write %}disabled{% endif %}>
-        <option value="">No owner</option>
+        <option value="">Chưa có người phụ trách</option>
         {% for owner in owners %}
           <option value="{{ owner.id }}" {% if issue.owner_user_id == owner.id %}selected{% endif %}>{{ owner.full_name }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="col-12">
-      <label class="form-label" for="description">Description</label>
+      <label class="form-label" for="description">Mô tả</label>
       <textarea class="form-control" id="description" name="description" rows="4" {% if not can_write %}disabled{% endif %}>{{ issue.description or '' }}</textarea>
     </div>
   </div>
 
   <div class="d-flex gap-2 mt-4">
     {% if can_write %}
-      <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>Save issue</button>
+      <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>Lưu vấn đề</button>
     {% endif %}
-    <a class="btn btn-outline-secondary" href="{{ url_for('projects.issues', project_id=project.id) }}">Back</a>
+    {% if can_delete and issue.id %}
+      <button class="btn btn-outline-danger" type="submit" formaction="{{ url_for('issues.delete', issue_id=issue.id) }}" data-confirm="Xóa vấn đề tồn đọng này?"><i class="bi bi-trash me-1"></i>Xóa</button>
+    {% endif %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('projects.issues', project_id=project.id) }}">Quay lại</a>
   </div>
 </form>
 {% endblock %}

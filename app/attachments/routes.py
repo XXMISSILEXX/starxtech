@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from flask import abort, flash, redirect, request, send_file, url_for
+from flask import abort, current_app, flash, redirect, request, send_file, url_for
 
 from app.attachments import bp
 from app.auth.permissions import can_read_project, can_write_project
@@ -15,7 +15,7 @@ def view(attachment_id):
     if not can_read_project(project_id):
         abort(403)
 
-    path = Path(attachment.file_path)
+    path = _resolve_attachment_path(attachment.file_path)
     if not path.exists():
         abort(404)
     return send_file(path, mimetype=attachment.mime_type, download_name=attachment.original_filename)
@@ -28,9 +28,25 @@ def delete(attachment_id):
     if not can_write_project(report.project_id):
         abort(403)
     delete_attachment(attachment)
-    flash("Attachment deleted.", "success")
+    flash("Đã xóa ảnh đính kèm.", "success")
     next_url = request.form.get("next") or url_for("reports.edit", report_id=report.id)
     return redirect(next_url)
+
+
+def _resolve_attachment_path(stored_path):
+    path = Path(stored_path)
+    if path.is_absolute():
+        return path
+
+    upload_root = Path(current_app.config["UPLOAD_ROOT"])
+    candidates = [
+        upload_root / path,
+        Path(current_app.root_path).parent / path,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def _attachment_or_404(attachment_id):

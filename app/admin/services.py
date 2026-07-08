@@ -42,14 +42,14 @@ def validate_unique_user(username, email=None, user_id=None):
     if user_id:
         username_query = username_query.filter(User.id != user_id)
     if username_query.first():
-        errors.append("Username already exists.")
+        errors.append("Tên đăng nhập đã tồn tại.")
 
     if email:
         email_query = User.query.filter(User.email == email)
         if user_id:
             email_query = email_query.filter(User.id != user_id)
         if email_query.first():
-            errors.append("Email already exists.")
+            errors.append("Email đã tồn tại.")
 
     return errors
 
@@ -65,6 +65,7 @@ def validate_unique_category_name(project_id, name, category_id=None):
     query = ReportCategory.query.filter(
         ReportCategory.project_id == project_id,
         ReportCategory.name == name,
+        ReportCategory.deleted_at.is_(None),
     )
     if category_id:
         query = query.filter(ReportCategory.id != category_id)
@@ -93,7 +94,7 @@ def replace_project_reporters(project, reporter_ids):
         assignment = ProjectUser(
             project_id=project.id,
             user_id=user_id,
-            role_in_project="REPORTER",
+            role_in_project="MEMBER",
         )
         add_with_sqlite_id(assignment)
         audit(

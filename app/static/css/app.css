@@ -420,6 +420,16 @@ a:hover {
   border: 1px solid var(--sx-border);
 }
 
+.image-gallery .report-thumb {
+  width: 160px;
+  height: 120px;
+}
+
+.category-emoji {
+  display: inline-block;
+  min-width: 1.1em;
+}
+
 .attachment-card {
   border: 1px solid var(--sx-border);
   border-radius: var(--sx-radius-sm);

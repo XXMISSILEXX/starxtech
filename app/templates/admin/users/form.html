@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}{{ 'Edit User' if user else 'Create User' }} - StarX Daily Report{% endblock %}
-{% block page_title %}{{ 'Edit User' if user else 'Create User' }}{% endblock %}
+{% block title %}{{ 'Sửa người dùng' if user else 'Tạo người dùng' }} - StarX Daily Report{% endblock %}
+{% block page_title %}{{ 'Sửa người dùng' if user else 'Tạo người dùng' }}{% endblock %}
 
 {% block content %}
 {% set can_write = current_user.role == 'SUPER_ADMIN' %}
 <form method="post" class="form-card row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-6">
-    <label class="form-label" for="full_name">Full name</label>
+    <label class="form-label" for="full_name">Họ tên</label>
     <input class="form-control" id="full_name" name="full_name" required value="{{ request.form.get('full_name', user.full_name if user else '') }}" {% if not can_write %}disabled{% endif %}>
   </div>
   <div class="col-md-6">
-    <label class="form-label" for="username">Username</label>
+    <label class="form-label" for="username">Tên đăng nhập</label>
     <input class="form-control" id="username" name="username" required value="{{ request.form.get('username', user.username if user else '') }}" {% if not can_write %}disabled{% endif %}>
   </div>
   <div class="col-md-6">
@@ -20,17 +20,17 @@
     <input class="form-control" id="email" name="email" type="email" value="{{ request.form.get('email', user.email if user and user.email else '') }}" {% if not can_write %}disabled{% endif %}>
   </div>
   <div class="col-md-6">
-    <label class="form-label" for="role">Role</label>
+    <label class="form-label" for="role">Vai trò</label>
     {% set selected_role = request.form.get('role', user.role if user else 'REPORTER') %}
     <select class="form-select" id="role" name="role" required {% if not can_write %}disabled{% endif %}>
       {% for role in roles %}
-        <option value="{{ role }}" {% if selected_role == role %}selected{% endif %}>{{ role }}</option>
+        <option value="{{ role }}" {% if selected_role == role %}selected{% endif %}>{{ role|role_label }}</option>
       {% endfor %}
     </select>
   </div>
   {% if not user %}
     <div class="col-md-6">
-      <label class="form-label" for="password">Password</label>
+      <label class="form-label" for="password">Mật khẩu</label>
       <input class="form-control" id="password" name="password" type="password" minlength="8" required {% if not can_write %}disabled{% endif %}>
     </div>
   {% endif %}
@@ -38,14 +38,14 @@
     {% set active_value = request.form.get('is_active') %}
     <div class="form-check">
       <input class="form-check-input" id="is_active" name="is_active" type="checkbox" {% if active_value or (not request.form and (not user or user.is_active)) %}checked{% endif %} {% if not can_write %}disabled{% endif %}>
-      <label class="form-check-label" for="is_active">Active</label>
+      <label class="form-check-label" for="is_active">Hoạt động</label>
     </div>
   </div>
   <div class="col-12 d-flex gap-2">
     {% if can_write %}
-      <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>Save</button>
+      <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>Lưu</button>
     {% endif %}
-    <a class="btn btn-outline-secondary" href="{{ url_for('admin.users_index') }}">Cancel</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin.users_index') }}">Hủy</a>
   </div>
 </form>
 {% endblock %}

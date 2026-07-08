@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Projects Admin - StarX Daily Report{% endblock %}
-{% block page_title %}Project Management{% endblock %}
+{% block title %}Quản lý dự án - StarX Daily Report{% endblock %}
+{% block page_title %}Quản lý dự án{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <div class="text-muted">Manage projects and reporter access.</div>
+  <div class="text-muted">Quản lý dự án và phân quyền người báo cáo/quản lý dự án.</div>
   {% if current_user.role == 'SUPER_ADMIN' %}
-    <a class="btn btn-primary" href="{{ url_for('admin.projects_new') }}"><i class="bi bi-plus-lg me-1"></i>Create project</a>
+    <a class="btn btn-primary" href="{{ url_for('admin.projects_new') }}"><i class="bi bi-plus-lg me-1"></i>Tạo dự án</a>
   {% endif %}
 </div>
 
@@ -15,11 +15,11 @@
   <table class="table table-hover align-middle">
     <thead>
       <tr>
-        <th>Code</th>
-        <th>Name</th>
-        <th>Status</th>
-        <th>Dates</th>
-        <th class="text-end">Manage</th>
+        <th>Mã</th>
+        <th>Tên dự án</th>
+        <th>Trạng thái</th>
+        <th>Ngày</th>
+        <th class="text-end">Quản lý</th>
       </tr>
     </thead>
     <tbody>
@@ -31,14 +31,14 @@
           <td>{{ project.start_date or '-' }} / {{ project.expected_end_date or '-' }}</td>
           <td class="text-end">
             <div class="d-inline-flex gap-1">
-              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.projects_reporters', project_id=project.id) }}"><i class="bi bi-people me-1"></i>Reporters</a>
-              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.categories_index', project_id=project.id) }}"><i class="bi bi-tags me-1"></i>Categories</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.projects_reporters', project_id=project.id) }}"><i class="bi bi-people me-1"></i>Phân quyền</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.categories_index', project_id=project.id) }}"><i class="bi bi-tags me-1"></i>Hạng mục</a>
               {% if current_user.role == 'SUPER_ADMIN' %}
-                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.projects_edit', project_id=project.id) }}"><i class="bi bi-pencil me-1"></i>Edit</a>
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.projects_edit', project_id=project.id) }}"><i class="bi bi-pencil me-1"></i>Sửa</a>
                 {% if project.status != 'archived' %}
                   <form method="post" action="{{ url_for('admin.projects_archive', project_id=project.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-danger" type="submit"><i class="bi bi-archive me-1"></i>Archive</button>
+                    <button class="btn btn-sm btn-outline-danger" type="submit" data-confirm="Lưu trữ dự án này?"><i class="bi bi-archive me-1"></i>Lưu trữ</button>
                   </form>
                 {% endif %}
               {% endif %}
@@ -46,7 +46,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="5"><div class="empty-state"><i class="bi bi-building"></i>No projects found.</div></td></tr>
+        <tr><td colspan="5"><div class="empty-state"><i class="bi bi-building"></i>Chưa có dự án.</div></td></tr>
       {% endfor %}
     </tbody>
   </table>

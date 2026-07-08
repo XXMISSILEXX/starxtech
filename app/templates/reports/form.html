@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}{% if report.id %}Edit Report{% else %}Create Report{% endif %} - StarX Daily Report{% endblock %}
-{% block page_title %}{% if report.id %}Edit Report{% else %}Create Report{% endif %}{% endblock %}
+{% block title %}{% if report.id %}Sửa báo cáo{% else %}Tạo báo cáo{% endif %} - StarX Daily Report{% endblock %}
+{% block page_title %}{% if report.id %}Sửa báo cáo{% else %}Tạo báo cáo{% endif %}{% endblock %}
 
 {% block content %}
 <form method="post" enctype="multipart/form-data">
@@ -9,41 +9,46 @@
 
   <div class="form-card row g-3 mb-4">
     <div class="col-md-4">
-      <label class="form-label" for="report_date">Report date</label>
+      <label class="form-label" for="report_date">Ngày báo cáo</label>
       <input class="form-control" id="report_date" name="report_date" type="date" value="{{ report.report_date or '' }}" {% if not can_write %}disabled{% endif %} required>
     </div>
     <div class="col-md-4">
-      <label class="form-label" for="overall_status">Overall status</label>
+      <label class="form-label" for="overall_status">Trạng thái tổng thể</label>
       <select class="form-select" id="overall_status" name="overall_status" {% if not can_write %}disabled{% endif %}>
         {% for status in statuses %}
-          <option value="{{ status }}" {% if report.overall_status == status %}selected{% endif %}>{{ status }}</option>
+          <option value="{{ status }}" {% if report.overall_status == status %}selected{% endif %}>{{ status|status_label }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="col-md-4">
-      <label class="form-label">Project</label>
+      <label class="form-label">Dự án</label>
       <input class="form-control" value="{{ project.code }} - {{ project.name }}" disabled>
     </div>
     <div class="col-12">
-      <label class="form-label" for="highlight">Highlight</label>
+      <label class="form-label" for="highlight">Điểm nổi bật</label>
       <textarea class="form-control" id="highlight" name="highlight" rows="3" {% if not can_write %}disabled{% endif %} required>{{ report.highlight or '' }}</textarea>
     </div>
     <div class="col-12">
-      <label class="form-label" for="summary_note">Summary note</label>
+      <label class="form-label" for="summary_note">Ghi chú tổng hợp</label>
       <textarea class="form-control" id="summary_note" name="summary_note" rows="2" {% if not can_write %}disabled{% endif %}>{{ report.summary_note or '' }}</textarea>
     </div>
   </div>
 
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="h5 mb-0">Sections</h2>
+    <h2 class="h5 mb-0">Nội dung báo cáo</h2>
     {% if can_write %}
-      <button class="btn btn-outline-primary btn-sm" type="button" data-add-section><i class="bi bi-plus-lg me-1"></i>Add section</button>
+      <button class="btn btn-outline-primary btn-sm" type="button" data-add-section><i class="bi bi-plus-lg me-1"></i>Thêm phần</button>
     {% endif %}
+  </div>
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    {% for category in categories %}
+      <span class="badge status-badge status-muted">{{ category_icon(category.icon) }} {{ category.name }}</span>
+    {% endfor %}
   </div>
 
   <div data-sections
-       data-categories='[{% for category in categories %}{"id":{{ category.id }},"name":{{ category.name|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]'
-       data-statuses='[{% for status in section_statuses %}{{ status|tojson }}{% if not loop.last %},{% endif %}{% endfor %}]'
+       data-categories='[{% for category in categories %}{"id":{{ category.id }},"name":{{ category.name|tojson }},"icon":{{ (category.icon or "")|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]'
+       data-statuses='[{% for status in section_statuses %}{"id":{{ status|tojson }},"name":{{ status|status_label|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]'
        data-can-write="{{ '1' if can_write else '0' }}">
     {% set active_sections = report.sections|selectattr('deleted_at', 'none')|sort(attribute='sort_order')|list %}
     {% for section in active_sections %}
@@ -51,33 +56,38 @@
       <div class="report-section p-3 mb-3" data-section-row>
         <div class="row g-3">
           <div class="col-md-5">
-            <label class="form-label">Category</label>
+            <label class="form-label">Hạng mục</label>
             <select class="form-select" name="sections-{{ section_index }}-category_id" {% if not can_write %}disabled{% endif %}>
-              <option value="">Select category</option>
+              <option value="">Chọn hạng mục</option>
               {% for category in categories %}
                 <option value="{{ category.id }}" {% if section.report_category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
               {% endfor %}
             </select>
+            <div class="small text-muted mt-1">
+              {% for category in categories %}
+                {% if section.report_category_id == category.id %}{{ category_icon(category.icon) }} {{ category.name }}{% endif %}
+              {% endfor %}
+            </div>
           </div>
           <div class="col-md-4">
-            <label class="form-label">Status</label>
+            <label class="form-label">Trạng thái</label>
             <select class="form-select" name="sections-{{ section_index }}-status" {% if not can_write %}disabled{% endif %}>
               {% for status in section_statuses %}
-                <option value="{{ status }}" {% if section.status == status %}selected{% endif %}>{{ status }}</option>
+                <option value="{{ status }}" {% if section.status == status %}selected{% endif %}>{{ status|status_label }}</option>
               {% endfor %}
             </select>
           </div>
           {% if can_write %}
             <div class="col-md-3 d-flex align-items-end justify-content-md-end">
-              <button class="btn btn-outline-danger btn-sm" type="button" data-remove-section><i class="bi bi-trash me-1"></i>Remove</button>
+              <button class="btn btn-outline-danger btn-sm" type="button" data-remove-section><i class="bi bi-trash me-1"></i>Xóa</button>
             </div>
           {% endif %}
           <div class="col-12">
-            <label class="form-label">Content</label>
+            <label class="form-label">Nội dung</label>
             <textarea class="form-control" name="sections-{{ section_index }}-content" rows="3" {% if not can_write %}disabled{% endif %}>{{ section.content }}</textarea>
           </div>
           <div class="col-12">
-            <label class="form-label">Images</label>
+            <label class="form-label">Ảnh đính kèm</label>
             <input class="form-control" name="sections-{{ section_index }}-images" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple {% if not can_write %}disabled{% endif %}>
           </div>
           {% if section.attachments %}
@@ -92,7 +102,7 @@
                       <form class="mt-2" method="post" action="{{ url_for('attachments.delete', attachment_id=attachment.id) }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="next" value="{{ url_for('reports.edit', report_id=report.id) }}">
-                        <button class="btn btn-sm btn-outline-danger" type="submit"><i class="bi bi-trash me-1"></i>Delete</button>
+                        <button class="btn btn-sm btn-outline-danger" type="submit" data-confirm="Xóa ảnh này?"><i class="bi bi-trash me-1"></i>Xóa</button>
                       </form>
                     {% endif %}
                   </div>
@@ -107,8 +117,8 @@
 
   {% if can_write %}
     <div class="d-flex gap-2">
-      <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>Save report</button>
-      <a class="btn btn-outline-secondary" href="{{ url_for('projects.reports', project_id=project.id) }}">Cancel</a>
+      <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>Lưu báo cáo</button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('projects.reports', project_id=project.id) }}">Hủy</a>
     </div>
   {% endif %}
 </form>

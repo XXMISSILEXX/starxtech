@@ -76,8 +76,8 @@ def test_super_admin_creates_user_and_duplicate_validation_fails(client, app):
     )
 
     assert duplicate.status_code == 400
-    assert b"Username already exists" in duplicate.data
-    assert b"Email already exists" in duplicate.data
+    assert "Tên đăng nhập đã tồn tại".encode() in duplicate.data
+    assert "Email đã tồn tại".encode() in duplicate.data
 
 
 def test_super_admin_creates_and_archives_project(client, app):
@@ -157,7 +157,7 @@ def test_super_admin_creates_category_duplicate_fails_and_deactivate_toggles(cli
     )
 
     assert duplicate.status_code == 400
-    assert b"Category name already exists" in duplicate.data
+    assert "Tên hạng mục đã tồn tại".encode() in duplicate.data
 
     deactivated = client.post(f"/admin/projects/1/categories/{category.id}/deactivate")
 

@@ -139,8 +139,8 @@ def test_dashboard_counts_are_correct_for_seed_data(client, app):
     response = client.get("/dashboard")
 
     assert response.status_code == 200
-    assert b"Total reports" in response.data
-    assert b"Open issues" in response.data
+    assert "Tổng báo cáo".encode() in response.data
+    assert "Vấn đề đang mở".encode() in response.data
 
     chart = client.get("/api/dashboard/status-chart")
     counts = dict(zip(chart.get_json()["labels"], chart.get_json()["counts"]))

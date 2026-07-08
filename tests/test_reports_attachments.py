@@ -58,6 +58,30 @@ def test_reporter_creates_report_for_assigned_project(client, app):
         assert AuditLog.query.filter_by(action="attachment.create").count() == 1
 
 
+def test_uploaded_image_url_resolves(client, app):
+    login(client, "reporter")
+    data = report_form()
+    data.add("sections-0-images", image_upload())
+    client.post("/projects/1/reports/create", data=data, content_type="multipart/form-data")
+
+    with app.app_context():
+        attachment = ReportAttachment.query.one()
+        attachment_id = attachment.id
+        assert not attachment.file_path.startswith("/")
+
+    response = client.get(f"/attachments/{attachment_id}")
+    assert response.status_code == 200
+    assert response.mimetype == "image/jpeg"
+
+
+def test_category_icon_appears_in_report_create_form(client):
+    login(client, "reporter")
+    response = client.get("/projects/1/reports/create")
+
+    assert response.status_code == 200
+    assert b"bi-tools" in response.data
+
+
 def test_reporter_cannot_create_report_for_unassigned_project(client):
     login(client, "reporter")
 
@@ -106,7 +130,7 @@ def test_duplicate_section_category_fails(client):
     response = client.post("/projects/1/reports/create", data=data)
 
     assert response.status_code == 400
-    assert b"Duplicate section category" in response.data
+    assert "Hạng mục không được trùng".encode() in response.data
 
 
 def test_upload_more_than_three_images_for_one_section_fails(client):
@@ -122,7 +146,7 @@ def test_upload_more_than_three_images_for_one_section_fails(client):
     )
 
     assert response.status_code == 400
-    assert b"at most 3 active images" in response.data
+    assert "tối đa 3 ảnh".encode() in response.data
 
 
 def test_non_image_upload_fails(client):
@@ -137,7 +161,7 @@ def test_non_image_upload_fails(client):
     )
 
     assert response.status_code == 400
-    assert b"not a valid image" in response.data
+    assert "không phải ảnh hợp lệ".encode() in response.data
 
 
 def test_attachment_view_enforces_project_read_permission(client, app):

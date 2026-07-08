@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}{% if project %}{{ project.code }} Issues{% else %}Issues{% endif %} - StarX Daily Report{% endblock %}
-{% block page_title %}{% if project %}{{ project.code }} Issues{% else %}Issues{% endif %}{% endblock %}
+{% block title %}{% if project %}Vấn đề {{ project.code }}{% else %}Vấn đề tồn đọng{% endif %} - StarX Daily Report{% endblock %}
+{% block page_title %}{% if project %}Vấn đề tồn đọng {{ project.code }}{% else %}Danh sách vấn đề tồn đọng{% endif %}{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <div class="text-muted">Persistent project issues.</div>
+  <div class="text-muted">Theo dõi các vấn đề tồn đọng của dự án.</div>
   {% if project and can_write %}
-    <a class="btn btn-primary" href="{{ url_for('projects.issues_create', project_id=project.id) }}"><i class="bi bi-plus-lg me-1"></i>Create issue</a>
+    <a class="btn btn-primary" href="{{ url_for('projects.issues_create', project_id=project.id) }}"><i class="bi bi-plus-lg me-1"></i>Thêm vấn đề tồn đọng</a>
   {% endif %}
 </div>
 
@@ -15,14 +15,14 @@
   <table class="table table-hover align-middle">
     <thead>
       <tr>
-        <th>Title</th>
-        <th>Project</th>
-        <th>Severity</th>
-        <th>Status</th>
-        <th>Opened</th>
-        <th>Due</th>
-        <th>Owner</th>
-        <th class="text-end">Actions</th>
+        <th>Tiêu đề</th>
+        <th>Dự án</th>
+        <th>Mức độ</th>
+        <th>Trạng thái</th>
+        <th>Ngày mở</th>
+        <th>Hạn xử lý</th>
+        <th>Phụ trách</th>
+        <th class="text-end">Thao tác</th>
       </tr>
     </thead>
     <tbody>
@@ -30,24 +30,30 @@
         <tr>
           <td><a href="{{ url_for('issues.edit', issue_id=issue.id) }}">{{ issue.title }}</a></td>
           <td>{{ issue.project.code }}</td>
-          <td><span class="badge status-badge severity-{{ issue.severity|lower }}">{{ issue.severity }}</span></td>
-          <td><span class="badge status-badge status-{{ issue.status|lower }}">{{ issue.status }}</span></td>
+          <td><span class="badge status-badge severity-{{ issue.severity|lower }}">{{ issue.severity|status_label }}</span></td>
+          <td><span class="badge status-badge status-{{ issue.status|lower }}">{{ issue.status|status_label }}</span></td>
           <td>{{ issue.opened_date }}</td>
           <td>{{ issue.due_date or '-' }}</td>
           <td>{{ issue.owner.full_name if issue.owner else '-' }}</td>
           <td class="text-end">
             <div class="d-inline-flex gap-1">
-              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('issues.edit', issue_id=issue.id) }}"><i class="bi bi-eye me-1"></i>Open</a>
+              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('issues.edit', issue_id=issue.id) }}"><i class="bi bi-pencil me-1"></i>Sửa</a>
               {% if can_write %}
                 {% if issue.status != 'CLOSED' %}
                   <form method="post" action="{{ url_for('issues.close', issue_id=issue.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-secondary" type="submit"><i class="bi bi-check2 me-1"></i>Close</button>
+                    <button class="btn btn-sm btn-outline-secondary" type="submit"><i class="bi bi-check2 me-1"></i>Đóng</button>
                   </form>
                 {% else %}
                   <form method="post" action="{{ url_for('issues.reopen', issue_id=issue.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-secondary" type="submit"><i class="bi bi-arrow-counterclockwise me-1"></i>Reopen</button>
+                    <button class="btn btn-sm btn-outline-secondary" type="submit"><i class="bi bi-arrow-counterclockwise me-1"></i>Mở lại</button>
+                  </form>
+                {% endif %}
+                {% if can_delete %}
+                  <form method="post" action="{{ url_for('issues.delete', issue_id=issue.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-outline-danger" type="submit" data-confirm="Xóa vấn đề tồn đọng này?"><i class="bi bi-trash me-1"></i>Xóa</button>
                   </form>
                 {% endif %}
               {% endif %}
@@ -55,7 +61,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="8"><div class="empty-state"><i class="bi bi-exclamation-diamond"></i>No issues found.</div></td></tr>
+        <tr><td colspan="8"><div class="empty-state"><i class="bi bi-exclamation-diamond"></i>Không có vấn đề tồn đọng.</div></td></tr>
       {% endfor %}
     </tbody>
   </table>

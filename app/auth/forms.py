@@ -4,17 +4,17 @@ from wtforms.validators import DataRequired, EqualTo, Length
 
 
 class LoginForm(FlaskForm):
-    username_or_email = StringField("Username or email", validators=[DataRequired(), Length(max=255)])
-    password = PasswordField("Password", validators=[DataRequired()])
-    remember = BooleanField("Remember me")
-    submit = SubmitField("Log in")
+    username_or_email = StringField("Tên đăng nhập hoặc email", validators=[DataRequired(), Length(max=255)])
+    password = PasswordField("Mật khẩu", validators=[DataRequired()])
+    remember = BooleanField("Ghi nhớ đăng nhập")
+    submit = SubmitField("Đăng nhập")
 
 
 class ChangePasswordForm(FlaskForm):
-    current_password = PasswordField("Current password", validators=[DataRequired()])
-    new_password = PasswordField("New password", validators=[DataRequired(), Length(min=8, max=128)])
+    current_password = PasswordField("Mật khẩu hiện tại", validators=[DataRequired()])
+    new_password = PasswordField("Mật khẩu mới", validators=[DataRequired(), Length(min=8, max=128)])
     confirm_password = PasswordField(
-        "Confirm new password",
-        validators=[DataRequired(), EqualTo("new_password", message="Passwords must match.")],
+        "Xác nhận mật khẩu mới",
+        validators=[DataRequired(), EqualTo("new_password", message="Mật khẩu xác nhận không khớp.")],
     )
-    submit = SubmitField("Change password")
+    submit = SubmitField("Đổi mật khẩu")

@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Users - StarX Daily Report{% endblock %}
-{% block page_title %}User Management{% endblock %}
+{% block title %}Người dùng - StarX Daily Report{% endblock %}
+{% block page_title %}Quản lý người dùng{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <div class="text-muted">Manage application users and roles.</div>
+  <div class="text-muted">Quản lý tài khoản và vai trò người dùng.</div>
   {% if current_user.role == 'SUPER_ADMIN' %}
-    <a class="btn btn-primary" href="{{ url_for('admin.users_new') }}"><i class="bi bi-person-plus me-1"></i>Create user</a>
+    <a class="btn btn-primary" href="{{ url_for('admin.users_new') }}"><i class="bi bi-person-plus me-1"></i>Tạo người dùng</a>
   {% endif %}
 </div>
 
@@ -15,12 +15,12 @@
   <table class="table table-hover align-middle">
     <thead>
       <tr>
-        <th>Name</th>
-        <th>Username</th>
+        <th>Họ tên</th>
+        <th>Tên đăng nhập</th>
         <th>Email</th>
-        <th>Role</th>
-        <th>Status</th>
-        {% if current_user.role == 'SUPER_ADMIN' %}<th class="text-end">Actions</th>{% endif %}
+        <th>Vai trò</th>
+        <th>Trạng thái</th>
+        {% if current_user.role == 'SUPER_ADMIN' %}<th class="text-end">Thao tác</th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -29,31 +29,31 @@
           <td>{{ user.full_name }}</td>
           <td>{{ user.username }}</td>
           <td>{{ user.email or '-' }}</td>
-          <td><span class="badge status-badge status-muted">{{ user.role }}</span></td>
+          <td><span class="badge status-badge status-muted">{{ user.role|role_label }}</span></td>
           <td>
             {% if user.is_active %}
-              <span class="badge status-badge status-good">Active</span>
+              <span class="badge status-badge status-good">Hoạt động</span>
             {% else %}
-              <span class="badge status-badge status-muted">Inactive</span>
+              <span class="badge status-badge status-muted">Ngưng hoạt động</span>
             {% endif %}
           </td>
           {% if current_user.role == 'SUPER_ADMIN' %}
             <td class="text-end">
               <div class="d-inline-flex gap-1">
-                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.users_edit', user_id=user.id) }}"><i class="bi bi-pencil me-1"></i>Edit</a>
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.users_edit', user_id=user.id) }}"><i class="bi bi-pencil me-1"></i>Sửa</a>
                 <form method="post" action="{{ url_for('admin.users_reset_password', user_id=user.id) }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button class="btn btn-sm btn-outline-warning" type="submit"><i class="bi bi-key me-1"></i>Reset password</button>
+                  <button class="btn btn-sm btn-outline-warning" type="submit" data-confirm="Đặt lại mật khẩu người dùng này?"><i class="bi bi-key me-1"></i>Đặt lại mật khẩu</button>
                 </form>
                 {% if user.is_active %}
                   <form method="post" action="{{ url_for('admin.users_deactivate', user_id=user.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-danger" type="submit"><i class="bi bi-person-dash me-1"></i>Deactivate</button>
+                    <button class="btn btn-sm btn-outline-danger" type="submit" data-confirm="Vô hiệu hóa người dùng này?"><i class="bi bi-person-dash me-1"></i>Vô hiệu hóa</button>
                   </form>
                 {% else %}
                   <form method="post" action="{{ url_for('admin.users_activate', user_id=user.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-success" type="submit"><i class="bi bi-person-check me-1"></i>Activate</button>
+                    <button class="btn btn-sm btn-outline-success" type="submit"><i class="bi bi-person-check me-1"></i>Kích hoạt</button>
                   </form>
                 {% endif %}
               </div>
@@ -61,7 +61,7 @@
           {% endif %}
         </tr>
       {% else %}
-        <tr><td colspan="{{ 6 if current_user.role == 'SUPER_ADMIN' else 5 }}"><div class="empty-state"><i class="bi bi-people"></i>No users found.</div></td></tr>
+        <tr><td colspan="{{ 6 if current_user.role == 'SUPER_ADMIN' else 5 }}"><div class="empty-state"><i class="bi bi-people"></i>Chưa có người dùng.</div></td></tr>
       {% endfor %}
     </tbody>
   </table>

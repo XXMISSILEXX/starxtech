@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 
-{% block title %}Projects - StarX Daily Report{% endblock %}
-{% block page_title %}Projects{% endblock %}
+{% block title %}Dự án - StarX Daily Report{% endblock %}
+{% block page_title %}Dự án{% endblock %}
 
 {% block content %}
 <div class="table-card table-responsive">
   <table class="table table-hover align-middle">
     <thead>
       <tr>
-        <th>Code</th>
-        <th>Name</th>
-        <th>Status</th>
-        <th class="text-end">Reports</th>
+        <th>Mã</th>
+        <th>Tên dự án</th>
+        <th>Trạng thái</th>
+        <th class="text-end">Báo cáo</th>
       </tr>
     </thead>
     <tbody>
@@ -21,12 +21,12 @@
           <td>{{ project.name }}</td>
           <td><span class="badge status-badge status-muted">{{ project.status }}</span></td>
           <td class="text-end">
-            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('projects.reports', project_id=project.id) }}"><i class="bi bi-journal-text me-1"></i>Open reports</a>
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('projects.reports', project_id=project.id) }}"><i class="bi bi-journal-text me-1"></i>Mở báo cáo</a>
           </td>
         </tr>
       {% else %}
         <tr>
-          <td colspan="4"><div class="empty-state"><i class="bi bi-building"></i>No projects available.</div></td>
+          <td colspan="4"><div class="empty-state"><i class="bi bi-building"></i>Chưa có dự án phù hợp.</div></td>
         </tr>
       {% endfor %}
     </tbody>

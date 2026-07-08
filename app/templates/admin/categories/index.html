@@ -1,47 +1,52 @@
 {% extends "base.html" %}
 
-{% block title %}Report Categories - StarX Daily Report{% endblock %}
-{% block page_title %}Categories: {{ project.code }}{% endblock %}
+{% block title %}Hạng mục báo cáo - StarX Daily Report{% endblock %}
+{% block page_title %}Hạng mục: {{ project.code }}{% endblock %}
 
 {% block content %}
 <div class="mb-3 d-flex gap-2">
-  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-arrow-left me-1"></i>Back to projects</a>
+  {% if current_user.role in ['SUPER_ADMIN', 'VIEWER_ADMIN'] %}
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-arrow-left me-1"></i>Quay lại dự án</a>
+  {% else %}
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('projects.dashboard', project_id=project.id) }}"><i class="bi bi-arrow-left me-1"></i>Quay lại bảng điều khiển</a>
+  {% endif %}
 </div>
 
-{% if current_user.role == 'SUPER_ADMIN' %}
+{% if can_manage %}
   {% set form_category = edit_category if edit_category is defined else none %}
   <form method="post" action="{{ url_for('admin.categories_edit', project_id=project.id, category_id=form_category.id) if form_category else url_for('admin.categories_index', project_id=project.id) }}" class="form-card row g-3 mb-4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="col-md-4">
-      <label class="form-label" for="name">Name</label>
+      <label class="form-label" for="name">Tên hạng mục</label>
       <input class="form-control" id="name" name="name" required value="{{ request.form.get('name', form_category.name if form_category else '') }}">
     </div>
     <div class="col-md-3">
-      <label class="form-label" for="icon">Icon</label>
+      <label class="form-label" for="icon">Biểu tượng</label>
       <input class="form-control" id="icon" name="icon" value="{{ request.form.get('icon', form_category.icon if form_category and form_category.icon else '') }}">
+      <div class="form-text">Nhập tên Bootstrap Icon như <code>tools</code> hoặc emoji.</div>
     </div>
     <div class="col-md-2">
-      <label class="form-label" for="sort_order">Sort order</label>
+      <label class="form-label" for="sort_order">Thứ tự</label>
       <input class="form-control" id="sort_order" name="sort_order" type="number" value="{{ request.form.get('sort_order', form_category.sort_order if form_category else 0) }}">
     </div>
     <div class="col-md-3 d-flex align-items-end gap-3">
       <div class="form-check">
         <input class="form-check-input" id="is_active" name="is_active" type="checkbox" {% if request.form.get('is_active') or (not request.form and (not form_category or form_category.is_active)) %}checked{% endif %}>
-        <label class="form-check-label" for="is_active">Active</label>
+        <label class="form-check-label" for="is_active">Hoạt động</label>
       </div>
       <div class="form-check">
         <input class="form-check-input" id="is_required" name="is_required" type="checkbox" {% if request.form.get('is_required') or (not request.form and form_category and form_category.is_required) %}checked{% endif %}>
-        <label class="form-check-label" for="is_required">Required</label>
+        <label class="form-check-label" for="is_required">Bắt buộc</label>
       </div>
     </div>
     <div class="col-12">
-      <label class="form-label" for="description">Description</label>
+      <label class="form-label" for="description">Mô tả</label>
       <textarea class="form-control" id="description" name="description" rows="2">{{ request.form.get('description', form_category.description if form_category and form_category.description else '') }}</textarea>
     </div>
     <div class="col-12 d-flex gap-2">
-      <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>{{ 'Update category' if form_category else 'Create category' }}</button>
+      <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>{{ 'Cập nhật hạng mục' if form_category else 'Tạo hạng mục' }}</button>
       {% if form_category %}
-        <a class="btn btn-outline-secondary" href="{{ url_for('admin.categories_index', project_id=project.id) }}">Cancel</a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('admin.categories_index', project_id=project.id) }}">Hủy</a>
       {% endif %}
     </div>
   </form>
@@ -51,56 +56,60 @@
   <table class="table table-hover align-middle">
     <thead>
       <tr>
-        <th>Name</th>
-        <th>Sort</th>
-        <th>Required</th>
-        <th>Status</th>
-        {% if current_user.role == 'SUPER_ADMIN' %}<th class="text-end">Actions</th>{% endif %}
+        <th>Hạng mục</th>
+        <th>Thứ tự</th>
+        <th>Bắt buộc</th>
+        <th>Trạng thái</th>
+        {% if can_manage %}<th class="text-end">Thao tác</th>{% endif %}
       </tr>
     </thead>
     <tbody>
       {% for category in categories %}
         <tr>
           <td>
-            <div class="fw-semibold">{{ category.name }}</div>
+            <div class="fw-semibold">{{ category_icon(category.icon) }} {{ category.name }}</div>
             {% if category.description %}<div class="small text-muted">{{ category.description }}</div>{% endif %}
           </td>
           <td>{{ category.sort_order }}</td>
           <td>
             {% if category.is_required %}
-              <span class="badge status-badge status-attention">Required</span>
+              <span class="badge status-badge status-attention">Bắt buộc</span>
             {% else %}
-              <span class="badge status-badge status-muted">Optional</span>
+              <span class="badge status-badge status-muted">Không bắt buộc</span>
             {% endif %}
           </td>
           <td>
             {% if category.is_active %}
-              <span class="badge status-badge status-good">Active</span>
+              <span class="badge status-badge status-good">Hoạt động</span>
             {% else %}
-              <span class="badge status-badge status-muted">Inactive</span>
+              <span class="badge status-badge status-muted">Ngưng hoạt động</span>
             {% endif %}
           </td>
-          {% if current_user.role == 'SUPER_ADMIN' %}
+          {% if can_manage %}
             <td class="text-end">
               <div class="d-inline-flex gap-1">
-                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.categories_edit', project_id=project.id, category_id=category.id) }}"><i class="bi bi-pencil me-1"></i>Edit</a>
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.categories_edit', project_id=project.id, category_id=category.id) }}"><i class="bi bi-pencil me-1"></i>Sửa</a>
                 {% if category.is_active %}
                   <form method="post" action="{{ url_for('admin.categories_deactivate', project_id=project.id, category_id=category.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-danger" type="submit"><i class="bi bi-toggle-off me-1"></i>Deactivate</button>
+                    <button class="btn btn-sm btn-outline-warning" type="submit"><i class="bi bi-toggle-off me-1"></i>Vô hiệu hóa</button>
                   </form>
                 {% else %}
                   <form method="post" action="{{ url_for('admin.categories_activate', project_id=project.id, category_id=category.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-success" type="submit"><i class="bi bi-toggle-on me-1"></i>Activate</button>
+                    <button class="btn btn-sm btn-outline-success" type="submit"><i class="bi bi-toggle-on me-1"></i>Kích hoạt</button>
                   </form>
                 {% endif %}
+                <form method="post" action="{{ url_for('admin.categories_delete', project_id=project.id, category_id=category.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-sm btn-outline-danger" type="submit" data-confirm="Xóa hạng mục này?"><i class="bi bi-trash me-1"></i>Xóa</button>
+                </form>
               </div>
             </td>
           {% endif %}
         </tr>
       {% else %}
-        <tr><td colspan="{{ 5 if current_user.role == 'SUPER_ADMIN' else 4 }}"><div class="empty-state"><i class="bi bi-tags"></i>No categories found.</div></td></tr>
+        <tr><td colspan="{{ 5 if can_manage else 4 }}"><div class="empty-state"><i class="bi bi-tags"></i>Chưa có hạng mục báo cáo.</div></td></tr>
       {% endfor %}
     </tbody>
   </table>

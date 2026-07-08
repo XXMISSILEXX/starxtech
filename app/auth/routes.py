@@ -28,7 +28,7 @@ def login():
         ).first()
 
         if not user or not user.is_active or not user.check_password(form.password.data):
-            flash("Invalid username/email or password.", "danger")
+            flash("Tên đăng nhập/email hoặc mật khẩu không đúng.", "danger")
             return render_template("auth/login.html", form=form), 401
 
         user.last_login_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -43,7 +43,7 @@ def login():
 @login_required
 def logout():
     logout_user()
-    flash("You have been logged out.", "info")
+    flash("Bạn đã đăng xuất.", "info")
     return redirect(url_for("auth.login"))
 
 
@@ -53,12 +53,12 @@ def change_password():
     form = ChangePasswordForm()
     if form.validate_on_submit():
         if not current_user.check_password(form.current_password.data):
-            flash("Current password is incorrect.", "danger")
+            flash("Mật khẩu hiện tại không đúng.", "danger")
             return render_template("auth/change_password.html", form=form), 400
 
         current_user.password_hash = generate_password_hash(form.new_password.data)
         db.session.commit()
-        flash("Password changed successfully.", "success")
+        flash("Đã đổi mật khẩu thành công.", "success")
         return redirect(url_for("dashboard.index"))
 
     return render_template("auth/change_password.html", form=form)

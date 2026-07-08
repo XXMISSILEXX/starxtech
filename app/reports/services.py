@@ -18,6 +18,7 @@ from app.models import (
     ReportAttachment,
     ReportCategory,
     SectionStatus,
+    UserRole,
 )
 
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
@@ -31,14 +32,14 @@ class ReportValidationError(ValueError):
 
 def accessible_projects_query():
     query = Project.query.filter(Project.deleted_at.is_(None))
-    if current_user.role == "REPORTER":
+    if current_user.role in {UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value}:
         query = query.join(Project.user_assignments).filter_by(user_id=current_user.id)
     return query.order_by(Project.code.asc(), Project.name.asc())
 
 
 def reports_query():
     query = DailyReport.query.filter(DailyReport.deleted_at.is_(None)).join(DailyReport.project)
-    if current_user.role == "REPORTER":
+    if current_user.role in {UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value}:
         query = query.join(Project.user_assignments).filter_by(user_id=current_user.id)
     return query
 
@@ -66,11 +67,11 @@ def categories_for_report(report):
 
 def parse_report_date(value):
     if not value:
-        raise ReportValidationError("Report date is required.")
+        raise ReportValidationError("Ngày báo cáo là bắt buộc.")
     try:
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError as exc:
-        raise ReportValidationError("Report date must use YYYY-MM-DD format.") from exc
+        raise ReportValidationError("Ngày báo cáo phải đúng định dạng YYYY-MM-DD.") from exc
 
 
 def create_report(project, form, files):
@@ -104,7 +105,7 @@ def update_report(report, form, files):
         DailyReport.id != report.id,
     ).first()
     if duplicate:
-        raise ReportValidationError("Another report already exists for this project and date.")
+        raise ReportValidationError("Dự án đã có báo cáo cho ngày này.")
 
     _assign_report_fields(report, form)
     report.updated_by_user_id = current_user.id
@@ -152,17 +153,17 @@ def parse_sections(form):
         if not category_raw and not status and not content:
             continue
         if not category_raw:
-            raise ReportValidationError("Each submitted section must select a category.")
+            raise ReportValidationError("Mỗi phần báo cáo phải chọn một hạng mục.")
         if not content:
-            raise ReportValidationError("Each submitted section must include content.")
+            raise ReportValidationError("Mỗi phần báo cáo phải có nội dung.")
         if status not in [item.value for item in SectionStatus]:
-            raise ReportValidationError("Invalid section status.")
+            raise ReportValidationError("Trạng thái phần báo cáo không hợp lệ.")
         try:
             category_id = int(category_raw)
         except ValueError as exc:
-            raise ReportValidationError("Invalid section category.") from exc
+            raise ReportValidationError("Hạng mục báo cáo không hợp lệ.") from exc
         if category_id in seen_categories:
-            raise ReportValidationError("Duplicate section category in the same report.")
+            raise ReportValidationError("Hạng mục không được trùng trong cùng báo cáo.")
         seen_categories.add(category_id)
         sections.append(
             {
@@ -186,7 +187,7 @@ def validate_categories(project_id, section_inputs):
         ReportCategory.deleted_at.is_(None),
     ).count()
     if valid_count != len(category_ids):
-        raise ReportValidationError("All section categories must belong to this project.")
+        raise ReportValidationError("Tất cả hạng mục phải thuộc dự án này.")
 
 
 def report_snapshot(report):
@@ -207,9 +208,9 @@ def _assign_report_fields(report, form):
     overall_status = form.get("overall_status", "").strip()
     highlight = form.get("highlight", "").strip()
     if overall_status not in [item.value for item in DailyReportStatus]:
-        raise ReportValidationError("Invalid report status.")
+        raise ReportValidationError("Trạng thái báo cáo không hợp lệ.")
     if not highlight:
-        raise ReportValidationError("Highlight is required.")
+        raise ReportValidationError("Điểm nổi bật là bắt buộc.")
     report.overall_status = overall_status
     report.highlight = highlight
     report.summary_note = form.get("summary_note", "").strip() or None
@@ -259,7 +260,7 @@ def _save_section_uploads(report, files):
         current_count = len(active_attachments(section))
         max_images = current_app.config["MAX_IMAGES_PER_SECTION"]
         if current_count + len(uploads) > max_images:
-            raise ReportValidationError("Each section can have at most 3 active images.")
+            raise ReportValidationError("Mỗi phần chỉ được có tối đa 3 ảnh đang hoạt động.")
         for upload in uploads:
             attachment = _store_attachment(report, section, upload)
             db.session.flush()
@@ -275,7 +276,7 @@ def _store_attachment(report, section, upload: FileStorage):
     original_filename = secure_filename(upload.filename or "")
     extension = original_filename.rsplit(".", 1)[-1].lower() if "." in original_filename else ""
     if extension not in ALLOWED_EXTENSIONS:
-        raise ReportValidationError("Only jpg, jpeg, png, and webp files are allowed.")
+        raise ReportValidationError("Chỉ cho phép tệp jpg, jpeg, png và webp.")
 
     try:
         image = Image.open(upload.stream)
@@ -284,11 +285,11 @@ def _store_attachment(report, section, upload: FileStorage):
         image = Image.open(upload.stream)
         image.load()
     except (UnidentifiedImageError, OSError) as exc:
-        raise ReportValidationError("Uploaded attachment is not a valid image.") from exc
+        raise ReportValidationError("Tệp tải lên không phải ảnh hợp lệ.") from exc
 
     image_format = image.format
     if image_format not in IMAGE_FORMATS:
-        raise ReportValidationError("Only jpg, jpeg, png, and webp files are allowed.")
+        raise ReportValidationError("Chỉ cho phép tệp jpg, jpeg, png và webp.")
     stored_extension = IMAGE_FORMATS[image_format]
 
     image = _normalize_image(image, stored_extension)
@@ -307,7 +308,7 @@ def _store_attachment(report, section, upload: FileStorage):
         daily_report_section_id=section.id,
         original_filename=original_filename or upload.filename,
         stored_filename=stored_filename,
-        file_path=str(target_path),
+        file_path=str(target_path.relative_to(Path(current_app.config["UPLOAD_ROOT"]))),
         mime_type=Image.MIME.get(save_format, f"image/{stored_extension}"),
         file_size=target_path.stat().st_size,
         image_width=image.width,

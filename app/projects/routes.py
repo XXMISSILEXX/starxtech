@@ -1,6 +1,7 @@
 from flask import abort, flash, redirect, render_template, request, url_for
 
 from app.auth.permissions import can_read_project, can_write_project
+from app.auth.permissions import can_delete_issue_for_project
 from app.dashboard.services import project_dashboard_context
 from app.extensions import db
 from app.issues.services import (
@@ -90,9 +91,9 @@ def reports_create(project_id):
             flash(str(exc), "danger")
             return _render_create_form(project, report), 400
         if duplicate:
-            flash("A report already exists for this project and date.", "warning")
+            flash("Dự án đã có báo cáo cho ngày này.", "warning")
             return redirect(url_for("reports.edit", report_id=report.id))
-        flash("Report created.", "success")
+        flash("Đã tạo báo cáo.", "success")
         return redirect(url_for("reports.detail", report_id=report.id))
 
     return _render_create_form(project, report)
@@ -106,8 +107,9 @@ def issues(project_id):
     return render_template(
         "issues/index.html",
         project=project,
-        issues=project_issues_query(project.id).all(),
+        issues=_apply_issue_filters(project_issues_query(project.id)).all(),
         can_write=can_write_project(project.id),
+        can_delete=can_delete_issue_for_project(project.id),
     )
 
 
@@ -127,7 +129,7 @@ def issues_create(project_id):
             db.session.rollback()
             flash(str(exc), "danger")
             return _render_issue_form(project, issue), 400
-        flash("Issue created.", "success")
+        flash("Đã thêm vấn đề tồn đọng.", "success")
         return redirect(url_for("projects.issues", project_id=project.id))
 
     return _render_issue_form(project, issue)
@@ -154,6 +156,7 @@ def _render_issue_form(project, issue):
         severities=[severity.value for severity in IssueSeverity],
         statuses=[status.value for status in IssueStatus],
         can_write=can_write_project(project.id),
+        can_delete=can_delete_issue_for_project(project.id),
     )
 
 
@@ -162,3 +165,22 @@ def _project_or_404(project_id):
         Project.id == project_id,
         Project.deleted_at.is_(None),
     ).first_or_404()
+
+
+def _apply_issue_filters(query):
+    status = request.args.get("status", "").strip()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+
+    if status == DailyReportStatus.CRITICAL.value:
+        query = query.filter(PersistentIssue.severity == IssueSeverity.CRITICAL.value)
+    elif status == DailyReportStatus.ATTENTION.value:
+        query = query.filter(PersistentIssue.severity == IssueSeverity.HIGH.value)
+    elif status == DailyReportStatus.PROCESSING.value:
+        query = query.filter(PersistentIssue.status == IssueStatus.PROCESSING.value)
+
+    if date_from:
+        query = query.filter(PersistentIssue.opened_date >= date_from)
+    if date_to:
+        query = query.filter(PersistentIssue.opened_date <= date_to)
+    return query

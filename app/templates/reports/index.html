@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}Reports - StarX Daily Report{% endblock %}
-{% block page_title %}{% if project %}{{ project.code }} Reports{% else %}Daily Reports{% endif %}{% endblock %}
+{% block title %}Báo cáo - StarX Daily Report{% endblock %}
+{% block page_title %}{% if project %}Báo cáo {{ project.code }}{% else %}Báo cáo hằng ngày{% endif %}{% endblock %}
 
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
   <form class="filter-card row g-2 align-items-end flex-grow-1" method="get">
     {% if not project %}
       <div class="col-auto">
-        <label class="form-label small" for="project_id">Project</label>
+        <label class="form-label small" for="project_id">Dự án</label>
         <select class="form-select form-select-sm" id="project_id" name="project_id">
-          <option value="">All</option>
+          <option value="">Tất cả</option>
           {% for item in projects %}
             <option value="{{ item.id }}" {% if filters.project_id == item.id %}selected{% endif %}>{{ item.code }} - {{ item.name }}</option>
           {% endfor %}
@@ -18,28 +18,28 @@
       </div>
     {% endif %}
     <div class="col-auto">
-      <label class="form-label small" for="status">Status</label>
+      <label class="form-label small" for="status">Trạng thái</label>
       <select class="form-select form-select-sm" id="status" name="status">
-        <option value="">All</option>
+        <option value="">Tất cả</option>
         {% for status in statuses %}
-          <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
+          <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status|status_label }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="col-auto">
-      <label class="form-label small" for="date_from">From</label>
+      <label class="form-label small" for="date_from">Từ ngày</label>
       <input class="form-control form-control-sm" id="date_from" name="date_from" type="date" value="{{ filters.date_from }}">
     </div>
     <div class="col-auto">
-      <label class="form-label small" for="date_to">To</label>
+      <label class="form-label small" for="date_to">Đến ngày</label>
       <input class="form-control form-control-sm" id="date_to" name="date_to" type="date" value="{{ filters.date_to }}">
     </div>
     <div class="col-auto">
-      <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-funnel me-1"></i>Filter</button>
+      <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-funnel me-1"></i>Lọc</button>
     </div>
   </form>
   {% if project and current_user.role != 'VIEWER_ADMIN' %}
-    <a class="btn btn-primary" href="{{ url_for('projects.reports_create', project_id=project.id) }}"><i class="bi bi-plus-lg me-1"></i>Create report</a>
+    <a class="btn btn-primary" href="{{ url_for('projects.reports_create', project_id=project.id) }}"><i class="bi bi-plus-lg me-1"></i>Tạo báo cáo</a>
   {% endif %}
 </div>
 
@@ -47,12 +47,12 @@
   <table class="table table-hover align-middle">
     <thead>
       <tr>
-        <th>Date</th>
-        <th>Project</th>
-        <th>Status</th>
-        <th>Highlight</th>
-        <th>Created by</th>
-        <th>Updated</th>
+        <th>Ngày</th>
+        <th>Dự án</th>
+        <th>Trạng thái</th>
+        <th>Điểm nổi bật</th>
+        <th>Người tạo</th>
+        <th>Cập nhật</th>
       </tr>
     </thead>
     <tbody>
@@ -60,14 +60,14 @@
         <tr>
           <td><a href="{{ url_for('reports.detail', report_id=report.id) }}">{{ report.report_date }}</a></td>
           <td>{{ report.project.code }} - {{ report.project.name }}</td>
-          <td><span class="badge status-badge status-{{ report.overall_status|lower }}">{{ report.overall_status }}</span></td>
+          <td><span class="badge status-badge status-{{ report.overall_status|lower }}">{{ report.overall_status|status_label }}</span></td>
           <td class="text-truncate" style="max-width: 360px;">{{ report.highlight }}</td>
           <td>{{ report.created_by.full_name }}</td>
           <td>{{ report.updated_at.strftime('%Y-%m-%d %H:%M') if report.updated_at else '-' }}</td>
         </tr>
       {% else %}
         <tr>
-          <td colspan="6"><div class="empty-state"><i class="bi bi-journal-text"></i>No reports found.</div></td>
+          <td colspan="6"><div class="empty-state"><i class="bi bi-journal-text"></i>Không tìm thấy báo cáo.</div></td>
         </tr>
       {% endfor %}
     </tbody>

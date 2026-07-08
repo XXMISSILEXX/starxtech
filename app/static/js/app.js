@@ -1,6 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   initReportSections();
   initDashboardCharts();
+  initConfirmActions();
 });
 
 function initReportSections() {
@@ -41,27 +42,27 @@ function initReportSections() {
     section.innerHTML = `
       <div class="row g-3">
         <div class="col-md-5">
-          <label class="form-label">Category</label>
+          <label class="form-label">Hạng mục</label>
           <select class="form-select" name="sections-${index}-category_id">
-            <option value="">Select category</option>
+            <option value="">Chọn hạng mục</option>
             ${optionHtml(categories)}
           </select>
         </div>
         <div class="col-md-4">
-          <label class="form-label">Status</label>
+          <label class="form-label">Trạng thái</label>
           <select class="form-select" name="sections-${index}-status">
             ${optionHtml(statuses, "INFO")}
           </select>
         </div>
         <div class="col-md-3 d-flex align-items-end justify-content-md-end">
-          <button class="btn btn-outline-danger btn-sm" type="button" data-remove-section><i class="bi bi-trash me-1"></i>Remove</button>
+          <button class="btn btn-outline-danger btn-sm" type="button" data-remove-section><i class="bi bi-trash me-1"></i>Xóa</button>
         </div>
         <div class="col-12">
-          <label class="form-label">Content</label>
+          <label class="form-label">Nội dung</label>
           <textarea class="form-control" name="sections-${index}-content" rows="3"></textarea>
         </div>
         <div class="col-12">
-          <label class="form-label">Images</label>
+          <label class="form-label">Ảnh đính kèm</label>
           <input class="form-control" name="sections-${index}-images" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple>
         </div>
       </div>
@@ -87,6 +88,19 @@ function initReportSections() {
   if (!container.querySelector("[data-section-row]")) {
     addSection();
   }
+}
+
+function initConfirmActions() {
+  document.addEventListener("click", (event) => {
+    const trigger = event.target.closest("[data-confirm]");
+    if (!trigger) {
+      return;
+    }
+
+    if (!window.confirm(trigger.dataset.confirm || "Bạn chắc chắn muốn tiếp tục?")) {
+      event.preventDefault();
+    }
+  });
 }
 
 function initDashboardCharts() {

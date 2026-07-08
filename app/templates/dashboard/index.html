@@ -1,61 +1,96 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - StarX Daily Report{% endblock %}
-{% block page_title %}Dashboard{% endblock %}
+{% block title %}Bảng điều khiển - StarX Daily Report{% endblock %}
+{% block page_title %}Bảng điều khiển{% endblock %}
 
 {% block content %}
+{% set selected_project = projects|selectattr('id', 'equalto', filters.project_id)|first if filters.project_id else none %}
+{% set report_args = {} %}
+{% if filters.project_id %}{% set _ = report_args.update({'project_id': filters.project_id}) %}{% endif %}
+{% if filters.overall_status %}{% set _ = report_args.update({'status': filters.overall_status}) %}{% endif %}
+{% if filters.from_date %}{% set _ = report_args.update({'date_from': filters.from_date}) %}{% endif %}
+{% if filters.to_date %}{% set _ = report_args.update({'date_to': filters.to_date}) %}{% endif %}
+{% set issue_args = {} %}
+{% if filters.overall_status %}{% set _ = issue_args.update({'status': filters.overall_status}) %}{% endif %}
+{% if filters.from_date %}{% set _ = issue_args.update({'date_from': filters.from_date}) %}{% endif %}
+{% if filters.to_date %}{% set _ = issue_args.update({'date_to': filters.to_date}) %}{% endif %}
+<div class="card mb-4">
+  <div class="card-header py-3">
+    <h2 class="h6 mb-0">Thao tác nhanh</h2>
+  </div>
+  <div class="card-body d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('reports.index', **report_args) }}"><i class="bi bi-journal-text me-1"></i>Xem báo cáo đã lọc</a>
+    {% if filters.project_id %}
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('projects.issues', project_id=filters.project_id, **issue_args) }}"><i class="bi bi-exclamation-diamond me-1"></i>Xem vấn đề tồn đọng</a>
+      {% if selected_project and current_user.role != 'VIEWER_ADMIN' %}
+        <a class="btn btn-primary btn-sm" href="{{ url_for('projects.reports_create', project_id=filters.project_id) }}"><i class="bi bi-plus-lg me-1"></i>Tạo báo cáo mới</a>
+      {% endif %}
+      {% if current_user.role in ['SUPER_ADMIN', 'PROJECT_MANAGER'] %}
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.categories_index', project_id=filters.project_id) }}"><i class="bi bi-tags me-1"></i>Quản lý hạng mục</a>
+      {% endif %}
+    {% else %}
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('issues.index', **issue_args) }}"><i class="bi bi-exclamation-diamond me-1"></i>Xem vấn đề tồn đọng</a>
+    {% endif %}
+    {% if current_user.role == 'SUPER_ADMIN' %}
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-kanban me-1"></i>Quản lý dự án</a>
+    {% endif %}
+  </div>
+</div>
+
 <form class="filter-card row g-3 align-items-end mb-4" method="get">
   <div class="col-lg-3 col-md-6">
-    <label class="form-label small" for="project_id">Project</label>
+    <label class="form-label small" for="project_id">Dự án</label>
     <select class="form-select form-select-sm" id="project_id" name="project_id">
-      <option value="">All</option>
+      <option value="">Tất cả</option>
       {% for project in projects %}
         <option value="{{ project.id }}" {% if filters.project_id == project.id %}selected{% endif %}>{{ project.code }} - {{ project.name }}</option>
       {% endfor %}
     </select>
   </div>
   <div class="col-lg-2 col-md-6">
-    <label class="form-label small" for="from_date">From</label>
+    <label class="form-label small" for="from_date">Từ ngày</label>
     <input class="form-control form-control-sm" id="from_date" name="from_date" type="date" value="{{ filters.from_date or '' }}">
   </div>
   <div class="col-lg-2 col-md-6">
-    <label class="form-label small" for="to_date">To</label>
+    <label class="form-label small" for="to_date">Đến ngày</label>
     <input class="form-control form-control-sm" id="to_date" name="to_date" type="date" value="{{ filters.to_date or '' }}">
   </div>
   <div class="col-lg-2 col-md-6">
-    <label class="form-label small" for="overall_status">Status</label>
+    <label class="form-label small" for="overall_status">Trạng thái</label>
     <select class="form-select form-select-sm" id="overall_status" name="overall_status">
-      <option value="">All</option>
+      <option value="">Tất cả</option>
       {% for status in statuses %}
-        <option value="{{ status }}" {% if filters.overall_status == status %}selected{% endif %}>{{ status }}</option>
+        <option value="{{ status }}" {% if filters.overall_status == status %}selected{% endif %}>{{ status|status_label }}</option>
       {% endfor %}
     </select>
   </div>
   <div class="col-lg-2 col-md-6">
-    <label class="form-label small" for="reporter">Reporter</label>
+    <label class="form-label small" for="reporter">Người báo cáo</label>
     <select class="form-select form-select-sm" id="reporter" name="reporter">
-      <option value="">All</option>
+      <option value="">Tất cả</option>
       {% for reporter in reporters %}
         <option value="{{ reporter.id }}" {% if filters.reporter == reporter.id %}selected{% endif %}>{{ reporter.full_name }}</option>
       {% endfor %}
     </select>
   </div>
   <div class="col-lg-1 col-md-6">
-    <button class="btn btn-sm btn-primary w-100" type="submit"><i class="bi bi-search me-1"></i>Search</button>
+    <button class="btn btn-sm btn-primary w-100" type="submit"><i class="bi bi-search me-1"></i>Lọc</button>
   </div>
 </form>
 
 <div class="row g-3 mb-4">
   {% set card_items = [
-    ('Total reports', cards.total_reports, 'bi-journal-check', 'status-updated'),
-    ('Good', cards.good_reports, 'bi-check-circle', 'status-good'),
-    ('Processing', cards.processing_reports, 'bi-arrow-repeat', 'status-processing'),
-    ('Attention', cards.attention_reports, 'bi-exclamation-circle', 'status-attention'),
-    ('Critical', cards.critical_reports, 'bi-fire', 'status-critical'),
-    ('Open issues', cards.open_issues, 'bi-exclamation-diamond', 'status-open')
+    ('Tổng báo cáo', cards.total_reports, 'bi-journal-check', 'status-updated'),
+    ('Tốt', cards.good_reports, 'bi-check-circle', 'status-good'),
+    ('Đang xử lý', cards.processing_reports, 'bi-arrow-repeat', 'status-processing'),
+    ('Cần chú ý', cards.attention_reports, 'bi-exclamation-circle', 'status-attention'),
+    ('Nghiêm trọng', cards.critical_reports, 'bi-fire', 'status-critical'),
+    ('Vấn đề đang mở', cards.open_issues, 'bi-exclamation-diamond', 'status-open'),
+    ('Tổng vấn đề', cards.total_issues, 'bi-list-check', 'status-muted'),
+    ('Vấn đề nghiêm trọng', cards.critical_issues, 'bi-exclamation-octagon', 'status-critical')
   ] %}
   {% for label, value, icon, tone in card_items %}
-    <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="col-xl-3 col-md-4 col-sm-6">
       <div class="stat-card">
         <div class="stat-icon {{ tone }}"><i class="bi {{ icon }}"></i></div>
         <div>
@@ -70,13 +105,13 @@
 <div class="row g-3 mb-4">
   <div class="col-lg-8">
     <div class="chart-card">
-        <h2 class="h6 mb-3">Reports Trend</h2>
+        <h2 class="h6 mb-3">Xu hướng báo cáo</h2>
         <canvas data-dashboard-chart="bar" data-url="{{ url_for('dashboard_api.report_count_chart') }}?{{ request.query_string.decode() }}"></canvas>
     </div>
   </div>
   <div class="col-lg-4">
     <div class="chart-card">
-        <h2 class="h6 mb-3">Reports by Status</h2>
+        <h2 class="h6 mb-3">Báo cáo theo trạng thái</h2>
         <canvas data-dashboard-chart="pie" data-url="{{ url_for('dashboard_api.status_chart') }}?{{ request.query_string.decode() }}"></canvas>
     </div>
   </div>
@@ -86,17 +121,17 @@
   <div class="col-lg-7">
     <div class="card">
       <div class="card-header py-3">
-        <h2 class="h6 mb-0">Recent Reports</h2>
+        <h2 class="h6 mb-0">Báo cáo gần đây</h2>
       </div>
         <div class="table-responsive">
           <table class="table table-hover align-middle">
             <thead>
               <tr>
-                <th>Project</th>
-                <th>Reporter</th>
-                <th>Status</th>
-                <th>Created</th>
-                <th class="text-end">Actions</th>
+                <th>Dự án</th>
+                <th>Người báo cáo</th>
+                <th>Trạng thái</th>
+                <th>Ngày tạo</th>
+                <th class="text-end">Thao tác</th>
                </tr>
             </thead>
             <tbody>
@@ -108,12 +143,12 @@
                     <div class="small text-muted text-truncate" style="max-width: 260px;">{{ report.highlight }}</div>
                   </td>
                   <td>{{ report.created_by.full_name }}</td>
-                  <td><span class="badge status-badge status-{{ report.overall_status|lower }}">{{ report.overall_status }}</span></td>
+                  <td><span class="badge status-badge status-{{ report.overall_status|lower }}">{{ report.overall_status|status_label }}</span></td>
                   <td>{{ (report.created_at or report.updated_at).strftime('%Y-%m-%d %H:%M') if (report.created_at or report.updated_at) else report.report_date }}</td>
-                  <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('reports.detail', report_id=report.id) }}"><i class="bi bi-eye me-1"></i>Open</a></td>
+                  <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('reports.detail', report_id=report.id) }}"><i class="bi bi-eye me-1"></i>Xem</a></td>
                 </tr>
               {% else %}
-                <tr><td colspan="5"><div class="empty-state"><i class="bi bi-journal-text"></i>No reports found.</div></td></tr>
+                <tr><td colspan="5"><div class="empty-state"><i class="bi bi-journal-text"></i>Không có báo cáo phù hợp.</div></td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -123,16 +158,16 @@
   <div class="col-lg-5">
     <div class="card">
       <div class="card-header py-3">
-        <h2 class="h6 mb-0">Open Issues</h2>
+        <h2 class="h6 mb-0">Vấn đề đang mở</h2>
       </div>
         <div class="table-responsive">
           <table class="table table-hover align-middle">
             <thead>
               <tr>
-                <th>Issue</th>
-                <th>Project</th>
-                <th>Status</th>
-                <th>Severity</th>
+                <th>Vấn đề</th>
+                <th>Dự án</th>
+                <th>Trạng thái</th>
+                <th>Mức độ</th>
               </tr>
             </thead>
             <tbody>
@@ -140,16 +175,50 @@
                 <tr>
                   <td><a href="{{ url_for('issues.edit', issue_id=issue.id) }}">{{ issue.title }}</a></td>
                   <td>{{ issue.project.code }}</td>
-                  <td><span class="badge status-badge status-{{ issue.status|lower }}">{{ issue.status }}</span></td>
-                  <td><span class="badge status-badge severity-{{ issue.severity|lower }}">{{ issue.severity }}</span></td>
+                  <td><span class="badge status-badge status-{{ issue.status|lower }}">{{ issue.status|status_label }}</span></td>
+                  <td><span class="badge status-badge severity-{{ issue.severity|lower }}">{{ issue.severity|status_label }}</span></td>
                 </tr>
               {% else %}
-                <tr><td colspan="4"><div class="empty-state"><i class="bi bi-check2-circle"></i>No open issues.</div></td></tr>
+                <tr><td colspan="4"><div class="empty-state"><i class="bi bi-check2-circle"></i>Không có vấn đề đang mở.</div></td></tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
     </div>
+  </div>
+</div>
+
+<div class="card mt-3">
+  <div class="card-header py-3">
+    <h2 class="h6 mb-0">Vấn đề tồn đọng gần đây</h2>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Vấn đề</th>
+          <th>Dự án</th>
+          <th>Trạng thái</th>
+          <th>Mức độ</th>
+          <th>Ngày mở</th>
+          <th class="text-end">Thao tác</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for issue in recent_issues %}
+          <tr>
+            <td><a href="{{ url_for('issues.edit', issue_id=issue.id) }}">{{ issue.title }}</a></td>
+            <td>{{ issue.project.code }}</td>
+            <td><span class="badge status-badge status-{{ issue.status|lower }}">{{ issue.status|status_label }}</span></td>
+            <td><span class="badge status-badge severity-{{ issue.severity|lower }}">{{ issue.severity|status_label }}</span></td>
+            <td>{{ issue.opened_date }}</td>
+            <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('issues.edit', issue_id=issue.id) }}"><i class="bi bi-eye me-1"></i>Xem</a></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6"><div class="empty-state"><i class="bi bi-check2-circle"></i>Không có vấn đề tồn đọng phù hợp.</div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 {% endblock %}

@@ -17,6 +17,7 @@ from app.reports.services import accessible_projects_query
 
 
 OPEN_ISSUE_STATUSES = [IssueStatus.OPEN.value, IssueStatus.PROCESSING.value]
+ASSIGNED_PROJECT_ROLES = {UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value}
 
 
 class DashboardFilterError(ValueError):
@@ -34,13 +35,15 @@ def parse_filters(args):
     if filters["overall_status"] and filters["overall_status"] not in [
         status.value for status in DailyReportStatus
     ]:
-        raise DashboardFilterError("Invalid report status filter.")
+        raise DashboardFilterError("Bộ lọc trạng thái báo cáo không hợp lệ.")
     return filters
 
 
 def dashboard_context(filters):
     reports = filtered_reports_query(filters)
-    issues = filtered_open_issues_query(filters)
+    issues = filtered_issues_query(filters)
+    open_issues = issues.filter(PersistentIssue.status.in_(OPEN_ISSUE_STATUSES))
+    critical_issues = issues.filter(PersistentIssue.severity == "CRITICAL")
     status_counts = _status_counts(reports)
 
     return {
@@ -54,7 +57,9 @@ def dashboard_context(filters):
             "processing_reports": status_counts.get(DailyReportStatus.PROCESSING.value, 0),
             "attention_reports": status_counts.get(DailyReportStatus.ATTENTION.value, 0),
             "critical_reports": status_counts.get(DailyReportStatus.CRITICAL.value, 0),
-            "open_issues": issues.count(),
+            "total_issues": issues.count(),
+            "open_issues": open_issues.count(),
+            "critical_issues": critical_issues.count(),
         },
         "latest_reports": reports.order_by(
             DailyReport.report_date.desc(),
@@ -62,8 +67,14 @@ def dashboard_context(filters):
         )
         .limit(10)
         .all(),
-        "open_issues": issues.order_by(
+        "open_issues": open_issues.order_by(
             PersistentIssue.severity.desc(),
+            PersistentIssue.opened_date.desc(),
+            PersistentIssue.id.desc(),
+        )
+        .limit(10)
+        .all(),
+        "recent_issues": issues.order_by(
             PersistentIssue.opened_date.desc(),
             PersistentIssue.id.desc(),
         )
@@ -138,10 +149,13 @@ def filtered_reports_query(filters):
 
 
 def filtered_open_issues_query(filters):
+    return filtered_issues_query(filters).filter(PersistentIssue.status.in_(OPEN_ISSUE_STATUSES))
+
+
+def filtered_issues_query(filters):
     query = (
         PersistentIssue.query.filter(
             PersistentIssue.deleted_at.is_(None),
-            PersistentIssue.status.in_(OPEN_ISSUE_STATUSES),
         )
         .join(PersistentIssue.project)
     )
@@ -152,16 +166,20 @@ def filtered_open_issues_query(filters):
         query = query.filter(PersistentIssue.opened_date >= filters["from_date"])
     if filters.get("to_date"):
         query = query.filter(PersistentIssue.opened_date <= filters["to_date"])
+    if filters.get("overall_status") == DailyReportStatus.CRITICAL.value:
+        query = query.filter(PersistentIssue.severity == IssueSeverity.CRITICAL.value)
+    if filters.get("overall_status") == DailyReportStatus.PROCESSING.value:
+        query = query.filter(PersistentIssue.status == IssueStatus.PROCESSING.value)
     return query
 
 
 def accessible_reporters():
     query = User.query.filter(
         User.is_active.is_(True),
-        User.role == UserRole.REPORTER.value,
+        User.role.in_([UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value]),
         User.deleted_at.is_(None),
     )
-    if current_user.role == UserRole.REPORTER.value:
+    if current_user.role in ASSIGNED_PROJECT_ROLES:
         project_ids = [project.id for project in accessible_projects_query().all()]
         query = query.join(ProjectUser, ProjectUser.user_id == User.id).filter(
             ProjectUser.project_id.in_(project_ids or [0])
@@ -180,7 +198,7 @@ def _status_counts(query):
 
 def _apply_project_scope(query):
     query = query.filter(Project.deleted_at.is_(None))
-    if current_user.role == UserRole.REPORTER.value:
+    if current_user.role in ASSIGNED_PROJECT_ROLES:
         query = query.join(ProjectUser, ProjectUser.project_id == Project.id).filter(
             ProjectUser.user_id == current_user.id
         )
@@ -193,7 +211,7 @@ def _parse_date(value, field_name):
     try:
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError as exc:
-        raise DashboardFilterError(f"{field_name} must use YYYY-MM-DD format.") from exc
+        raise DashboardFilterError(f"{field_name} phải đúng định dạng YYYY-MM-DD.") from exc
 
 
 def _is_sqlite():

@@ -5,6 +5,8 @@ from flask_login import current_user
 
 from app.models import ProjectUser, UserRole
 
+ASSIGNED_PROJECT_ROLES = {UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value}
+
 
 def role_required(*roles):
     allowed_roles = {role.value if isinstance(role, UserRole) else role for role in roles}
@@ -40,7 +42,7 @@ def can_read_project(project_id):
     if current_user.role in {UserRole.SUPER_ADMIN.value, UserRole.VIEWER_ADMIN.value}:
         return True
 
-    if current_user.role != UserRole.REPORTER.value:
+    if current_user.role not in ASSIGNED_PROJECT_ROLES:
         return False
 
     return _is_assigned_to_project(project_id)
@@ -56,10 +58,35 @@ def can_write_project(project_id):
     if current_user.role == UserRole.VIEWER_ADMIN.value:
         return False
 
-    if current_user.role != UserRole.REPORTER.value:
+    if current_user.role not in ASSIGNED_PROJECT_ROLES:
         return False
 
     return _is_assigned_to_project(project_id)
+
+
+def can_manage_project(project_id):
+    if not current_user.is_authenticated:
+        return False
+
+    if current_user.role == UserRole.SUPER_ADMIN.value:
+        return True
+
+    if current_user.role == UserRole.PROJECT_MANAGER.value:
+        return _is_assigned_to_project(project_id)
+
+    return False
+
+
+def can_delete_report_for_project(project_id):
+    return can_manage_project(project_id)
+
+
+def can_delete_issue_for_project(project_id):
+    return can_manage_project(project_id)
+
+
+def can_manage_categories_for_project(project_id):
+    return can_manage_project(project_id)
 
 
 def project_read_required(project_id_arg="project_id"):
@@ -68,6 +95,10 @@ def project_read_required(project_id_arg="project_id"):
 
 def project_write_required(project_id_arg="project_id"):
     return _project_permission_required(can_write_project, project_id_arg)
+
+
+def project_manage_required(project_id_arg="project_id"):
+    return _project_permission_required(can_manage_project, project_id_arg)
 
 
 def _project_permission_required(checker, project_id_arg):

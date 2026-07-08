@@ -3,6 +3,7 @@ from flask_login import current_user
 
 from app.config import Config
 from app.extensions import csrf, db, login_manager, migrate
+from app.ui import register_template_helpers
 
 
 def create_app(config_class=Config):
@@ -29,6 +30,7 @@ def create_app(config_class=Config):
     register_blueprints(app)
     register_health_route(app)
     register_auth_guard(app)
+    register_template_helpers(app)
     register_cli(app)
 
     return app

@@ -57,19 +57,23 @@ def seed_test_data():
         make_user(2, "viewer", "viewer@example.com", UserRole.VIEWER_ADMIN.value),
         make_user(3, "reporter", "reporter@example.com", UserRole.REPORTER.value),
         make_user(4, "inactive", "inactive@example.com", UserRole.REPORTER.value, is_active=False),
+        make_user(5, "pm", "pm@example.com", UserRole.PROJECT_MANAGER.value),
     ]
     projects = [
         Project(id=1, code="P001", name="Assigned Project"),
         Project(id=2, code="P002", name="Other Project"),
     ]
-    assignment = ProjectUser(id=1, project_id=1, user_id=3)
+    assignments = [
+        ProjectUser(id=1, project_id=1, user_id=3),
+        ProjectUser(id=2, project_id=1, user_id=5),
+    ]
     categories = [
-        ReportCategory(id=1, project_id=1, name="Progress", sort_order=1, is_active=True),
+        ReportCategory(id=1, project_id=1, name="Progress", icon="tools", sort_order=1, is_active=True),
         ReportCategory(id=2, project_id=1, name="Quality", sort_order=2, is_active=True),
         ReportCategory(id=3, project_id=2, name="Other Progress", sort_order=1, is_active=True),
     ]
 
-    db.session.add_all([*users, *projects, assignment, *categories])
+    db.session.add_all([*users, *projects, *assignments, *categories])
     db.session.commit()
 
 

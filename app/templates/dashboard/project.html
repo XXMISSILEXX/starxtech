@@ -1,28 +1,28 @@
 {% extends "base.html" %}
 
-{% block title %}{{ project.code }} Dashboard - StarX Daily Report{% endblock %}
-{% block page_title %}{{ project.code }} Dashboard{% endblock %}
+{% block title %}Bảng điều khiển {{ project.code }} - StarX Daily Report{% endblock %}
+{% block page_title %}Bảng điều khiển {{ project.code }}{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-start mb-4">
   <div>
     <h2 class="h5 mb-1">{{ project.name }}</h2>
-    <div class="text-muted">{{ project.description or 'No description.' }}</div>
+    <div class="text-muted">{{ project.description or 'Chưa có mô tả.' }}</div>
     <span class="badge status-badge status-muted mt-2">{{ project.status }}</span>
   </div>
   {% if can_write %}
-    <a class="btn btn-primary" href="{{ url_for('projects.reports_create', project_id=project.id) }}"><i class="bi bi-plus-lg me-1"></i>Add report</a>
+    <a class="btn btn-primary" href="{{ url_for('projects.reports_create', project_id=project.id) }}"><i class="bi bi-plus-lg me-1"></i>Tạo báo cáo mới</a>
   {% endif %}
 </div>
 
 <div class="row g-3 mb-4">
   {% set card_items = [
-    ('Total Reports', cards.total_reports, 'bi-journal-check', 'status-updated'),
-    ('Good', cards.good_reports, 'bi-check-circle', 'status-good'),
-    ('Processing', cards.processing_reports, 'bi-arrow-repeat', 'status-processing'),
-    ('Attention', cards.attention_reports, 'bi-exclamation-circle', 'status-attention'),
-    ('Critical', cards.critical_reports, 'bi-fire', 'status-critical'),
-    ('Open Issues', cards.open_issues, 'bi-exclamation-diamond', 'status-open')
+    ('Tổng báo cáo', cards.total_reports, 'bi-journal-check', 'status-updated'),
+    ('Tốt', cards.good_reports, 'bi-check-circle', 'status-good'),
+    ('Đang xử lý', cards.processing_reports, 'bi-arrow-repeat', 'status-processing'),
+    ('Cần chú ý', cards.attention_reports, 'bi-exclamation-circle', 'status-attention'),
+    ('Nghiêm trọng', cards.critical_reports, 'bi-fire', 'status-critical'),
+    ('Vấn đề đang mở', cards.open_issues, 'bi-exclamation-diamond', 'status-open')
   ] %}
   {% for label, value, icon, tone in card_items %}
     <div class="col-xl-2 col-md-4 col-sm-6">
@@ -41,14 +41,14 @@
   <div class="col-lg-3">
     <div class="card">
       <div class="card-header py-3">
-        <h2 class="h6 mb-0">Report Dates</h2>
+        <h2 class="h6 mb-0">Ngày báo cáo</h2>
       </div>
       <div class="card-body">
         <div class="list-group list-group-flush">
           {% for report_date in report_dates %}
             <div class="list-group-item px-0">{{ report_date }}</div>
           {% else %}
-            <div class="empty-state py-4"><i class="bi bi-calendar3"></i>No report dates.</div>
+            <div class="empty-state py-4"><i class="bi bi-calendar3"></i>Chưa có ngày báo cáo.</div>
           {% endfor %}
         </div>
       </div>
@@ -57,28 +57,28 @@
   <div class="col-lg-9">
     <div class="card">
       <div class="card-header py-3">
-        <h2 class="h6 mb-0">Report History</h2>
+        <h2 class="h6 mb-0">Lịch sử báo cáo</h2>
       </div>
         <div class="table-responsive">
           <table class="table table-hover align-middle">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Status</th>
-                <th>Highlight</th>
-                <th>Reporter</th>
+                <th>Ngày</th>
+                <th>Trạng thái</th>
+                <th>Điểm nổi bật</th>
+                <th>Người báo cáo</th>
               </tr>
             </thead>
             <tbody>
               {% for report in report_history %}
                 <tr>
                   <td><a href="{{ url_for('reports.detail', report_id=report.id) }}">{{ report.report_date }}</a></td>
-                  <td><span class="badge status-badge status-{{ report.overall_status|lower }}">{{ report.overall_status }}</span></td>
+                  <td><span class="badge status-badge status-{{ report.overall_status|lower }}">{{ report.overall_status|status_label }}</span></td>
                   <td class="text-truncate" style="max-width: 360px;">{{ report.highlight }}</td>
                   <td>{{ report.created_by.full_name }}</td>
                 </tr>
               {% else %}
-                <tr><td colspan="4"><div class="empty-state"><i class="bi bi-journal-text"></i>No reports found.</div></td></tr>
+                <tr><td colspan="4"><div class="empty-state"><i class="bi bi-journal-text"></i>Không có báo cáo.</div></td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -90,32 +90,32 @@
 <div class="card">
   <div class="card-header py-3">
     <div class="d-flex justify-content-between align-items-center mb-2">
-      <h2 class="h6 mb-0">Open Persistent Issues</h2>
-      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('projects.issues', project_id=project.id) }}"><i class="bi bi-arrow-right me-1"></i>View issues</a>
+      <h2 class="h6 mb-0">Vấn đề tồn đọng đang mở</h2>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('projects.issues', project_id=project.id) }}"><i class="bi bi-arrow-right me-1"></i>Xem vấn đề</a>
     </div>
   </div>
     <div class="table-responsive">
       <table class="table table-hover align-middle">
         <thead>
           <tr>
-            <th>Issue</th>
-            <th>Status</th>
-            <th>Severity</th>
-            <th>Due</th>
-            <th>Owner</th>
+            <th>Vấn đề</th>
+            <th>Trạng thái</th>
+            <th>Mức độ</th>
+            <th>Hạn xử lý</th>
+            <th>Phụ trách</th>
           </tr>
         </thead>
         <tbody>
           {% for issue in open_issues %}
           <tr>
             <td><a href="{{ url_for('issues.edit', issue_id=issue.id) }}">{{ issue.title }}</a></td>
-              <td><span class="badge status-badge status-{{ issue.status|lower }}">{{ issue.status }}</span></td>
-              <td><span class="badge status-badge severity-{{ issue.severity|lower }}">{{ issue.severity }}</span></td>
+              <td><span class="badge status-badge status-{{ issue.status|lower }}">{{ issue.status|status_label }}</span></td>
+              <td><span class="badge status-badge severity-{{ issue.severity|lower }}">{{ issue.severity|status_label }}</span></td>
             <td>{{ issue.due_date or '-' }}</td>
             <td>{{ issue.owner.full_name if issue.owner else '-' }}</td>
           </tr>
         {% else %}
-            <tr><td colspan="5"><div class="empty-state"><i class="bi bi-check2-circle"></i>No open issues.</div></td></tr>
+            <tr><td colspan="5"><div class="empty-state"><i class="bi bi-check2-circle"></i>Không có vấn đề đang mở.</div></td></tr>
         {% endfor %}
       </tbody>
     </table>

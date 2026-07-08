@@ -1,9 +1,7 @@
 from flask import abort, flash, redirect, render_template, request, url_for
-from flask_login import current_user
-
-from app.auth.permissions import can_read_project, can_write_project
+from app.auth.permissions import can_delete_report_for_project, can_read_project, can_write_project
 from app.extensions import db
-from app.models import DailyReport, DailyReportStatus, Project, SectionStatus, UserRole
+from app.models import DailyReport, DailyReportStatus, Project, SectionStatus
 from app.reports import bp
 from app.reports.services import (
     ReportValidationError,
@@ -75,7 +73,7 @@ def edit(report_id):
             db.session.rollback()
             flash(str(exc), "danger")
             return _render_form(report), 400
-        flash("Report saved.", "success")
+        flash("Đã lưu báo cáo.", "success")
         return redirect(url_for("reports.detail", report_id=report.id))
 
     return _render_form(report)
@@ -87,7 +85,7 @@ def delete(report_id):
     if not _can_delete_report(report):
         abort(403)
     delete_report(report)
-    flash("Report deleted.", "success")
+    flash("Đã xóa báo cáo.", "success")
     return redirect(url_for("reports.index"))
 
 
@@ -122,4 +120,4 @@ def _require_can_write(report):
 
 
 def _can_delete_report(report):
-    return can_write_project(report.project_id) and current_user.role == UserRole.SUPER_ADMIN.value
+    return can_delete_report_for_project(report.project_id)

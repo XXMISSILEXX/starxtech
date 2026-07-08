@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Project Reporters - StarX Daily Report{% endblock %}
-{% block page_title %}Reporters: {{ project.code }}{% endblock %}
+{% block title %}Phân quyền dự án - StarX Daily Report{% endblock %}
+{% block page_title %}Phân quyền: {{ project.code }}{% endblock %}
 
 {% block content %}
 <div class="mb-3">
-  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-arrow-left me-1"></i>Back to projects</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-arrow-left me-1"></i>Quay lại dự án</a>
 </div>
 
 <form method="post" class="form-card">
@@ -15,16 +15,16 @@
       <label class="list-group-item d-flex justify-content-between align-items-center">
         <span>
           <span class="fw-semibold">{{ reporter.full_name }}</span>
-          <span class="text-muted small">{{ reporter.username }}</span>
+          <span class="text-muted small">{{ reporter.username }} · {{ reporter.role|role_label }}</span>
         </span>
         <input class="form-check-input" type="checkbox" name="reporter_ids" value="{{ reporter.id }}" {% if reporter.id in assigned_ids %}checked{% endif %} {% if current_user.role != 'SUPER_ADMIN' %}disabled{% endif %}>
       </label>
     {% else %}
-      <div class="empty-state py-4"><i class="bi bi-people"></i>No active reporters.</div>
+      <div class="empty-state py-4"><i class="bi bi-people"></i>Chưa có người báo cáo hoặc quản lý dự án đang hoạt động.</div>
     {% endfor %}
   </div>
   {% if current_user.role == 'SUPER_ADMIN' %}
-    <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>Save assignments</button>
+    <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>Lưu phân quyền</button>
   {% endif %}
 </form>
 {% endblock %}

@@ -10,7 +10,7 @@ class User(UserMixin, TimestampMixin, SoftDeleteMixin, db.Model):
     __tablename__ = "users"
     __table_args__ = (
         db.CheckConstraint(
-            "role IN ('SUPER_ADMIN', 'VIEWER_ADMIN', 'REPORTER')",
+            "role IN ('SUPER_ADMIN', 'VIEWER_ADMIN', 'PROJECT_MANAGER', 'REPORTER')",
             name="ck_users_role",
         ),
     )
