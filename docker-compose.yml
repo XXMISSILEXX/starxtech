@@ -1,0 +1,140 @@
+name: construction-relation-management
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    image: construction-relation-management:2026.07.14
+    container_name: construction-relation-management-web
+    restart: unless-stopped
+    init: true
+
+    environment:
+      APP_ENV: production
+      FLASK_DEBUG: "false"
+      FLASK_APP: wsgi.py
+
+      APP_PORT: "6655"
+
+      SECRET_KEY_FILE: /run/secrets/app_secret_key
+      DATABASE_URL_FILE: /run/secrets/database_url
+      ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+
+      UPLOAD_ROOT: /app/storage/uploads
+      TMP_ROOT: /app/tmp
+
+      MAX_UPLOAD_MB: "10"
+      MAX_IMAGES_PER_SECTION: "3"
+
+      SESSION_COOKIE_SECURE: "true"
+      SESSION_COOKIE_HTTPONLY: "true"
+      SESSION_COOKIE_SAMESITE: Lax
+
+      RATELIMIT_STORAGE_URI: memory://
+      RATELIMIT_LOGIN_LIMIT: "5 per minute"
+      RATELIMIT_EXPORT_LIMIT: "10 per hour"
+
+      # Cloudflared is the sole reverse proxy. Set TRUSTED_HOSTS on the host
+      # to the public hostname(s), comma-separated; leave blank only while
+      # completing initial tunnel setup.
+      TRUST_PROXY_HOPS: "1"
+      TRUSTED_HOSTS: smart-home.starxvietnam.com
+      PUBLIC_HOSTNAME: smart-home.starxvietnam.com
+      
+      WEB_CONCURRENCY: "2"
+      GUNICORN_THREADS: "2"
+      GUNICORN_TIMEOUT: "120"
+
+      RUN_MIGRATIONS: "false"
+      RUN_SECURITY_AUDIT: "false"
+      SEED_ADMIN: "false"
+
+      ADMIN_USERNAME: admin
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_FULL_NAME: System Admin
+
+    secrets:
+      - app_secret_key
+      - database_url
+      - admin_password
+
+    volumes:
+      - /srv/construction_relation_management/uploads:/app/storage/uploads
+      - /srv/construction_relation_management/tmp:/app/tmp
+      - /var/run/postgresql:/var/run/postgresql:ro
+
+    expose:
+      - "6655"
+
+    # Chỉ bật dòng ports này nếu cần test local bằng http://127.0.0.1:6655.
+    # Khi chạy production qua Cloudflared, nên để comment.
+    # ports:
+    #   - "127.0.0.1:6655:6655"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6655/healthz').read()"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+    networks:
+      - appnet
+
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: construction-relation-management-cloudflared
+    restart: unless-stopped
+    init: true
+
+    environment:
+      TUNNEL_TOKEN_FILE: /run/secrets/cloudflare_tunnel_token
+
+    command: tunnel --no-autoupdate run
+
+    secrets:
+      - cloudflare_tunnel_token
+
+    depends_on:
+      web:
+        condition: service_healthy
+
+    networks:
+      - appnet
+
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+secrets:
+  app_secret_key:
+    file: /srv/construction_relation_management/secrets/app_secret_key
+
+  database_url:
+    file: /srv/construction_relation_management/secrets/database_url
+
+  admin_password:
+    file: /srv/construction_relation_management/secrets/admin_password
+
+  cloudflare_tunnel_token:
+    file: /srv/construction_relation_management/secrets/cloudflare_tunnel_token
+
+networks:
+  appnet:
+    driver: bridge

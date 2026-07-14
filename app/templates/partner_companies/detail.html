@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}{{ company.name }}{% endblock %}
+{% block page_title %}{{ company.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-end gap-2 mb-3">
+  <a class="btn btn-outline-secondary" href="{{ url_for('partner_companies.index') }}">Quay lại</a>
+  {% if can_edit %}
+    <a class="btn btn-outline-primary" href="{{ url_for('partner_companies.departments', company_id=company.id) }}">Phòng ban</a>
+    <a class="btn btn-primary" href="{{ url_for('partner_companies.edit', company_id=company.id) }}">Sửa</a>
+  {% endif %}
+</div>
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card"><div class="card-header bg-white fw-semibold">Thông tin công ty</div><div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-sm-4">Ngành</dt><dd class="col-sm-8">{{ company.industry or '-' }}</dd>
+        <dt class="col-sm-4">Điện thoại</dt><dd class="col-sm-8">{{ company.phone or '-' }}</dd>
+        <dt class="col-sm-4">Email</dt><dd class="col-sm-8">{{ company.email or '-' }}</dd>
+        <dt class="col-sm-4">Website</dt><dd class="col-sm-8">{{ company.website or '-' }}</dd>
+        <dt class="col-sm-4">Địa chỉ</dt><dd class="col-sm-8">{{ company.address or '-' }}</dd>
+        <dt class="col-sm-4">Ghi chú</dt><dd class="col-sm-8">{% if company.notes %}<div class="text-pre-line">{{ company.notes }}</div>{% else %}<span class="text-muted">Chưa có ghi chú.</span>{% endif %}</dd>
+      </dl>
+    </div></div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card mb-3"><div class="card-header bg-white d-flex justify-content-between align-items-center"><span class="fw-semibold">Phòng ban</span>{% if can_edit %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('partner_companies.departments_new', company_id=company.id) }}">Thêm phòng ban</a>{% endif %}</div><div class="card-body">
+      {% for department in departments %}
+        <div class="d-flex justify-content-between gap-2 border-bottom py-2">
+          <div>
+            <div class="fw-semibold">{{ department.name }}</div>
+            <div class="text-muted small">{% if department.parent_department %}Thuộc {{ department.parent_department.name }}{% else %}Cấp cao nhất{% endif %}</div>
+          </div>
+          {% if can_edit %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('partner_companies.departments_edit', company_id=company.id, department_id=department.id) }}">Sửa</a>{% endif %}
+        </div>
+      {% else %}
+        <div class="text-muted">Chưa có phòng ban.</div>
+      {% endfor %}
+    </div></div>
+    <div class="card"><div class="card-header bg-white fw-semibold">Đối tác theo phòng ban</div><div class="card-body">
+      {% for department, partners in grouped_partners.items() %}
+        <div class="mb-3">
+          <div class="fw-semibold">{{ department }}</div>
+          <ul class="mb-0">
+            {% for partner in partners %}
+              <li><a href="{{ url_for('partners.detail', partner_id=partner.id) }}">{{ partner.full_name }}</a>{% if partner.position %} · {{ partner.position }}{% endif %}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% else %}
+        <div class="text-muted">Chưa có đối tác thuộc công ty này.</div>
+      {% endfor %}
+    </div></div>
+  </div>
+  <div class="col-12">
+    <div class="card"><div class="card-header bg-white fw-semibold">Sơ đồ quan hệ</div><div class="card-body">
+      {% if relationships %}
+        <ul class="mb-0">
+          {% for relationship in relationships %}
+            <li>
+              <a href="{{ url_for('partners.detail', partner_id=relationship.from_partner.id) }}">{{ relationship.from_partner.full_name }}</a>
+              <span class="text-muted">quản lý</span>
+              <a href="{{ url_for('partners.detail', partner_id=relationship.to_partner.id) }}">{{ relationship.to_partner.full_name }}</a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="text-muted">Chưa có dữ liệu quan hệ trong công ty này.</div>
+      {% endif %}
+    </div></div>
+  </div>
+</div>
+{% endblock %}

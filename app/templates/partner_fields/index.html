@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Trường dữ liệu đối tác{% endblock %}
+{% block page_title %}Trường dữ liệu đối tác{% endblock %}
+
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body">
+    <form class="row g-2" method="get">
+      <div class="col-md-3"><input class="form-control" name="q" value="{{ filters.get('q', '') }}" placeholder="Tìm tên hoặc mã"></div>
+      <div class="col-md-2"><select class="form-select" name="field_type"><option value="">Kiểu dữ liệu</option>{% for type in field_types %}<option value="{{ type }}" {% if filters.get('field_type') == type %}selected{% endif %}>{{ type }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><select class="form-select" name="group_name"><option value="">Nhóm</option>{% for group in group_names %}<option value="{{ group }}" {% if filters.get('group_name') == group %}selected{% endif %}>{{ group }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><select class="form-select" name="active"><option value="">Trạng thái</option><option value="1" {% if filters.get('active') == '1' %}selected{% endif %}>Đang dùng</option><option value="0" {% if filters.get('active') == '0' %}selected{% endif %}>Đã vô hiệu hóa</option></select></div>
+      <div class="col-md-3 d-flex gap-2"><button class="btn btn-outline-secondary flex-fill" type="submit"><i class="bi bi-funnel me-1"></i>Lọc</button><a class="btn btn-outline-secondary" href="{{ url_for('partner_fields.index') }}">Xóa lọc</a></div>
+    </form>
+  </div>
+</div>
+<div class="d-flex justify-content-end mb-3">
+  <a class="btn btn-primary" href="{{ url_for('partner_fields.new') }}">Thêm trường</a>
+</div>
+<form method="post" action="{{ url_for('partner_fields.reorder') }}" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>Thứ tự</th><th>Tên</th><th>Mã</th><th>Kiểu</th><th>Nhóm</th><th>Trạng thái</th><th></th></tr></thead>
+      <tbody>
+      {% for field in fields %}
+        <tr>
+          <td style="width: 100px;"><input class="form-control form-control-sm" name="sort_order_{{ field.id }}" value="{{ field.sort_order }}"></td>
+          <td>{{ field.label }}</td>
+          <td><code>{{ field.field_key }}</code></td>
+          <td>{{ field.field_type }}</td>
+          <td>{{ field.group_name or '-' }}</td>
+          <td>{{ 'Đang dùng' if field.is_active else 'Đã vô hiệu hóa' }}</td>
+          <td class="text-end">
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('partner_fields.edit', field_id=field.id) }}">Sửa</a>
+            {% if field.is_active %}
+              <button class="btn btn-sm btn-outline-danger" form="deactivate-field-{{ field.id }}" type="submit">Vô hiệu hóa</button>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="text-center text-muted py-4">Chưa có trường dữ liệu.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer bg-white text-end"><button class="btn btn-outline-secondary" type="submit">Lưu thứ tự</button></div>
+</form>
+{% for field in fields %}
+  <form id="deactivate-field-{{ field.id }}" method="post" action="{{ url_for('partner_fields.deactivate', field_id=field.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  </form>
+{% endfor %}
+{% endblock %}

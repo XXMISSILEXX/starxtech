@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 from flask import current_app, request
 from flask_login import current_user
@@ -27,7 +28,9 @@ MAX_IMAGE_WIDTH = 1920
 
 
 class ReportValidationError(ValueError):
-    pass
+    def __init__(self, message, errors=None):
+        super().__init__(message)
+        self.errors = errors or {}
 
 
 def accessible_projects_query():
@@ -67,7 +70,7 @@ def categories_for_report(report):
 
 def parse_report_date(value):
     if not value:
-        raise ReportValidationError("Ngày báo cáo là bắt buộc.")
+        raise ReportValidationError("Vui lòng chọn ngày báo cáo.", {"report_date": "Vui lòng chọn ngày báo cáo."})
     try:
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError as exc:
@@ -75,6 +78,7 @@ def parse_report_date(value):
 
 
 def create_report(project, form, files):
+    validate_report_form(form, project.id)
     report_date = parse_report_date(form.get("report_date", "").strip())
     existing = DailyReport.query.filter_by(project_id=project.id, report_date=report_date).first()
     if existing:
@@ -96,6 +100,7 @@ def create_report(project, form, files):
 
 
 def update_report(report, form, files):
+    validate_report_form(form, report.project_id)
     old_values = report_snapshot(report)
     report.report_date = parse_report_date(form.get("report_date", "").strip())
 
@@ -153,11 +158,11 @@ def parse_sections(form):
         if not category_raw and not status and not content:
             continue
         if not category_raw:
-            raise ReportValidationError("Mỗi phần báo cáo phải chọn một hạng mục.")
+            raise ReportValidationError("Vui lòng chọn hạng mục.", {f"sections-{index}-category_id": "Vui lòng chọn hạng mục."})
         if not content:
-            raise ReportValidationError("Mỗi phần báo cáo phải có nội dung.")
+            raise ReportValidationError("Mỗi phần báo cáo phải có nội dung.", {f"sections-{index}-content": "Mỗi phần báo cáo phải có nội dung."})
         if status not in [item.value for item in SectionStatus]:
-            raise ReportValidationError("Trạng thái phần báo cáo không hợp lệ.")
+            raise ReportValidationError("Vui lòng chọn trạng thái.", {f"sections-{index}-status": "Vui lòng chọn trạng thái."})
         try:
             category_id = int(category_raw)
         except ValueError as exc:
@@ -208,9 +213,9 @@ def _assign_report_fields(report, form):
     overall_status = form.get("overall_status", "").strip()
     highlight = form.get("highlight", "").strip()
     if overall_status not in [item.value for item in DailyReportStatus]:
-        raise ReportValidationError("Trạng thái báo cáo không hợp lệ.")
+        raise ReportValidationError("Vui lòng chọn trạng thái.", {"overall_status": "Vui lòng chọn trạng thái."})
     if not highlight:
-        raise ReportValidationError("Điểm nổi bật là bắt buộc.")
+        raise ReportValidationError("Vui lòng nhập điểm nổi bật.", {"highlight": "Vui lòng nhập điểm nổi bật."})
     report.overall_status = overall_status
     report.highlight = highlight
     report.summary_note = form.get("summary_note", "").strip() or None
@@ -342,3 +347,114 @@ def _attachment_dir(report, section):
         / f"report_{report.id}"
         / f"section_{section.id}"
     )
+
+
+def validate_report_form(form, project_id):
+    errors = {}
+    report_date_raw = form.get("report_date", "").strip()
+    overall_status = form.get("overall_status", "").strip()
+    highlight = form.get("highlight", "").strip()
+
+    if not report_date_raw:
+        errors["report_date"] = "Vui lòng chọn ngày báo cáo."
+    else:
+        try:
+            datetime.strptime(report_date_raw, "%Y-%m-%d").date()
+        except ValueError:
+            errors["report_date"] = "Ngày báo cáo phải đúng định dạng YYYY-MM-DD."
+
+    if overall_status not in [item.value for item in DailyReportStatus]:
+        errors["overall_status"] = "Vui lòng chọn trạng thái."
+    if not highlight:
+        errors["highlight"] = "Vui lòng nhập điểm nổi bật."
+
+    section_indexes = _section_indexes(form)
+    if not section_indexes:
+        errors["sections"] = "Vui lòng thêm ít nhất một phần báo cáo."
+
+    seen_categories = set()
+    category_ids = set()
+    for index in section_indexes:
+        category_raw = form.get(f"sections-{index}-category_id", "").strip()
+        status = form.get(f"sections-{index}-status", "").strip()
+        content = form.get(f"sections-{index}-content", "").strip()
+
+        if not category_raw:
+            errors[f"sections-{index}-category_id"] = "Vui lòng chọn hạng mục."
+        else:
+            try:
+                category_id = int(category_raw)
+                category_ids.add(category_id)
+                if category_id in seen_categories:
+                    errors[f"sections-{index}-category_id"] = "Hạng mục không được trùng trong cùng báo cáo."
+                seen_categories.add(category_id)
+            except ValueError:
+                errors[f"sections-{index}-category_id"] = "Hạng mục báo cáo không hợp lệ."
+
+        if status not in [item.value for item in SectionStatus]:
+            errors[f"sections-{index}-status"] = "Vui lòng chọn trạng thái."
+        if not content:
+            errors[f"sections-{index}-content"] = "Mỗi phần báo cáo phải có nội dung."
+
+    if category_ids:
+        valid_ids = {
+            row[0]
+            for row in ReportCategory.query.with_entities(ReportCategory.id)
+            .filter(
+                ReportCategory.project_id == project_id,
+                ReportCategory.id.in_(category_ids),
+                ReportCategory.deleted_at.is_(None),
+            )
+            .all()
+        }
+        for index in section_indexes:
+            category_raw = form.get(f"sections-{index}-category_id", "").strip()
+            if category_raw.isdigit() and int(category_raw) not in valid_ids:
+                errors[f"sections-{index}-category_id"] = "Hạng mục phải thuộc dự án này."
+
+    if errors:
+        first_message = next(iter(errors.values()))
+        raise ReportValidationError(first_message, errors)
+
+
+def build_report_form_data(form, report=None):
+    existing_by_category = {}
+    if report:
+        for section in report.sections:
+            if section.deleted_at is None:
+                existing_by_category[section.report_category_id] = section
+
+    sections = []
+    for sort_order, index in enumerate(_section_indexes(form)):
+        category_raw = form.get(f"sections-{index}-category_id", "").strip()
+        category_id = int(category_raw) if category_raw.isdigit() else None
+        existing = existing_by_category.get(category_id)
+        sections.append(
+            SimpleNamespace(
+                form_index=index,
+                report_category_id=category_id,
+                status=form.get(f"sections-{index}-status", "").strip(),
+                content=form.get(f"sections-{index}-content", ""),
+                sort_order=sort_order,
+                deleted_at=None,
+                attachments=existing.attachments if existing else [],
+            )
+        )
+
+    return SimpleNamespace(
+        report_date=form.get("report_date", ""),
+        overall_status=form.get("overall_status", ""),
+        highlight=form.get("highlight", ""),
+        summary_note=form.get("summary_note", ""),
+        sections=sections,
+    )
+
+
+def _section_indexes(form):
+    indexes = set()
+    for key in form.keys():
+        if key.startswith("sections-"):
+            parts = key.split("-")
+            if len(parts) >= 3 and parts[1].isdigit():
+                indexes.add(int(parts[1]))
+    return sorted(indexes)

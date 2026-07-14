@@ -38,12 +38,14 @@
       <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-funnel me-1"></i>Lọc</button>
     </div>
   </form>
-  {% if project and current_user.role != 'VIEWER_ADMIN' %}
-    <a class="btn btn-primary" href="{{ url_for('projects.reports_create', project_id=project.id) }}"><i class="bi bi-plus-lg me-1"></i>Tạo báo cáo</a>
+  {% if project and can_create_report_entry %}
+    <a class="btn btn-primary report-create-entry" href="{{ url_for('projects.reports_create', project_id=project.id) }}"><i class="bi bi-plus-lg me-1"></i><span class="d-none d-md-inline">Tạo báo cáo</span><span class="d-md-none">Tạo</span></a>
+  {% elif not project and can_create_report_entry %}
+    <a class="btn btn-primary report-create-entry" href="{{ url_for('projects.index', create_report=1) }}"><i class="bi bi-plus-lg me-1"></i><span class="d-none d-md-inline">Tạo báo cáo</span><span class="d-md-none">Tạo</span></a>
   {% endif %}
 </div>
 
-<div class="table-card table-responsive">
+<div class="table-card table-responsive mobile-cards">
   <table class="table table-hover align-middle">
     <thead>
       <tr>
@@ -53,21 +55,36 @@
         <th>Điểm nổi bật</th>
         <th>Người tạo</th>
         <th>Cập nhật</th>
+        <th class="text-end">Thao tác</th>
       </tr>
     </thead>
     <tbody>
       {% for report in reports %}
         <tr>
-          <td><a href="{{ url_for('reports.detail', report_id=report.id) }}">{{ report.report_date }}</a></td>
-          <td>{{ report.project.code }} - {{ report.project.name }}</td>
-          <td><span class="badge status-badge status-{{ report.overall_status|lower }}">{{ report.overall_status|status_label }}</span></td>
-          <td class="text-truncate" style="max-width: 360px;">{{ report.highlight }}</td>
-          <td>{{ report.created_by.full_name }}</td>
-          <td>{{ report.updated_at.strftime('%Y-%m-%d %H:%M') if report.updated_at else '-' }}</td>
+          <td data-label="Ngày"><a href="{{ url_for('reports.detail', report_id=report.id) }}">{{ report.report_date }}</a></td>
+          <td data-label="Dự án">{{ report.project.code }} - {{ report.project.name }}</td>
+          <td data-label="Trạng thái"><span class="badge status-badge status-{{ report.overall_status|lower }}">{{ report.overall_status|status_label }}</span></td>
+          <td data-label="Điểm nổi bật" class="text-truncate" style="max-width: 360px;">{{ report.highlight }}</td>
+          <td data-label="Người tạo">{{ report.created_by.full_name }}</td>
+          <td data-label="Cập nhật">{{ report.updated_at.strftime('%Y-%m-%d %H:%M') if report.updated_at else '-' }}</td>
+          <td data-label="Thao tác" class="text-end">
+            <div class="mobile-card-actions">
+              <a class="btn btn-sm btn-outline-primary btn-action-mobile" href="{{ url_for('reports.detail', report_id=report.id) }}" aria-label="Xem chi tiết" title="Xem chi tiết"><i class="bi bi-eye"></i><span class="action-label">Xem chi tiết</span></a>
+              {% if can_write_by_project.get(report.id) %}
+                <a class="btn btn-sm btn-outline-secondary btn-action-mobile" href="{{ url_for('reports.edit', report_id=report.id) }}" aria-label="Sửa" title="Sửa"><i class="bi bi-pencil"></i><span class="action-label">Sửa</span></a>
+              {% endif %}
+              {% if can_delete_by_report.get(report.id) %}
+                <form method="post" action="{{ url_for('reports.delete', report_id=report.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-sm btn-outline-danger btn-action-mobile" type="submit" data-confirm="Xóa báo cáo này?" aria-label="Xóa" title="Xóa"><i class="bi bi-trash"></i><span class="action-label">Xóa</span></button>
+                </form>
+              {% endif %}
+            </div>
+          </td>
         </tr>
       {% else %}
         <tr>
-          <td colspan="6"><div class="empty-state"><i class="bi bi-journal-text"></i>Không tìm thấy báo cáo.</div></td>
+          <td colspan="7"><div class="empty-state"><i class="bi bi-journal-text"></i>Không tìm thấy báo cáo.</div></td>
         </tr>
       {% endfor %}
     </tbody>

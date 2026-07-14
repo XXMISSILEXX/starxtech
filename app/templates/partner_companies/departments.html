@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Phòng ban · {{ company.name }}{% endblock %}
+{% block page_title %}Phòng ban · {{ company.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-end gap-2 mb-3">
+  <a class="btn btn-outline-secondary" href="{{ url_for('partner_companies.detail', company_id=company.id) }}">Quay lại</a>
+  <a class="btn btn-primary" href="{{ url_for('partner_companies.departments_new', company_id=company.id) }}"><i class="bi bi-plus-lg me-1"></i>Thêm phòng ban</a>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <form class="row g-2" method="get">
+      <div class="col-md-4"><input class="form-control" name="q" value="{{ filters.get('q', '') }}" placeholder="Tìm phòng ban"></div>
+      <div class="col-md-3">
+        <select class="form-select" name="parent_department_id">
+          <option value="">Phòng ban cấp trên</option>
+          {% for department in parent_options %}
+            <option value="{{ department.id }}" {% if filters.get('parent_department_id') == department.id|string %}selected{% endif %}>{{ department.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2"><select class="form-select" name="active"><option value="">Trạng thái</option><option value="1" {% if filters.get('active') == '1' %}selected{% endif %}>Đang hoạt động</option><option value="0" {% if filters.get('active') == '0' %}selected{% endif %}>Đã vô hiệu hóa</option></select></div>
+      <div class="col-md-3 d-flex gap-2"><button class="btn btn-outline-secondary flex-fill" type="submit">Lọc</button><a class="btn btn-outline-secondary" href="{{ url_for('partner_companies.departments', company_id=company.id) }}">Xóa lọc</a></div>
+    </form>
+  </div>
+</div>
+
+<div class="card table-card mobile-cards">
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>Tên phòng ban</th><th>Cấp trên</th><th>Loại</th><th>Mô tả</th><th>Thứ tự</th><th>Trạng thái</th><th class="text-end">Thao tác</th></tr></thead>
+      <tbody>
+      {% for department in departments %}
+        <tr>
+          <td data-label="Phòng ban" class="fw-semibold">{{ department.name }}</td>
+          <td data-label="Cấp trên">{{ department.parent_department.name if department.parent_department else '-' }}</td>
+          <td data-label="Loại">{% if department.is_special_department %}<span class="badge text-bg-info">Đặc biệt</span>{% else %}<span class="text-muted">Thường</span>{% endif %}</td>
+          <td data-label="Mô tả">{{ department.description or '-' }}</td>
+          <td data-label="Thứ tự">{{ department.display_order }}</td>
+          <td data-label="Trạng thái">{{ 'Đang hoạt động' if department.is_active else 'Đã vô hiệu hóa' }}</td>
+          <td data-label="Thao tác" class="text-end">
+            <div class="mobile-card-actions justify-content-end">
+              <a class="btn btn-sm btn-outline-primary btn-action-mobile" href="{{ url_for('partner_companies.departments_edit', company_id=company.id, department_id=department.id) }}" aria-label="Sửa" title="Sửa"><i class="bi bi-pencil"></i><span class="action-label">Sửa</span></a>
+              {% if department.is_active %}
+                <form method="post" action="{{ url_for('partner_companies.departments_delete', company_id=company.id, department_id=department.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-sm btn-outline-danger btn-action-mobile" type="submit" data-confirm="Vô hiệu hóa phòng ban này?" aria-label="Vô hiệu hóa" title="Vô hiệu hóa"><i class="bi bi-trash"></i><span class="action-label">Vô hiệu hóa</span></button>
+                </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="text-center text-muted py-4">Chưa có phòng ban.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -4,47 +4,63 @@
 {% block page_title %}{% if issue.id %}Sửa vấn đề tồn đọng{% else %}Thêm vấn đề tồn đọng{% endif %}{% endblock %}
 
 {% block content %}
+{% set form_errors = form_errors if form_errors is defined else {} %}
 <form method="post" class="form-card">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="row g-3">
     <div class="col-md-8">
       <label class="form-label" for="title">Tiêu đề</label>
-      <input class="form-control" id="title" name="title" value="{{ issue.title or '' }}" {% if not can_write %}disabled{% endif %} required>
+      <input class="form-control {% if form_errors.get('title') %}is-invalid{% endif %}" id="title" name="title" value="{{ issue.title or '' }}" {% if not can_write %}disabled{% endif %} required>
+      {% if form_errors.get('title') %}<div class="invalid-feedback">{{ form_errors.get('title') }}</div>{% endif %}
     </div>
     <div class="col-md-4">
       <label class="form-label">Dự án</label>
-      <input class="form-control" value="{{ project.code }} - {{ project.name }}" disabled>
+      {% if projects is defined %}
+        <select class="form-select {% if form_errors.get('project_id') %}is-invalid{% endif %}" name="project_id" {% if not can_write %}disabled{% endif %} required>
+          <option value="">Chọn dự án</option>
+          {% for item in projects %}
+            <option value="{{ item.id }}" {% if (project and project.id == item.id) or issue.project_id == item.id %}selected{% endif %}>🏗️ {{ item.code }} - {{ item.name }}</option>
+          {% endfor %}
+        </select>
+        {% if form_errors.get('project_id') %}<div class="invalid-feedback">{{ form_errors.get('project_id') }}</div>{% endif %}
+      {% else %}
+        <input class="form-control" value="🏗️ {{ project.code }} - {{ project.name }}" disabled>
+      {% endif %}
     </div>
     <div class="col-md-3">
       <label class="form-label" for="severity">Mức độ</label>
-      <select class="form-select" id="severity" name="severity" {% if not can_write %}disabled{% endif %}>
+      <select class="form-select {% if form_errors.get('severity') %}is-invalid{% endif %}" id="severity" name="severity" {% if not can_write %}disabled{% endif %} required>
         {% for severity in severities %}
-          <option value="{{ severity }}" {% if issue.severity == severity %}selected{% endif %}>{{ severity|status_label }}</option>
+          <option value="{{ severity }}" {% if issue.severity == severity %}selected{% endif %}>{{ severity|issue_severity_label }}</option>
         {% endfor %}
       </select>
+      {% if form_errors.get('severity') %}<div class="invalid-feedback">{{ form_errors.get('severity') }}</div>{% endif %}
     </div>
     <div class="col-md-3">
       <label class="form-label" for="status">Trạng thái</label>
-      <select class="form-select" id="status" name="status" {% if not can_write %}disabled{% endif %}>
+      <select class="form-select {% if form_errors.get('status') %}is-invalid{% endif %}" id="status" name="status" {% if not can_write %}disabled{% endif %} required>
         {% for status in statuses %}
-          <option value="{{ status }}" {% if issue.status == status %}selected{% endif %}>{{ status|status_label }}</option>
+          <option value="{{ status }}" {% if issue.status == status %}selected{% endif %}>{{ status|issue_status_label }}</option>
         {% endfor %}
       </select>
+      {% if form_errors.get('status') %}<div class="invalid-feedback">{{ form_errors.get('status') }}</div>{% endif %}
     </div>
     <div class="col-md-3">
       <label class="form-label" for="opened_date">Ngày mở</label>
-      <input class="form-control" id="opened_date" name="opened_date" type="date" value="{{ issue.opened_date or '' }}" {% if not can_write %}disabled{% endif %} required>
+      <input class="form-control {% if form_errors.get('opened_date') %}is-invalid{% endif %}" id="opened_date" name="opened_date" type="date" value="{{ issue.opened_date or '' }}" {% if not can_write %}disabled{% endif %} required>
+      {% if form_errors.get('opened_date') %}<div class="invalid-feedback">{{ form_errors.get('opened_date') }}</div>{% endif %}
     </div>
     <div class="col-md-3">
       <label class="form-label" for="due_date">Hạn xử lý</label>
-      <input class="form-control" id="due_date" name="due_date" type="date" value="{{ issue.due_date or '' }}" {% if not can_write %}disabled{% endif %}>
+      <input class="form-control {% if form_errors.get('due_date') %}is-invalid{% endif %}" id="due_date" name="due_date" type="date" value="{{ issue.due_date or '' }}" {% if not can_write %}disabled{% endif %}>
+      {% if form_errors.get('due_date') %}<div class="invalid-feedback">{{ form_errors.get('due_date') }}</div>{% endif %}
     </div>
     <div class="col-md-6">
       <label class="form-label" for="owner_user_id">Người phụ trách</label>
       <select class="form-select" id="owner_user_id" name="owner_user_id" {% if not can_write %}disabled{% endif %}>
-        <option value="">Chưa có người phụ trách</option>
+        <option value="">👤 Chưa có người phụ trách</option>
         {% for owner in owners %}
-          <option value="{{ owner.id }}" {% if issue.owner_user_id == owner.id %}selected{% endif %}>{{ owner.full_name }}</option>
+          <option value="{{ owner.id }}" {% if issue.owner_user_id == owner.id %}selected{% endif %}>👤 {{ owner.full_name }}</option>
         {% endfor %}
       </select>
     </div>
@@ -59,9 +75,9 @@
       <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>Lưu vấn đề</button>
     {% endif %}
     {% if can_delete and issue.id %}
-      <button class="btn btn-outline-danger" type="submit" formaction="{{ url_for('issues.delete', issue_id=issue.id) }}" data-confirm="Xóa vấn đề tồn đọng này?"><i class="bi bi-trash me-1"></i>Xóa</button>
+      <button class="btn btn-outline-danger" type="submit" formaction="{{ url_for('issues.delete', issue_id=issue.id) }}" formnovalidate data-confirm="Xóa vấn đề tồn đọng này?"><i class="bi bi-trash me-1"></i>Xóa</button>
     {% endif %}
-    <a class="btn btn-outline-secondary" href="{{ url_for('projects.issues', project_id=project.id) }}">Quay lại</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('projects.issues', project_id=project.id) if project else url_for('issues.index') }}">Quay lại</a>
   </div>
 </form>
 {% endblock %}

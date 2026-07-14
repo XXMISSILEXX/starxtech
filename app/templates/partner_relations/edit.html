@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Quản lý quan hệ · {{ company.name }}{% endblock %}
+{% block page_title %}Quản lý quan hệ · {{ company.name }}{% endblock %}
+
+{% block content %}
+<form method="post" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <span class="fw-semibold">{{ company.name }}</span>
+    <span class="text-muted small">Chọn cấp trên để tạo sơ đồ quan hệ.</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>Đối tác</th><th>Phòng ban</th><th>Vị trí</th><th>Cấp trên</th><th>Loại quan hệ</th></tr></thead>
+      <tbody>
+      {% for partner in partners %}
+        <tr>
+          <td class="fw-semibold">{{ partner.full_name }}</td>
+          <td><input class="form-control" name="department_{{ partner.id }}" value="{{ partner.department or '' }}"></td>
+          <td><input class="form-control" name="position_{{ partner.id }}" value="{{ partner.position or '' }}"></td>
+          <td>
+            <select class="form-select" name="manager_{{ partner.id }}">
+              <option value="">Không có</option>
+              {% for candidate in partners if candidate.id != partner.id %}
+                <option value="{{ candidate.id }}" {% if manager_by_partner_id.get(partner.id) == candidate.id %}selected{% endif %}>{{ candidate.full_name }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <select class="form-select" name="relationship_type_{{ partner.id }}">
+              {% for type in relationship_types %}
+                <option value="{{ type }}"> {{ 'Quản lý' if type == 'manager' else 'Báo cáo cho' if type == 'reports_to' else 'Phối hợp' }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="text-center text-muted py-4">Chưa có đối tác trong công ty này.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer bg-white d-flex justify-content-end gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_for('partner_relations.company', company_id=company.id) }}">Quay lại</a>
+    <button class="btn btn-primary" type="submit">Lưu quan hệ</button>
+  </div>
+</form>
+{% endblock %}

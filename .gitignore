@@ -1,4 +1,5 @@
 .env
+.env.docker
 .venv/
 venv/
 __pycache__/
@@ -7,4 +8,10 @@ __pycache__/
 .mypy_cache/
 storage/uploads/
 storage/backups/
+uploads/
+tmp/
+secrets/*
+!secrets/README.md
+backups/
+docker_backup_*/
 *.log

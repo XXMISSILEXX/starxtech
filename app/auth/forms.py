@@ -1,6 +1,8 @@
 from flask_wtf import FlaskForm
 from wtforms import BooleanField, PasswordField, StringField, SubmitField
-from wtforms.validators import DataRequired, EqualTo, Length
+from wtforms.validators import DataRequired, EqualTo, Length, ValidationError
+
+from app.security import password_policy_errors
 
 
 class LoginForm(FlaskForm):
@@ -12,9 +14,14 @@ class LoginForm(FlaskForm):
 
 class ChangePasswordForm(FlaskForm):
     current_password = PasswordField("Mật khẩu hiện tại", validators=[DataRequired()])
-    new_password = PasswordField("Mật khẩu mới", validators=[DataRequired(), Length(min=8, max=128)])
+    new_password = PasswordField("Mật khẩu mới", validators=[DataRequired(), Length(max=128)])
     confirm_password = PasswordField(
         "Xác nhận mật khẩu mới",
         validators=[DataRequired(), EqualTo("new_password", message="Mật khẩu xác nhận không khớp.")],
     )
     submit = SubmitField("Đổi mật khẩu")
+
+    def validate_new_password(self, field):
+        errors = password_policy_errors(field.data)
+        if errors:
+            raise ValidationError(" ".join(errors))

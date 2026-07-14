@@ -58,6 +58,7 @@ def seed_test_data():
         make_user(3, "reporter", "reporter@example.com", UserRole.REPORTER.value),
         make_user(4, "inactive", "inactive@example.com", UserRole.REPORTER.value, is_active=False),
         make_user(5, "pm", "pm@example.com", UserRole.PROJECT_MANAGER.value),
+        make_user(6, "admin", "admin@example.com", UserRole.ADMIN.value),
     ]
     projects = [
         Project(id=1, code="P001", name="Assigned Project"),

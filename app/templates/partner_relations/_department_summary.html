@@ -1,0 +1,85 @@
+<div class="department-summary">
+  <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+    <div>
+      <h3 class="h5 mb-1">{{ department.name }}</h3>
+      <div class="text-muted small">{{ company.name }}</div>
+    </div>
+    {% if department.is_special_department %}
+      <span class="badge text-bg-info align-self-start">Phòng ban đặc biệt</span>
+    {% else %}
+      <span class="badge text-bg-secondary align-self-start">Phòng ban thường</span>
+    {% endif %}
+  </div>
+
+  <dl class="row small mb-3">
+    <dt class="col-sm-4">Phòng ban cấp trên</dt>
+    <dd class="col-sm-8">{{ department.parent_department.name if department.parent_department else 'Không có' }}</dd>
+    <dt class="col-sm-4">Trưởng phòng</dt>
+    <dd class="col-sm-8">
+      {% if department.is_special_department %}
+        Không áp dụng
+      {% elif head %}
+        <a href="{{ url_for('partners.detail', partner_id=head.id) }}">{{ head.full_name }}</a>
+        {% if head.position %}<span class="partner-position-badge ms-1">{{ head.position }}</span>{% endif %}
+      {% else %}
+        <span class="text-muted">Chưa có trưởng phòng</span>
+      {% endif %}
+    </dd>
+    <dt class="col-sm-4">Ghi chú</dt>
+    <dd class="col-sm-8 text-pre-line">{{ department.description or 'Chưa có ghi chú.' }}</dd>
+  </dl>
+
+  <h4 class="h6">Danh sách thành viên</h4>
+  <div class="list-group mb-3">
+    {% for member in members %}
+      {% set member_relationships = relationships_by_partner.get(member.id, []) %}
+      <div class="list-group-item">
+        <div class="d-flex flex-wrap justify-content-between gap-2">
+          <div>
+            <a class="fw-semibold" href="{{ url_for('partners.detail', partner_id=member.id) }}">{{ member.full_name }}</a>
+            <div class="mt-1">{% if member.position %}<span class="partner-position-badge">{{ member.position }}</span>{% else %}<span class="text-muted small">Chưa có vị trí</span>{% endif %}</div>
+            {% for relationship in member_relationships %}
+              {% if relationship.parent_partner and relationship.relationship_type != 'none' %}
+                <div class="small text-muted">Báo cáo cho: {{ relationship.parent_partner.full_name }}</div>
+              {% endif %}
+            {% endfor %}
+          </div>
+          {% if not department.is_special_department and member.is_department_head %}
+            <span class="badge text-bg-success align-self-start">Trưởng phòng</span>
+          {% endif %}
+        </div>
+      </div>
+    {% else %}
+      <div class="list-group-item text-muted">Chưa có thành viên.</div>
+    {% endfor %}
+  </div>
+
+  <h4 class="h6">Quan hệ cấp trên / cấp dưới</h4>
+  <div class="list-group mb-3">
+    {% for relationship in relationships %}
+      <div class="list-group-item small">
+        <span class="fw-semibold">{{ relationship.partner.full_name if relationship.partner else '-' }}</span>
+        <span class="text-muted">· {{ relationship_type_labels.get(relationship.relationship_type, relationship.relationship_type) }}</span>
+        {% if relationship.parent_partner and relationship.relationship_type != 'none' %}
+          <div class="text-muted">Báo cáo cho: {{ relationship.parent_partner.full_name }}</div>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="list-group-item text-muted">Chưa có quan hệ.</div>
+    {% endfor %}
+  </div>
+
+  <h4 class="h6">Phòng ban con</h4>
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    {% for child in child_departments %}
+      <span class="badge text-bg-light border">{{ child.name }}</span>
+    {% else %}
+      <span class="text-muted small">Không có phòng ban con.</span>
+    {% endfor %}
+  </div>
+
+  <div class="d-flex flex-wrap justify-content-end gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_for('partner_companies.departments', company_id=company.id) }}">Xem chi tiết phòng ban</a>
+    <a class="btn btn-outline-primary" href="{{ url_for('partner_relations.tree', company_id=company.id, department=department.id) }}">Xem sơ đồ đầy đủ</a>
+  </div>
+</div>

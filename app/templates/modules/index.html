@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Chọn phân hệ{% endblock %}
+{% block page_title %}Chọn phân hệ làm việc{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  {% if can_reports %}
+    <div class="col-md-6 col-xl-4">
+      <a class="text-decoration-none text-reset" href="{{ url_for('modules.select_reports') }}">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-3">
+              <div class="stat-icon"><i class="bi bi-journal-text"></i></div>
+              <div>
+                <h2 class="h5 mb-1">Báo cáo hàng ngày</h2>
+                <div class="text-muted">Theo dõi dự án, báo cáo ngày và vấn đề tồn đọng.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </a>
+    </div>
+  {% endif %}
+  {% if can_partners %}
+    <div class="col-md-6 col-xl-4">
+      <a class="text-decoration-none text-reset" href="{{ url_for('modules.select_partners') }}">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-3">
+              <div class="stat-icon"><i class="bi bi-person-vcard"></i></div>
+              <div>
+                <h2 class="h5 mb-1">Quản lý đối tác</h2>
+                <div class="text-muted">Quản lý đối tác, công ty và thông tin mở rộng.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </a>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

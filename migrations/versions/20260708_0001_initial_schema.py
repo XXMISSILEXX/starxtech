@@ -10,6 +10,11 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
+# Keep the authoritative PostgreSQL JSONB schema while allowing isolated SQLite
+# migration tests and local reset verification.
+JSON_TYPE = sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql")
+
+
 revision = "20260708_0001"
 down_revision = None
 branch_labels = None
@@ -68,8 +73,8 @@ def upgrade():
         sa.Column("action", sa.String(length=100), nullable=False),
         sa.Column("entity_type", sa.String(length=100), nullable=False),
         sa.Column("entity_id", sa.BigInteger(), nullable=True),
-        sa.Column("old_values_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("new_values_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("old_values_json", JSON_TYPE, nullable=True),
+        sa.Column("new_values_json", JSON_TYPE, nullable=True),
         sa.Column("ip_address", sa.String(length=100), nullable=True),
         sa.Column("user_agent", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),

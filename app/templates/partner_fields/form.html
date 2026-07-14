@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Sửa trường dữ liệu' if field else 'Thêm trường dữ liệu' }}{% endblock %}
+{% block page_title %}{{ 'Sửa trường dữ liệu' if field else 'Thêm trường dữ liệu' }}{% endblock %}
+
+{% block content %}
+<form method="post" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card-body row g-3">
+    <div class="col-md-6"><label class="form-label">Tên trường</label><input class="form-control" name="label" value="{{ request.form.get('label', field.label if field else '') }}"></div>
+    <div class="col-md-6"><label class="form-label">Mã trường</label><input class="form-control" name="field_key" value="{{ request.form.get('field_key', field.field_key if field else '') }}"></div>
+    <div class="col-md-4"><label class="form-label">Kiểu dữ liệu</label><select class="form-select" name="field_type">{% for type in field_types %}<option value="{{ type }}" {% if request.form.get('field_type', field.field_type if field else 'text') == type %}selected{% endif %}>{{ type }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Nhóm</label><input class="form-control" name="group_name" value="{{ request.form.get('group_name', field.group_name if field else '') }}"></div>
+    <div class="col-md-4"><label class="form-label">Thứ tự</label><input class="form-control" name="sort_order" value="{{ request.form.get('sort_order', field.sort_order if field else '0') }}"></div>
+    <div class="col-12"><label class="form-label">Tùy chọn cho select/multi_select, mỗi dòng một giá trị</label><textarea class="form-control" name="options" rows="5">{{ request.form.get('options', (field.options_json or [])|join('\n') if field else '') }}</textarea></div>
+    <div class="col-12 d-flex gap-4">
+      <div class="form-check"><input class="form-check-input" type="checkbox" name="is_required" {% if field and field.is_required %}checked{% endif %}><label class="form-check-label">Bắt buộc</label></div>
+      <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" {% if not field or field.is_active %}checked{% endif %}><label class="form-check-label">Đang dùng</label></div>
+    </div>
+  </div>
+  <div class="card-footer bg-white d-flex justify-content-end gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_for('partner_fields.index') }}">Quay lại</a>
+    <button class="btn btn-primary" type="submit">Lưu trường</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,11 +1,18 @@
 from flask import abort, flash, redirect, render_template, request, url_for
 
-from app.auth.permissions import can_read_project, can_write_project
-from app.auth.permissions import can_delete_issue_for_project
+from app.auth.permissions import (
+    can_create_persistent_issue,
+    can_delete_issue_for_project,
+    can_delete_report_for_project,
+    can_edit_persistent_issue,
+    can_read_project,
+    can_write_project,
+)
 from app.dashboard.services import project_dashboard_context
 from app.extensions import db
 from app.issues.services import (
     IssueValidationError,
+    build_issue_form_data,
     create_issue,
     owner_choices,
     project_issues_query,
@@ -16,16 +23,26 @@ from app.projects import bp
 from app.reports.services import (
     ReportValidationError,
     accessible_projects_query,
+    build_report_form_data,
     categories_for_create,
     create_report,
     reports_query,
 )
 
 
-@bp.get("")
 @bp.get("/")
+@bp.get("")
 def index():
-    return render_template("projects/index.html", projects=accessible_projects_query().all())
+    projects = accessible_projects_query().all()
+    create_report_mode = request.args.get("create_report") == "1"
+    if create_report_mode:
+        flash("Chọn dự án để tạo báo cáo mới", "info")
+    return render_template(
+        "projects/index.html",
+        projects=projects,
+        create_report_mode=create_report_mode,
+        can_write_by_project={project.id: can_write_project(project.id) for project in projects},
+    )
 
 
 @bp.get("/<int:project_id>/dashboard")
@@ -57,9 +74,10 @@ def reports(project_id):
     if date_to:
         query = query.filter(DailyReport.report_date <= date_to)
 
+    reports = query.order_by(DailyReport.report_date.desc(), DailyReport.id.desc()).all()
     return render_template(
         "reports/index.html",
-        reports=query.order_by(DailyReport.report_date.desc(), DailyReport.id.desc()).all(),
+        reports=reports,
         projects=[project],
         statuses=[status.value for status in DailyReportStatus],
         filters={
@@ -69,6 +87,9 @@ def reports(project_id):
             "date_to": date_to,
         },
         project=project,
+        can_create_report_entry=can_write_project(project.id),
+        can_write_by_project={report.id: can_write_project(report.project_id) for report in reports},
+        can_delete_by_report={report.id: can_delete_report_for_project(report.project_id) for report in reports},
     )
 
 
@@ -89,7 +110,13 @@ def reports_create(project_id):
         except ReportValidationError as exc:
             db.session.rollback()
             flash(str(exc), "danger")
-            return _render_create_form(project, report), 400
+            _flash_reselect_images_if_needed(request.files)
+            return _render_create_form(
+                project,
+                report,
+                form_data=build_report_form_data(request.form),
+                form_errors=exc.errors,
+            ), 400
         if duplicate:
             flash("Dự án đã có báo cáo cho ngày này.", "warning")
             return redirect(url_for("reports.edit", report_id=report.id))
@@ -104,12 +131,18 @@ def issues(project_id):
     project = _project_or_404(project_id)
     if not can_read_project(project.id):
         abort(403)
+    issues = _apply_issue_filters(project_issues_query(project.id)).all()
+    can_create = can_create_persistent_issue(project.id)
     return render_template(
         "issues/index.html",
         project=project,
-        issues=_apply_issue_filters(project_issues_query(project.id)).all(),
+        issues=issues,
         can_write=can_write_project(project.id),
         can_delete=can_delete_issue_for_project(project.id),
+        can_create=can_create,
+        create_url=url_for("projects.issues_create", project_id=project.id) if can_create else None,
+        can_edit_by_issue={issue.id: can_edit_persistent_issue(issue) for issue in issues},
+        can_delete_by_issue={issue.id: can_delete_issue_for_project(issue.project_id) for issue in issues},
     )
 
 
@@ -128,18 +161,24 @@ def issues_create(project_id):
         except IssueValidationError as exc:
             db.session.rollback()
             flash(str(exc), "danger")
-            return _render_issue_form(project, issue), 400
+            return _render_issue_form(
+                project,
+                build_issue_form_data(request.form, project.id),
+                form_errors=exc.errors,
+            ), 400
         flash("Đã thêm vấn đề tồn đọng.", "success")
         return redirect(url_for("projects.issues", project_id=project.id))
 
     return _render_issue_form(project, issue)
 
 
-def _render_create_form(project, report):
+def _render_create_form(project, report, form_data=None, form_errors=None):
     return render_template(
         "reports/form.html",
         project=project,
         report=report,
+        form_data=form_data,
+        form_errors=form_errors or {},
         categories=categories_for_create(project.id),
         statuses=[status.value for status in DailyReportStatus],
         section_statuses=[status.value for status in SectionStatus],
@@ -147,7 +186,7 @@ def _render_create_form(project, report):
     )
 
 
-def _render_issue_form(project, issue):
+def _render_issue_form(project, issue, form_errors=None):
     return render_template(
         "issues/form.html",
         project=project,
@@ -157,6 +196,7 @@ def _render_issue_form(project, issue):
         statuses=[status.value for status in IssueStatus],
         can_write=can_write_project(project.id),
         can_delete=can_delete_issue_for_project(project.id),
+        form_errors=form_errors or {},
     )
 
 
@@ -184,3 +224,8 @@ def _apply_issue_filters(query):
     if date_to:
         query = query.filter(PersistentIssue.opened_date <= date_to)
     return query
+
+
+def _flash_reselect_images_if_needed(files):
+    if any(file and file.filename for key in files for file in files.getlist(key)):
+        flash("Vui lòng chọn lại ảnh đính kèm sau khi sửa lỗi.", "warning")

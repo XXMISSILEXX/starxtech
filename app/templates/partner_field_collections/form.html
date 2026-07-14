@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Sửa bộ trường' if collection.id else 'Thêm bộ trường' }}{% endblock %}
+{% block page_title %}{{ 'Sửa bộ trường' if collection.id else 'Thêm bộ trường' }}{% endblock %}
+
+{% block content %}
+<form method="post" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Tên bộ trường <span class="text-danger">*</span></label>
+        <input class="form-control {% if errors.get('name') %}is-invalid{% endif %}" name="name" value="{{ request.form.get('name', collection.name or '') }}">
+        {% if errors.get('name') %}<div class="invalid-feedback">{{ errors.name }}</div>{% endif %}
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Thứ tự</label>
+        <input class="form-control" type="number" name="sort_order" value="{{ request.form.get('sort_order', collection.sort_order or 0) }}">
+      </div>
+      <div class="col-md-3 d-flex align-items-end">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="is_active" id="is_active" {% if collection.is_active %}checked{% endif %}>
+          <label class="form-check-label" for="is_active">Đang dùng</label>
+        </div>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Mô tả</label>
+        <textarea class="form-control" name="description" rows="3">{{ request.form.get('description', collection.description or '') }}</textarea>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Trường dữ liệu trong bộ</label>
+        <div class="row g-2">
+          {% for field in fields %}
+            <div class="col-md-6 col-xl-4">
+              <label class="border rounded p-2 d-flex gap-2 h-100">
+                <input class="form-check-input mt-1" type="checkbox" name="field_definition_ids" value="{{ field.id }}" {% if field.id in selected_ids or field.id|string in request.form.getlist('field_definition_ids') %}checked{% endif %}>
+                <span>
+                  <span class="fw-semibold">{{ field.label }}</span>
+                  <span class="d-block text-muted small">{{ field.field_type }}{% if field.group_name %} · {{ field.group_name }}{% endif %}</span>
+                </span>
+              </label>
+            </div>
+          {% else %}
+            <div class="col-12 text-muted">Chưa có trường dữ liệu đang dùng.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card-footer bg-white d-flex justify-content-end gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_for('partner_field_collections.index') }}">Quay lại</a>
+    <button class="btn btn-primary" type="submit">Lưu bộ trường</button>
+  </div>
+</form>
+{% endblock %}

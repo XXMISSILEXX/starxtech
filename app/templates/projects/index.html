@@ -11,7 +11,7 @@
         <th>Mã</th>
         <th>Tên dự án</th>
         <th>Trạng thái</th>
-        <th class="text-end">Báo cáo</th>
+        <th class="text-end">{{ 'Tạo báo cáo' if create_report_mode else 'Báo cáo' }}</th>
       </tr>
     </thead>
     <tbody>
@@ -21,7 +21,13 @@
           <td>{{ project.name }}</td>
           <td><span class="badge status-badge status-muted">{{ project.status }}</span></td>
           <td class="text-end">
-            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('projects.reports', project_id=project.id) }}"><i class="bi bi-journal-text me-1"></i>Mở báo cáo</a>
+            <div class="mobile-card-actions justify-content-end">
+              {% if create_report_mode and can_write_by_project.get(project.id) %}
+                <a class="btn btn-sm btn-primary btn-action-mobile" href="{{ url_for('projects.reports_create', project_id=project.id) }}" aria-label="Tạo báo cáo" title="Tạo báo cáo"><i class="bi bi-plus-lg"></i><span class="action-label">Tạo báo cáo</span></a>
+              {% else %}
+                <a class="btn btn-sm btn-outline-primary btn-action-mobile" href="{{ url_for('projects.reports', project_id=project.id) }}" aria-label="Mở báo cáo" title="Mở báo cáo"><i class="bi bi-journal-text"></i><span class="action-label">Mở báo cáo</span></a>
+              {% endif %}
+            </div>
           </td>
         </tr>
       {% else %}

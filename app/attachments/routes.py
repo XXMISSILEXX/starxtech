@@ -34,19 +34,16 @@ def delete(attachment_id):
 
 
 def _resolve_attachment_path(stored_path):
-    path = Path(stored_path)
-    if path.is_absolute():
-        return path
-
-    upload_root = Path(current_app.config["UPLOAD_ROOT"])
-    candidates = [
-        upload_root / path,
-        Path(current_app.root_path).parent / path,
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    return candidates[0]
+    path = Path(stored_path or "")
+    upload_root = Path(current_app.config["UPLOAD_ROOT"]).resolve()
+    if path.is_absolute() or ".." in path.parts:
+        abort(404)
+    candidate = (upload_root / path).resolve()
+    try:
+        candidate.relative_to(upload_root)
+    except ValueError:
+        abort(404)
+    return candidate
 
 
 def _attachment_or_404(attachment_id):

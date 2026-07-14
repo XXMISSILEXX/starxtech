@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from types import SimpleNamespace
 
 from flask_login import current_user
 
@@ -8,7 +9,9 @@ from app.models import IssueSeverity, IssueStatus, PersistentIssue, ProjectUser,
 
 
 class IssueValidationError(ValueError):
-    pass
+    def __init__(self, message, errors=None):
+        super().__init__(message)
+        self.errors = errors or {}
 
 
 def project_issues_query(project_id):
@@ -33,6 +36,7 @@ def owner_choices(project_id):
 
 
 def create_issue(project, form):
+    validate_issue_form(form)
     issue = PersistentIssue(project_id=project.id, created_by_user_id=current_user.id)
     _assign_issue_fields(issue, form, project.id)
     add_with_sqlite_id(issue)
@@ -42,6 +46,7 @@ def create_issue(project, form):
 
 
 def update_issue(issue, form):
+    validate_issue_form(form)
     old_values = issue_snapshot(issue)
     _assign_issue_fields(issue, form, issue.project_id)
     if issue.status in {IssueStatus.CLOSED.value, IssueStatus.RESOLVED.value} and not issue.closed_date:
@@ -99,13 +104,13 @@ def _assign_issue_fields(issue, form, project_id):
     owner_user_id = _parse_owner(form.get("owner_user_id", "").strip(), project_id)
 
     if not title:
-        raise IssueValidationError("Tiêu đề là bắt buộc.")
+        raise IssueValidationError("Vui lòng nhập tiêu đề.", {"title": "Vui lòng nhập tiêu đề."})
     if severity not in [item.value for item in IssueSeverity]:
-        raise IssueValidationError("Mức độ vấn đề không hợp lệ.")
+        raise IssueValidationError("Vui lòng chọn mức độ.", {"severity": "Vui lòng chọn mức độ."})
     if status not in [item.value for item in IssueStatus]:
-        raise IssueValidationError("Trạng thái vấn đề không hợp lệ.")
+        raise IssueValidationError("Vui lòng chọn trạng thái.", {"status": "Vui lòng chọn trạng thái."})
     if due_date and due_date < opened_date:
-        raise IssueValidationError("Ngày hạn xử lý không được trước ngày mở.")
+        raise IssueValidationError("Ngày hạn xử lý không được trước ngày mở.", {"due_date": "Ngày hạn xử lý không được trước ngày mở."})
 
     issue.title = title
     issue.description = form.get("description", "").strip() or None
@@ -118,7 +123,7 @@ def _assign_issue_fields(issue, form, project_id):
 
 def _parse_required_date(value, label):
     if not value:
-        raise IssueValidationError(f"{label} là bắt buộc.")
+        raise IssueValidationError(f"Vui lòng chọn {label.lower()}.", {"opened_date": f"Vui lòng chọn {label.lower()}."})
     return _parse_date(value, label)
 
 
@@ -157,3 +162,56 @@ def _parse_owner(value, project_id):
     if not valid_owner:
         raise IssueValidationError("Người phụ trách phải đang hoạt động và được gán vào dự án này.")
     return owner_user_id
+
+
+def validate_issue_form(form):
+    errors = {}
+    title = form.get("title", "").strip()
+    severity = form.get("severity", "").strip()
+    status = form.get("status", "").strip()
+    opened_date_raw = form.get("opened_date", "").strip()
+    due_date_raw = form.get("due_date", "").strip()
+
+    if not title:
+        errors["title"] = "Vui lòng nhập tiêu đề."
+    if severity not in [item.value for item in IssueSeverity]:
+        errors["severity"] = "Vui lòng chọn mức độ."
+    if status not in [item.value for item in IssueStatus]:
+        errors["status"] = "Vui lòng chọn trạng thái."
+
+    opened_date = None
+    due_date = None
+    if not opened_date_raw:
+        errors["opened_date"] = "Vui lòng chọn ngày mở."
+    else:
+        try:
+            opened_date = datetime.strptime(opened_date_raw, "%Y-%m-%d").date()
+        except ValueError:
+            errors["opened_date"] = "Ngày mở phải đúng định dạng YYYY-MM-DD."
+
+    if due_date_raw:
+        try:
+            due_date = datetime.strptime(due_date_raw, "%Y-%m-%d").date()
+        except ValueError:
+            errors["due_date"] = "Hạn xử lý phải đúng định dạng YYYY-MM-DD."
+
+    if opened_date and due_date and due_date < opened_date:
+        errors["due_date"] = "Ngày hạn xử lý không được trước ngày mở."
+
+    if errors:
+        first_message = next(iter(errors.values()))
+        raise IssueValidationError(first_message, errors)
+
+
+def build_issue_form_data(form, project_id=None):
+    return SimpleNamespace(
+        id=None,
+        project_id=project_id,
+        title=form.get("title", ""),
+        description=form.get("description", ""),
+        severity=form.get("severity", ""),
+        status=form.get("status", ""),
+        opened_date=form.get("opened_date", ""),
+        due_date=form.get("due_date", ""),
+        owner_user_id=int(form.get("owner_user_id")) if form.get("owner_user_id", "").isdigit() else None,
+    )

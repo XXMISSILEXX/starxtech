@@ -14,6 +14,20 @@ def login(client, username_or_email, password="password123"):
     )
 
 
+def test_inactive_user_login_shows_disabled_message(client):
+    response = login(client, "inactive")
+
+    assert response.status_code == 403
+    assert "Tài khoản của bạn đã bị vô hiệu hóa".encode() in response.data
+
+
+def test_wrong_login_still_shows_invalid_credentials(client):
+    response = login(client, "inactive", password="wrong-password")
+
+    assert response.status_code == 401
+    assert "Tên đăng nhập/email hoặc mật khẩu không đúng".encode() in response.data
+
+
 def test_login_by_username_updates_last_login(client, app):
     response = login(client, "reporter")
 
@@ -43,7 +57,8 @@ def test_wrong_password_does_not_authenticate(client):
 def test_inactive_user_cannot_login(client):
     response = login(client, "inactive")
 
-    assert response.status_code == 401
+    assert response.status_code == 403
+    assert "Tài khoản của bạn đã bị vô hiệu hóa".encode() in response.data
     with client.session_transaction() as session:
         assert "_user_id" not in session
 

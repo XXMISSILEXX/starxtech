@@ -4,21 +4,28 @@
 {% block page_title %}{% if report.id %}Sửa báo cáo{% else %}Tạo báo cáo{% endif %}{% endblock %}
 
 {% block content %}
+{% set form_errors = form_errors if form_errors is defined else {} %}
+{% set report_date_value = form_data.report_date if form_data else (report.report_date or '') %}
+{% set overall_status_value = form_data.overall_status if form_data else report.overall_status %}
+{% set highlight_value = form_data.highlight if form_data else (report.highlight or '') %}
+{% set summary_note_value = form_data.summary_note if form_data else (report.summary_note or '') %}
 <form method="post" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
   <div class="form-card row g-3 mb-4">
     <div class="col-md-4">
       <label class="form-label" for="report_date">Ngày báo cáo</label>
-      <input class="form-control" id="report_date" name="report_date" type="date" value="{{ report.report_date or '' }}" {% if not can_write %}disabled{% endif %} required>
+      <input class="form-control {% if form_errors.get('report_date') %}is-invalid{% endif %}" id="report_date" name="report_date" type="date" value="{{ report_date_value }}" {% if not can_write %}disabled{% endif %} required>
+      {% if form_errors.get('report_date') %}<div class="invalid-feedback">{{ form_errors.get('report_date') }}</div>{% endif %}
     </div>
     <div class="col-md-4">
       <label class="form-label" for="overall_status">Trạng thái tổng thể</label>
-      <select class="form-select" id="overall_status" name="overall_status" {% if not can_write %}disabled{% endif %}>
+      <select class="form-select {% if form_errors.get('overall_status') %}is-invalid{% endif %}" id="overall_status" name="overall_status" data-custom-select="status" {% if not can_write %}disabled{% endif %} required>
         {% for status in statuses %}
-          <option value="{{ status }}" {% if report.overall_status == status %}selected{% endif %}>{{ status|status_label }}</option>
+          <option value="{{ status }}" data-icon="{{ status|status_icon }}" data-tone="{{ status|status_tone }}" {% if overall_status_value == status %}selected{% endif %}>{{ status|status_label }}</option>
         {% endfor %}
       </select>
+      {% if form_errors.get('overall_status') %}<div class="invalid-feedback">{{ form_errors.get('overall_status') }}</div>{% endif %}
     </div>
     <div class="col-md-4">
       <label class="form-label">Dự án</label>
@@ -26,11 +33,12 @@
     </div>
     <div class="col-12">
       <label class="form-label" for="highlight">Điểm nổi bật</label>
-      <textarea class="form-control" id="highlight" name="highlight" rows="3" {% if not can_write %}disabled{% endif %} required>{{ report.highlight or '' }}</textarea>
+      <textarea class="form-control {% if form_errors.get('highlight') %}is-invalid{% endif %}" id="highlight" name="highlight" rows="3" {% if not can_write %}disabled{% endif %} required>{{ highlight_value }}</textarea>
+      {% if form_errors.get('highlight') %}<div class="invalid-feedback">{{ form_errors.get('highlight') }}</div>{% endif %}
     </div>
     <div class="col-12">
       <label class="form-label" for="summary_note">Ghi chú tổng hợp</label>
-      <textarea class="form-control" id="summary_note" name="summary_note" rows="2" {% if not can_write %}disabled{% endif %}>{{ report.summary_note or '' }}</textarea>
+      <textarea class="form-control" id="summary_note" name="summary_note" rows="2" {% if not can_write %}disabled{% endif %}>{{ summary_note_value }}</textarea>
     </div>
   </div>
 
@@ -47,22 +55,24 @@
   </div>
 
   <div data-sections
-       data-categories='[{% for category in categories %}{"id":{{ category.id }},"name":{{ category.name|tojson }},"icon":{{ (category.icon or "")|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]'
-       data-statuses='[{% for status in section_statuses %}{"id":{{ status|tojson }},"name":{{ status|status_label|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]'
+       data-categories='[{% for category in categories %}{"id":{{ category.id }},"name":{{ category.name|tojson }},"icon":{{ (category.icon or "📌")|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]'
+       data-statuses='[{% for status in section_statuses %}{"id":{{ status|tojson }},"name":{{ status|status_label|tojson }},"icon":{{ status|status_icon|tojson }},"tone":{{ status|status_tone|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]'
        data-can-write="{{ '1' if can_write else '0' }}">
-    {% set active_sections = report.sections|selectattr('deleted_at', 'none')|sort(attribute='sort_order')|list %}
+    {% set active_sections = form_data.sections if form_data else report.sections|selectattr('deleted_at', 'none')|sort(attribute='sort_order')|list %}
     {% for section in active_sections %}
-      {% set section_index = loop.index0 %}
+      {% set section_index = section.form_index if form_data else loop.index0 %}
       <div class="report-section p-3 mb-3" data-section-row>
         <div class="row g-3">
           <div class="col-md-5">
             <label class="form-label">Hạng mục</label>
-            <select class="form-select" name="sections-{{ section_index }}-category_id" {% if not can_write %}disabled{% endif %}>
+            {% set category_error_key = 'sections-' ~ section_index ~ '-category_id' %}
+            <select class="form-select {% if form_errors.get(category_error_key) %}is-invalid{% endif %}" name="sections-{{ section_index }}-category_id" data-custom-select="category" {% if not can_write %}disabled{% endif %} required>
               <option value="">Chọn hạng mục</option>
               {% for category in categories %}
-                <option value="{{ category.id }}" {% if section.report_category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+                <option value="{{ category.id }}" data-icon="{{ category.icon or '📌' }}" {% if section.report_category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
               {% endfor %}
             </select>
+            {% if form_errors.get(category_error_key) %}<div class="invalid-feedback">{{ form_errors.get(category_error_key) }}</div>{% endif %}
             <div class="small text-muted mt-1">
               {% for category in categories %}
                 {% if section.report_category_id == category.id %}{{ category_icon(category.icon) }} {{ category.name }}{% endif %}
@@ -71,11 +81,13 @@
           </div>
           <div class="col-md-4">
             <label class="form-label">Trạng thái</label>
-            <select class="form-select" name="sections-{{ section_index }}-status" {% if not can_write %}disabled{% endif %}>
+            {% set status_error_key = 'sections-' ~ section_index ~ '-status' %}
+            <select class="form-select {% if form_errors.get(status_error_key) %}is-invalid{% endif %}" name="sections-{{ section_index }}-status" data-custom-select="status" {% if not can_write %}disabled{% endif %} required>
               {% for status in section_statuses %}
-                <option value="{{ status }}" {% if section.status == status %}selected{% endif %}>{{ status|status_label }}</option>
+                <option value="{{ status }}" data-icon="{{ status|status_icon }}" data-tone="{{ status|status_tone }}" {% if section.status == status %}selected{% endif %}>{{ status|status_label }}</option>
               {% endfor %}
             </select>
+            {% if form_errors.get(status_error_key) %}<div class="invalid-feedback">{{ form_errors.get(status_error_key) }}</div>{% endif %}
           </div>
           {% if can_write %}
             <div class="col-md-3 d-flex align-items-end justify-content-md-end">
@@ -84,11 +96,18 @@
           {% endif %}
           <div class="col-12">
             <label class="form-label">Nội dung</label>
-            <textarea class="form-control" name="sections-{{ section_index }}-content" rows="3" {% if not can_write %}disabled{% endif %}>{{ section.content }}</textarea>
+            {% set content_error_key = 'sections-' ~ section_index ~ '-content' %}
+            <textarea class="form-control {% if form_errors.get(content_error_key) %}is-invalid{% endif %}" name="sections-{{ section_index }}-content" rows="3" {% if not can_write %}disabled{% endif %} required minlength="1">{{ section.content }}</textarea>
+            {% if form_errors.get(content_error_key) %}<div class="invalid-feedback">{{ form_errors.get(content_error_key) }}</div>{% endif %}
           </div>
           <div class="col-12">
             <label class="form-label">Ảnh đính kèm</label>
-            <input class="form-control" name="sections-{{ section_index }}-images" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple {% if not can_write %}disabled{% endif %}>
+            <label class="upload-dropzone {% if not can_write %}disabled{% endif %}">
+              <input class="visually-hidden" name="sections-{{ section_index }}-images" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple data-upload-input {% if not can_write %}disabled{% endif %}>
+              <span class="upload-title"><i class="bi bi-images me-1"></i>Chọn ảnh đính kèm</span>
+              <span class="upload-help">Kéo thả ảnh vào đây hoặc bấm để chọn</span>
+            </label>
+            <div class="upload-preview-grid mt-2" data-upload-preview></div>
           </div>
           {% if section.attachments %}
             <div class="col-12 d-flex flex-wrap gap-2">
@@ -99,11 +118,7 @@
                       <img class="report-thumb" src="{{ url_for('attachments.view', attachment_id=attachment.id) }}" alt="{{ attachment.original_filename }}">
                     </a>
                     {% if can_write %}
-                      <form class="mt-2" method="post" action="{{ url_for('attachments.delete', attachment_id=attachment.id) }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="next" value="{{ url_for('reports.edit', report_id=report.id) }}">
-                        <button class="btn btn-sm btn-outline-danger" type="submit" data-confirm="Xóa ảnh này?"><i class="bi bi-trash me-1"></i>Xóa</button>
-                      </form>
+                      <button class="btn btn-sm btn-outline-danger mt-2" type="submit" form="delete-attachment-{{ attachment.id }}" data-confirm="Xóa ảnh này?"><i class="bi bi-trash me-1"></i>Xóa</button>
                     {% endif %}
                   </div>
                 {% endif %}
@@ -122,4 +137,16 @@
     </div>
   {% endif %}
 </form>
+{% if can_write and report.id %}
+  {% for section in report.sections|selectattr('deleted_at', 'none')|list %}
+    {% for attachment in section.attachments %}
+      {% if not attachment.deleted_at %}
+        <form id="delete-attachment-{{ attachment.id }}" method="post" action="{{ url_for('attachments.delete', attachment_id=attachment.id) }}" class="d-none">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ url_for('reports.edit', report_id=report.id) }}">
+        </form>
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+{% endif %}
 {% endblock %}

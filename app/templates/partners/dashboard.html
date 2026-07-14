@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Tổng quan đối tác{% endblock %}
+{% block page_title %}Tổng quan đối tác{% endblock %}
+
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body">
+    <form class="row g-2" method="get">
+      <div class="col-md-2"><input class="form-control" type="date" name="date_from" value="{{ filters.get('date_from', '') }}" aria-label="Từ ngày"></div>
+      <div class="col-md-2"><input class="form-control" type="date" name="date_to" value="{{ filters.get('date_to', '') }}" aria-label="Đến ngày"></div>
+      <div class="col-md-3"><select class="form-select" name="company_id"><option value="">Công ty</option>{% for company in companies %}<option value="{{ company.id }}" {% if filters.get('company_id') == company.id|string %}selected{% endif %}>{{ company.name }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><select class="form-select" name="industry"><option value="">Ngành</option>{% for item in industries %}<option value="{{ item }}" {% if filters.get('industry') == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+      <div class="col-md-3 d-flex gap-2"><button class="btn btn-outline-secondary flex-fill" type="submit"><i class="bi bi-funnel me-1"></i>Lọc</button><a class="btn btn-outline-secondary" href="{{ url_for('partners.dashboard') }}">Xóa lọc</a></div>
+    </form>
+  </div>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-xl-3"><div class="card"><div class="card-body"><div class="text-muted small">Tổng đối tác</div><div class="h3 mb-0">{{ total_partners }}</div></div></div></div>
+  <div class="col-sm-6 col-xl-3"><div class="card"><div class="card-body"><div class="text-muted small">Tổng công ty</div><div class="h3 mb-0">{{ total_companies }}</div></div></div></div>
+  <div class="col-sm-6 col-xl-3"><div class="card"><div class="card-body"><div class="text-muted small">Đối tác mới trong tháng</div><div class="h3 mb-0">{{ new_this_month }}</div></div></div></div>
+  <div class="col-sm-6 col-xl-3"><div class="card"><div class="card-body"><div class="text-muted small">Trường đang dùng</div><div class="h3 mb-0">{{ active_fields }}</div></div></div></div>
+</div>
+
+<div class="d-flex flex-wrap gap-2 mb-4">
+  {% if can_create %}
+    <a class="btn btn-primary" href="{{ url_for('partners.new') }}"><i class="bi bi-plus-lg me-1"></i>Thêm đối tác</a>
+    <a class="btn btn-outline-primary" href="{{ url_for('partner_companies.new') }}"><i class="bi bi-building-add me-1"></i>Thêm công ty</a>
+  {% endif %}
+  {% if can_manage_fields %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('partner_fields.index') }}"><i class="bi bi-sliders me-1"></i>Quản lý trường dữ liệu</a>
+  {% endif %}
+  <a class="btn btn-outline-secondary" href="{{ url_for('partner_relations.index') }}"><i class="bi bi-diagram-3 me-1"></i>Sơ đồ quan hệ</a>
+</div>
+
+<div class="card">
+  <div class="card-header bg-white fw-semibold">Đối tác gần đây</div>
+  <div class="list-group list-group-flush">
+    {% for partner in recent_partners %}
+      <a class="list-group-item list-group-item-action" href="{{ url_for('partners.detail', partner_id=partner.id) }}">
+        <div class="fw-semibold">{{ partner.full_name }}</div>
+        <div class="text-muted small">{{ partner.company.name if partner.company else 'Chưa có công ty' }}{% if partner.position %} · {{ partner.position }}{% endif %}</div>
+      </a>
+    {% else %}
+      <div class="list-group-item text-muted">Chưa có đối tác.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

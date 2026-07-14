@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Sơ đồ quan hệ{% endblock %}
+{% block page_title %}Sơ đồ quan hệ{% endblock %}
+
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body">
+    <form class="row g-2" method="get">
+      <div class="col-md-4">
+        <select class="form-select" name="company_id">
+          <option value="">Chọn công ty</option>
+          {% for company in all_companies %}
+            <option value="{{ company.id }}" {% if filters.get('company_id') == company.id|string %}selected{% endif %}>{{ company.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3"><input class="form-control" name="q" value="{{ filters.get('q', '') }}" placeholder="Tìm đối tác"></div>
+      <div class="col-md-3"><select class="form-select" name="department"><option value="">Phòng ban</option>{% for item in departments %}<option value="{{ item.id }}" {% if filters.get('department') == item.id|string %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></div>
+      <div class="col-md-2 d-flex gap-2"><button class="btn btn-outline-secondary flex-fill" type="submit">Lọc</button><a class="btn btn-outline-secondary" href="{{ url_for('partner_relations.index') }}">Xóa lọc</a></div>
+    </form>
+  </div>
+</div>
+<div class="card">
+  <div class="card-body">
+    {% for company in companies %}
+      <div class="mb-4">
+        <div class="d-flex justify-content-between gap-2 mb-2">
+          <div class="h5 mb-0"><i class="bi bi-buildings me-1"></i><a href="{{ url_for('partner_relations.company', company_id=company.id) }}">{{ company.name }}</a></div>
+          <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('partner_relations.tree', company_id=company.id) }}">Xem sơ đồ cây</a>
+            {% if can_edit %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('partner_relations.manage_company', company_id=company.id) }}">Quản lý quan hệ</a>{% endif %}
+          </div>
+        </div>
+        <ul>
+          {% for partner in company.partners if not partner.deleted_at %}
+            <li>{{ partner.full_name }}{% if partner.department %} · {{ partner.department }}{% endif %}{% if partner.position %} · {{ partner.position }}{% endif %}</li>
+          {% else %}
+            <li class="text-muted">Chưa có đối tác</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endfor %}
+    {% if partners_without_company %}
+      <div class="h5 mb-2">Chưa gán công ty</div>
+      <ul>{% for partner in partners_without_company %}<li>{{ partner.full_name }}</li>{% endfor %}</ul>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

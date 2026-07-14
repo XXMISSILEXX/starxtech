@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Quản lý quan hệ · {{ company.name }}{% endblock %}
+{% block page_title %}Quản lý quan hệ · {{ company.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
+  <a class="btn btn-outline-secondary" href="{{ url_for('partner_relations.company', company_id=company.id) }}">Quay lại</a>
+  <a class="btn btn-outline-primary" href="{{ url_for('partner_relations.tree', company_id=company.id) }}"><i class="bi bi-diagram-3 me-1"></i><span class="action-label">Xem sơ đồ cây</span></a>
+</div>
+
+<form method="post" class="card mb-3" data-validate-required>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card-header bg-white fw-semibold">{{ 'Sửa quan hệ' if relationship and relationship.id else '+ Thêm quan hệ' }}</div>
+  <div class="card-body">
+    <div class="row g-3 relation-form-grid">
+      <div class="col-md-4">
+        <label class="form-label">Đối tác <span class="text-danger">*</span></label>
+        <select class="form-select {% if errors.get('partner_id') %}is-invalid{% endif %}" name="partner_id" required data-relation-partner-select>
+          <option value="">Chọn đối tác</option>
+          {% for partner in partners %}
+            <option value="{{ partner.id }}" data-department="{{ partner.company_department.name if partner.company_department else 'Chưa có phòng ban' }}" data-position="{{ partner.position or 'Chưa có vị trí' }}" {% if form_data.get('partner_id') == partner.id %}selected{% endif %}>{{ partner.full_name }} - {{ partner.company_department.name if partner.company_department else 'Chưa có phòng ban' }} - {{ partner.position or 'Chưa có vị trí' }}</option>
+          {% endfor %}
+        </select>
+        {% if errors.get('partner_id') %}<div class="invalid-feedback">{{ errors.partner_id }}</div>{% endif %}
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Phòng ban</label>
+        <input class="form-control" value="{{ form_data.get('department') or 'Chưa chọn đối tác' }}" readonly data-relation-department-display>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Vị trí trong phòng ban</label>
+        <input class="form-control" value="{{ form_data.get('position_title') or 'Chưa chọn đối tác' }}" readonly data-relation-position-display>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Cấp trên / Báo cáo cho</label>
+        <select class="form-select {% if errors.get('parent_partner_id') %}is-invalid{% endif %}" name="parent_partner_id">
+          <option value="">Không có</option>
+          {% for partner in partners %}
+            <option value="{{ partner.id }}" {% if form_data.get('parent_partner_id') == partner.id %}selected{% endif %}>{{ partner.full_name }}</option>
+          {% endfor %}
+        </select>
+        {% if errors.get('parent_partner_id') %}<div class="invalid-feedback">{{ errors.parent_partner_id }}</div>{% endif %}
+      </div>
+      <div class="col-md-5">
+        <label class="form-label">Loại quan hệ</label>
+        <select class="form-select" name="relationship_type" required>
+          {% for value, label in relationship_types.items() %}
+            <option value="{{ value }}" {% if form_data.get('relationship_type', 'direct_report') == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Thứ tự</label>
+        <input class="form-control" type="number" name="display_order" value="{{ form_data.get('display_order', 0) }}">
+      </div>
+      <div class="col-12">
+        <label class="form-label">Ghi chú</label>
+        <textarea class="form-control" name="note" rows="2">{{ form_data.get('note', '') }}</textarea>
+      </div>
+    </div>
+  </div>
+  <div class="card-footer bg-white d-flex justify-content-end gap-2">
+    {% if relationship and relationship.id %}<a class="btn btn-outline-secondary" href="{{ url_for('partner_relations.manage_company', company_id=company.id) }}">Hủy sửa</a>{% endif %}
+    <button class="btn btn-primary" type="submit">Lưu quan hệ</button>
+  </div>
+</form>
+
+<div class="card table-card mobile-cards">
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>Đối tác</th><th>Phòng ban</th><th>Vị trí</th><th>Cấp trên</th><th>Loại</th><th class="text-end">Thao tác</th></tr></thead>
+      <tbody>
+      {% for item in relationships %}
+        <tr>
+          <td data-label="Đối tác"><span class="fw-semibold">{{ item.partner.full_name }}</span>{% if item.partner.is_department_head %} <span class="badge text-bg-success">Trưởng phòng</span>{% endif %}</td>
+          <td data-label="Phòng ban">{{ item.department }}</td>
+          <td data-label="Vị trí">{{ item.position_title }}</td>
+          <td data-label="Cấp trên">{{ item.parent_partner.full_name if item.parent_partner else '-' }}</td>
+          <td data-label="Loại"><span class="badge text-bg-light border">{{ relationship_types.get(item.relationship_type, item.relationship_type) }}</span></td>
+          <td data-label="Thao tác" class="text-end">
+            <div class="mobile-card-actions justify-content-end">
+              <a class="btn btn-sm btn-outline-secondary btn-action-mobile" href="{{ url_for('partner_relations.tree', company_id=company.id) }}" aria-label="Xem" title="Xem"><i class="bi bi-eye"></i><span class="action-label">Xem</span></a>
+              <a class="btn btn-sm btn-outline-primary btn-action-mobile" href="{{ url_for('partner_relations.edit_relationship', company_id=company.id, relationship_id=item.id) }}" aria-label="Sửa" title="Sửa"><i class="bi bi-pencil"></i><span class="action-label">Sửa</span></a>
+              <form method="post" action="{{ url_for('partner_relations.delete_relationship', company_id=company.id, relationship_id=item.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-outline-danger btn-action-mobile" type="submit" data-confirm="Xóa quan hệ này?" aria-label="Xóa" title="Xóa"><i class="bi bi-trash"></i><span class="action-label">Xóa</span></button>
+              </form>
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="text-center text-muted py-4">Chưa có quan hệ nào.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

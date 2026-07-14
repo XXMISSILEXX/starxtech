@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Bộ trường dữ liệu{% endblock %}
+{% block page_title %}Bộ trường dữ liệu{% endblock %}
+
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body">
+    <form class="row g-2" method="get">
+      <div class="col-md-6"><input class="form-control" name="q" value="{{ filters.get('q', '') }}" placeholder="Tìm tên bộ trường"></div>
+      <div class="col-md-3">
+        <select class="form-select" name="active">
+          <option value="">Tất cả trạng thái</option>
+          <option value="1" {% if filters.get('active') == '1' %}selected{% endif %}>Đang dùng</option>
+          <option value="0" {% if filters.get('active') == '0' %}selected{% endif %}>Đã vô hiệu hóa</option>
+        </select>
+      </div>
+      <div class="col-md-3 d-flex gap-2">
+        <button class="btn btn-outline-secondary flex-fill" type="submit"><i class="bi bi-funnel me-1"></i>Lọc</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('partner_field_collections.index') }}">Xóa lọc</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="d-flex justify-content-end mb-3">
+  <a class="btn btn-primary" href="{{ url_for('partner_field_collections.new') }}"><i class="bi bi-plus-lg me-1"></i>Thêm bộ trường</a>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>Tên bộ trường</th><th>Mô tả</th><th>Trường dữ liệu</th><th>Trạng thái</th><th></th></tr></thead>
+      <tbody>
+      {% for collection in collections %}
+        <tr>
+          <td class="fw-semibold">{{ collection.name }}</td>
+          <td>{{ collection.description or '-' }}</td>
+          <td>{{ collection.items|length }}</td>
+          <td>{{ 'Đang dùng' if collection.is_active else 'Đã vô hiệu hóa' }}</td>
+          <td class="text-end">
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('partner_field_collections.edit', collection_id=collection.id) }}">Sửa</a>
+            {% if collection.is_active %}
+              <button class="btn btn-sm btn-outline-danger" form="deactivate-collection-{{ collection.id }}" type="submit">Vô hiệu hóa</button>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="text-center text-muted py-4">Chưa có bộ trường dữ liệu.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% for collection in collections %}
+  <form id="deactivate-collection-{{ collection.id }}" method="post" action="{{ url_for('partner_field_collections.deactivate', collection_id=collection.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  </form>
+{% endfor %}
+{% endblock %}

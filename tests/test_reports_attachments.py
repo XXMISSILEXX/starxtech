@@ -82,6 +82,18 @@ def test_category_icon_appears_in_report_create_form(client):
     assert b"bi-tools" in response.data
 
 
+def test_category_icon_appears_in_report_edit_form(client, app):
+    login(client, "reporter")
+    client.post("/projects/1/reports/create", data=report_form())
+    with app.app_context():
+        report_id = DailyReport.query.one().id
+
+    response = client.get(f"/reports/{report_id}/edit")
+
+    assert response.status_code == 200
+    assert b"bi-tools" in response.data
+
+
 def test_reporter_cannot_create_report_for_unassigned_project(client):
     login(client, "reporter")
 
@@ -216,3 +228,73 @@ def test_report_update_and_delete_write_audit_rows(client, app):
         assert report.deleted_at is not None
         assert AuditLog.query.filter_by(action="report.update", entity_id=report_id).count() == 1
         assert AuditLog.query.filter_by(action="report.delete", entity_id=report_id).count() == 1
+
+
+def test_report_edit_post_success_shows_vietnamese_message(client, app):
+    login(client, "reporter")
+    client.post("/projects/1/reports/create", data=report_form())
+    with app.app_context():
+        report_id = DailyReport.query.one().id
+
+    updated_data = report_form(content="Nội dung đã cập nhật.")
+    updated_data["highlight"] = "Điểm nổi bật đã cập nhật."
+    response = client.post(
+        f"/reports/{report_id}/edit",
+        data=updated_data,
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Đã cập nhật báo cáo thành công.".encode() in response.data
+    assert "Điểm nổi bật đã cập nhật.".encode() in response.data
+
+
+def test_report_edit_validation_error_shows_message(client, app):
+    login(client, "reporter")
+    client.post("/projects/1/reports/create", data=report_form())
+    with app.app_context():
+        report_id = DailyReport.query.one().id
+
+    invalid_data = report_form()
+    invalid_data["highlight"] = ""
+    response = client.post(f"/reports/{report_id}/edit", data=invalid_data)
+
+    assert response.status_code == 400
+    assert "Vui lòng nhập điểm nổi bật.".encode() in response.data
+
+
+def test_report_create_missing_section_content_preserves_entered_data(client):
+    login(client, "reporter")
+    data = report_form(content="")
+    data["highlight"] = "Highlight giữ lại sau lỗi."
+    data["summary_note"] = "Note giữ lại sau lỗi."
+    data.add("sections-1-category_id", "2")
+    data.add("sections-1-status", "ATTENTION")
+    data.add("sections-1-content", "Nội dung section khác vẫn còn.")
+
+    response = client.post("/projects/1/reports/create", data=data)
+
+    assert response.status_code == 400
+    assert "Mỗi phần báo cáo phải có nội dung.".encode() in response.data
+    assert "Highlight giữ lại sau lỗi.".encode() in response.data
+    assert "Note giữ lại sau lỗi.".encode() in response.data
+    assert "Nội dung section khác vẫn còn.".encode() in response.data
+    assert b'value="2" data-icon' in response.data
+    assert b'value="ATTENTION"' in response.data
+
+
+def test_report_edit_validation_fail_keeps_existing_attachment(client, app):
+    login(client, "reporter")
+    data = report_form()
+    data.add("sections-0-images", image_upload())
+    client.post("/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    with app.app_context():
+        report_id = DailyReport.query.one().id
+        attachment_id = ReportAttachment.query.one().id
+
+    invalid_data = report_form()
+    invalid_data["highlight"] = ""
+    response = client.post(f"/reports/{report_id}/edit", data=invalid_data)
+
+    assert response.status_code == 400
+    assert f"/attachments/{attachment_id}".encode() in response.data

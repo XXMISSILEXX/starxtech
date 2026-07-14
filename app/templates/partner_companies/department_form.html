@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Sửa phòng ban' if department.id else 'Thêm phòng ban' }}{% endblock %}
+{% block page_title %}{{ 'Sửa phòng ban' if department.id else 'Thêm phòng ban' }}{% endblock %}
+
+{% block content %}
+<form method="post" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card-body row g-3">
+    <div class="col-md-6">
+      <label class="form-label">Tên phòng ban <span class="text-danger">*</span></label>
+      <input class="form-control {% if errors.get('name') %}is-invalid{% endif %}" name="name" value="{{ request.form.get('name', department.name or '') }}" required>
+      {% if errors.get('name') %}<div class="invalid-feedback">{{ errors.name }}</div>{% endif %}
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Phòng ban cấp trên</label>
+      <select class="form-select {% if errors.get('parent_department_id') %}is-invalid{% endif %}" name="parent_department_id">
+        <option value="">Không có</option>
+        {% for item in parent_options %}
+          <option value="{{ item.id }}" {% if request.form.get('parent_department_id', department.parent_department_id|string if department.parent_department_id else '') == item.id|string %}selected{% endif %}>{{ item.name }}</option>
+        {% endfor %}
+      </select>
+      {% if errors.get('parent_department_id') %}<div class="invalid-feedback">{{ errors.parent_department_id }}</div>{% endif %}
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Thứ tự hiển thị</label>
+      <input class="form-control" type="number" name="display_order" value="{{ request.form.get('display_order', department.display_order or 0) }}">
+    </div>
+    <div class="col-md-3 d-flex align-items-end">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="is_active" name="is_active" {% if department.is_active %}checked{% endif %}>
+        <label class="form-check-label" for="is_active">Đang hoạt động</label>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="form-check border rounded p-3 h-100">
+        <input class="form-check-input" type="checkbox" id="is_special_department" name="is_special_department" {% if request.form.get('is_special_department') == 'on' or (not request.form and department.is_special_department) %}checked{% endif %}>
+        <label class="form-check-label fw-semibold" for="is_special_department">Là phòng ban đặc biệt?</label>
+        <div class="form-text">Nếu bật, sơ đồ cây sẽ hiển thị toàn bộ thành viên của phòng ban này thay vì chỉ hiển thị trưởng phòng.</div>
+      </div>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Mô tả</label>
+      <textarea class="form-control" name="description" rows="3">{{ request.form.get('description', department.description or '') }}</textarea>
+    </div>
+  </div>
+  <div class="card-footer bg-white d-flex justify-content-end gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_for('partner_companies.departments', company_id=company.id) }}">Quay lại</a>
+    <button class="btn btn-primary" type="submit">Lưu phòng ban</button>
+  </div>
+</form>
+{% endblock %}

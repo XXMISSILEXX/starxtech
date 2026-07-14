@@ -30,15 +30,15 @@
           <td><span class="badge status-badge status-muted">{{ project.status }}</span></td>
           <td>{{ project.start_date or '-' }} / {{ project.expected_end_date or '-' }}</td>
           <td class="text-end">
-            <div class="d-inline-flex gap-1">
-              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.projects_reporters', project_id=project.id) }}"><i class="bi bi-people me-1"></i>Phân quyền</a>
-              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.categories_index', project_id=project.id) }}"><i class="bi bi-tags me-1"></i>Hạng mục</a>
+            <div class="mobile-card-actions">
+              <a class="btn btn-sm btn-outline-secondary btn-action-mobile" href="{{ url_for('admin.projects_reporters', project_id=project.id) }}" aria-label="Phân quyền" title="Phân quyền"><i class="bi bi-people"></i><span class="action-label">Phân quyền</span></a>
+              <a class="btn btn-sm btn-outline-secondary btn-action-mobile" href="{{ url_for('admin.categories_index', project_id=project.id) }}" aria-label="Hạng mục" title="Hạng mục"><i class="bi bi-tags"></i><span class="action-label">Hạng mục</span></a>
               {% if current_user.role == 'SUPER_ADMIN' %}
-                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.projects_edit', project_id=project.id) }}"><i class="bi bi-pencil me-1"></i>Sửa</a>
+                <a class="btn btn-sm btn-outline-primary btn-action-mobile" href="{{ url_for('admin.projects_edit', project_id=project.id) }}" aria-label="Sửa" title="Sửa"><i class="bi bi-pencil"></i><span class="action-label">Sửa</span></a>
                 {% if project.status != 'archived' %}
                   <form method="post" action="{{ url_for('admin.projects_archive', project_id=project.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-danger" type="submit" data-confirm="Lưu trữ dự án này?"><i class="bi bi-archive me-1"></i>Lưu trữ</button>
+                    <button class="btn btn-sm btn-outline-danger btn-action-mobile" type="submit" data-confirm="Lưu trữ dự án này?" aria-label="Lưu trữ" title="Lưu trữ"><i class="bi bi-archive"></i><span class="action-label">Lưu trữ</span></button>
                   </form>
                 {% endif %}
               {% endif %}

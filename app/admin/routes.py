@@ -18,6 +18,7 @@ from app.admin.services import (
 from app.auth.permissions import admin_read_required, can_manage_categories_for_project, super_admin_required
 from app.extensions import db
 from app.models import Project, ProjectStatus, ReportCategory, User, UserRole
+from app.security import password_policy_errors
 
 
 @bp.get("/")
@@ -302,8 +303,8 @@ def _save_user(user=None):
         errors.append("Tên đăng nhập là bắt buộc.")
     if role not in [role.value for role in UserRole]:
         errors.append("Vai trò không hợp lệ.")
-    if is_new and len(password) < 8:
-        errors.append("Mật khẩu phải có ít nhất 8 ký tự.")
+    if is_new:
+        errors.extend(password_policy_errors(password))
     errors.extend(validate_unique_user(username, email, user.id if user else None))
 
     if errors:
@@ -454,7 +455,7 @@ def _save_category(project, category=None):
 
 
 def _require_super_admin_post():
-    if current_user.role != UserRole.SUPER_ADMIN.value:
+    if current_user.role not in {UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value}:
         abort(403)
 
 

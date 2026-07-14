@@ -73,8 +73,9 @@ def validate_unique_category_name(project_id, name, category_id=None):
 
 
 def temporary_password(length=14):
-    alphabet = string.ascii_letters + string.digits
-    return "".join(secrets.choice(alphabet) for _ in range(length))
+    # Deliberately include every policy group so administrator resets remain valid.
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+    return "Aa1!" + "".join(secrets.choice(alphabet) for _ in range(max(0, length - 4)))
 
 
 audit = log_audit

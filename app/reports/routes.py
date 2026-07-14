@@ -6,6 +6,7 @@ from app.reports import bp
 from app.reports.services import (
     ReportValidationError,
     accessible_projects_query,
+    build_report_form_data,
     categories_for_report,
     delete_report,
     reports_query,
@@ -17,6 +18,7 @@ from app.reports.services import (
 @bp.get("/")
 def index():
     query = reports_query()
+    projects = accessible_projects_query().all()
 
     project_id = request.args.get("project_id", type=int)
     status = request.args.get("status", "").strip()
@@ -36,7 +38,7 @@ def index():
     return render_template(
         "reports/index.html",
         reports=reports,
-        projects=accessible_projects_query().all(),
+        projects=projects,
         statuses=[status.value for status in DailyReportStatus],
         filters={
             "project_id": project_id,
@@ -45,6 +47,9 @@ def index():
             "date_to": date_to,
         },
         project=None,
+        can_create_report_entry=any(can_write_project(project.id) for project in projects),
+        can_write_by_project={report.id: can_write_project(report.project_id) for report in reports},
+        can_delete_by_report={report.id: _can_delete_report(report) for report in reports},
     )
 
 
@@ -72,8 +77,13 @@ def edit(report_id):
         except ReportValidationError as exc:
             db.session.rollback()
             flash(str(exc), "danger")
-            return _render_form(report), 400
-        flash("Đã lưu báo cáo.", "success")
+            _flash_reselect_images_if_needed(request.files)
+            return _render_form(
+                report,
+                form_data=build_report_form_data(request.form, report),
+                form_errors=exc.errors,
+            ), 400
+        flash("Đã cập nhật báo cáo thành công.", "success")
         return redirect(url_for("reports.detail", report_id=report.id))
 
     return _render_form(report)
@@ -89,11 +99,13 @@ def delete(report_id):
     return redirect(url_for("reports.index"))
 
 
-def _render_form(report):
+def _render_form(report, form_data=None, form_errors=None):
     return render_template(
         "reports/form.html",
         report=report,
         project=report.project,
+        form_data=form_data,
+        form_errors=form_errors or {},
         categories=categories_for_report(report),
         statuses=[status.value for status in DailyReportStatus],
         section_statuses=[status.value for status in SectionStatus],
@@ -121,3 +133,8 @@ def _require_can_write(report):
 
 def _can_delete_report(report):
     return can_delete_report_for_project(report.project_id)
+
+
+def _flash_reselect_images_if_needed(files):
+    if any(file and file.filename for key in files for file in files.getlist(key)):
+        flash("Vui lòng chọn lại ảnh đính kèm sau khi sửa lỗi.", "warning")

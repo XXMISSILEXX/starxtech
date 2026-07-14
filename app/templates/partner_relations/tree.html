@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% macro render_department(node) %}
+  {% set department = node.department %}
+  <li class="org-chart-item {% if node.is_match %}org-chart-match{% endif %}">
+    <button
+      class="org-department-node {% if department.is_special_department %}org-department-special{% endif %}"
+      type="button"
+      data-department-node
+      data-department-summary-url="{{ url_for('partner_relations.department_summary', department_id=department.id) }}"
+      aria-label="Xem chi tiết {{ department.name }}"
+    >
+      <span class="org-node-title">{{ department.name }}</span>
+      {% if department.is_special_department %}
+        <span class="org-node-type">Phòng ban đặc biệt</span>
+        <span class="org-special-members">
+          {% for member in node.members %}
+            <span class="org-special-member">
+              <span>{{ member.full_name }}</span>
+              {% if member.position %}<span class="partner-position-badge">{{ member.position }}</span>{% endif %}
+            </span>
+          {% else %}
+            <span class="text-muted">Chưa có thành viên.</span>
+          {% endfor %}
+        </span>
+      {% else %}
+        <span class="org-node-head">
+          Trưởng phòng:
+          {% if node.head %}
+            <strong>{{ node.head.full_name }}</strong>
+            {% if node.head.position %}<span class="partner-position-badge">{{ node.head.position }}</span>{% endif %}
+          {% else %}
+            <span class="text-muted">Chưa có trưởng phòng</span>
+          {% endif %}
+        </span>
+      {% endif %}
+    </button>
+    {% if node.children %}
+      <ul>
+        {% for child in node.children %}
+          {{ render_department(child) }}
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </li>
+{% endmacro %}
+
+{% block title %}Sơ đồ cây · {{ company.name }}{% endblock %}
+{% block page_title %}Sơ đồ cây · {{ company.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
+  <a class="btn btn-outline-secondary" href="{{ url_for('partner_relations.company', company_id=company.id) }}">Quay lại</a>
+  {% if can_edit %}<a class="btn btn-primary" href="{{ url_for('partner_relations.manage_company', company_id=company.id) }}"><i class="bi bi-pencil me-1"></i><span class="action-label">Quản lý quan hệ</span></a>{% endif %}
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <form class="row g-2" method="get">
+      <div class="col-md-5"><input class="form-control" name="q" value="{{ filters.get('q', '') }}" placeholder="Tìm đối tác hoặc phòng ban"></div>
+      <div class="col-md-4"><select class="form-select" name="department"><option value="">Phòng ban</option>{% for department in departments %}<option value="{{ department.id }}" {% if filters.get('department') == department.id|string %}selected{% endif %}>{{ department.name }}</option>{% endfor %}</select></div>
+      <div class="col-md-3 d-flex gap-2"><button class="btn btn-outline-secondary flex-fill" type="submit">Lọc</button><a class="btn btn-outline-secondary" href="{{ url_for('partner_relations.tree', company_id=company.id) }}">Xóa lọc</a></div>
+    </form>
+  </div>
+</div>
+
+<div class="org-chart-scroll" data-tree-scroll>
+  <div class="org-chart">
+    <div class="org-company-node">
+      <i class="bi bi-buildings me-1"></i>{{ company.name }}
+    </div>
+    {% if tree_data %}
+      <ul class="org-chart-list org-chart-root">
+        {% for department in tree_data %}
+          {{ render_department(department) }}
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="text-center text-muted py-4">Chưa có dữ liệu phòng ban phù hợp.</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="modal fade" id="departmentSummaryModal" tabindex="-1" aria-labelledby="departmentSummaryModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title h6" id="departmentSummaryModalLabel">Chi tiết phòng ban</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+      </div>
+      <div class="modal-body" data-department-modal-body>
+        <div class="text-muted">Đang tải dữ liệu...</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Đóng</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

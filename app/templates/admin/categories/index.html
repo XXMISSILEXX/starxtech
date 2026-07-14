@@ -25,6 +25,33 @@
       <input class="form-control" id="icon" name="icon" value="{{ request.form.get('icon', form_category.icon if form_category and form_category.icon else '') }}">
       <div class="form-text">Nhập tên Bootstrap Icon như <code>tools</code> hoặc emoji.</div>
     </div>
+    <div class="col-12">
+      <div class="form-label mb-2">Chọn nhanh biểu tượng</div>
+      {% set icon_choices = [
+        ('🏗️', 'Thi công'),
+        ('🤝', 'Nhà thầu phụ'),
+        ('📋', 'Phối hợp BQLDA / CĐT'),
+        ('👥', 'Nhân sự & Tuyển dụng'),
+        ('💻', 'Phần mềm & Công nghệ'),
+        ('📁', 'Hồ sơ Pháp lý'),
+        ('⚠️', 'An toàn'),
+        ('📦', 'Vật tư'),
+        ('🧱', 'Kết cấu'),
+        ('⚡', 'Điện'),
+        ('🚰', 'Nước'),
+        ('🔥', 'PCCC'),
+        ('🧹', 'Vệ sinh'),
+        ('📝', 'Ghi chú')
+      ] %}
+      <div class="icon-choice-grid">
+        {% for icon_value, icon_label in icon_choices %}
+          <button class="icon-choice" type="button" data-icon-choice="{{ icon_value }}" aria-label="{{ icon_label }}">
+            <span class="icon-choice-symbol">{{ icon_value }}</span>
+            <span class="icon-choice-label">{{ icon_label }}</span>
+          </button>
+        {% endfor %}
+      </div>
+    </div>
     <div class="col-md-2">
       <label class="form-label" for="sort_order">Thứ tự</label>
       <input class="form-control" id="sort_order" name="sort_order" type="number" value="{{ request.form.get('sort_order', form_category.sort_order if form_category else 0) }}">
@@ -87,22 +114,22 @@
           </td>
           {% if can_manage %}
             <td class="text-end">
-              <div class="d-inline-flex gap-1">
-                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.categories_edit', project_id=project.id, category_id=category.id) }}"><i class="bi bi-pencil me-1"></i>Sửa</a>
+              <div class="mobile-card-actions">
+                <a class="btn btn-sm btn-outline-primary btn-action-mobile" href="{{ url_for('admin.categories_edit', project_id=project.id, category_id=category.id) }}" aria-label="Sửa" title="Sửa"><i class="bi bi-pencil"></i><span class="action-label">Sửa</span></a>
                 {% if category.is_active %}
                   <form method="post" action="{{ url_for('admin.categories_deactivate', project_id=project.id, category_id=category.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-warning" type="submit"><i class="bi bi-toggle-off me-1"></i>Vô hiệu hóa</button>
+                    <button class="btn btn-sm btn-outline-warning btn-action-mobile" type="submit" aria-label="Vô hiệu hóa" title="Vô hiệu hóa"><i class="bi bi-toggle-off"></i><span class="action-label">Vô hiệu hóa</span></button>
                   </form>
                 {% else %}
                   <form method="post" action="{{ url_for('admin.categories_activate', project_id=project.id, category_id=category.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-success" type="submit"><i class="bi bi-toggle-on me-1"></i>Kích hoạt</button>
+                    <button class="btn btn-sm btn-outline-success btn-action-mobile" type="submit" aria-label="Kích hoạt" title="Kích hoạt"><i class="bi bi-toggle-on"></i><span class="action-label">Kích hoạt</span></button>
                   </form>
                 {% endif %}
                 <form method="post" action="{{ url_for('admin.categories_delete', project_id=project.id, category_id=category.id) }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button class="btn btn-sm btn-outline-danger" type="submit" data-confirm="Xóa hạng mục này?"><i class="bi bi-trash me-1"></i>Xóa</button>
+                  <button class="btn btn-sm btn-outline-danger btn-action-mobile" type="submit" data-confirm="Xóa hạng mục này?" aria-label="Xóa" title="Xóa"><i class="bi bi-trash"></i><span class="action-label">Xóa</span></button>
                 </form>
               </div>
             </td>

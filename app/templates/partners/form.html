@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Sửa đối tác' if partner else 'Thêm đối tác' }}{% endblock %}
+{% block page_title %}{{ 'Sửa đối tác' if partner else 'Thêm đối tác' }}{% endblock %}
+
+{% block content %}
+<form method="post" class="vstack gap-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card">
+    <div class="card-header bg-white fw-semibold">Thông tin cơ bản</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Họ tên <span class="text-danger">*</span></label>
+          <input class="form-control {% if form_errors.get('full_name') %}is-invalid{% endif %}" name="full_name" value="{{ form_data.get('full_name', '') }}">
+          {% if form_errors.get('full_name') %}<div class="invalid-feedback">{{ form_errors.full_name }}</div>{% endif %}
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Công ty</label>
+          <select class="form-select {% if form_errors.get('company_id') %}is-invalid{% endif %}" name="company_id" data-company-select>
+            <option value="">Chưa chọn</option>
+            {% for company in companies %}
+              <option value="{{ company.id }}" {% if form_data.get('company_id') == company.id %}selected{% endif %}>{{ company.name }}</option>
+            {% endfor %}
+          </select>
+          {% if form_errors.get('company_id') %}<div class="invalid-feedback">{{ form_errors.company_id }}</div>{% endif %}
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Phòng ban <span class="text-danger">*</span></label>
+          <select class="form-select {% if form_errors.get('department_id') %}is-invalid{% endif %}" name="department_id" data-department-select>
+            <option value="">Chọn phòng ban</option>
+            {% for department in departments %}
+              <option value="{{ department.id }}" data-company-id="{{ department.company_id }}" data-is-special="{{ '1' if department.is_special_department else '0' }}" {% if form_data.get('department_id') == department.id %}selected{% endif %}>{{ department.name }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text" data-no-departments-message>Công ty này chưa có phòng ban. Vui lòng tạo phòng ban trước.</div>
+          {% if form_errors.get('department_id') %}<div class="invalid-feedback">{{ form_errors.department_id }}</div>{% endif %}
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Vị trí <span class="text-danger">*</span></label>
+          <input class="form-control {% if form_errors.get('position') %}is-invalid{% endif %}" name="position" value="{{ form_data.get('position') or '' }}" data-position-input>
+          {% if form_errors.get('position') %}<div class="invalid-feedback">{{ form_errors.position }}</div>{% endif %}
+          <div class="form-check mt-2" data-department-head-wrapper>
+            <input class="form-check-input" type="checkbox" name="is_department_head" id="is_department_head" data-department-head-checkbox {% if form_data.get('is_department_head') %}checked{% endif %}>
+            <label class="form-check-label" for="is_department_head">Là trưởng phòng</label>
+            <div class="form-text">Khi chọn, vị trí sẽ tự động là “Trưởng phòng”. Phòng ban đặc biệt không dùng tùy chọn này.</div>
+          </div>
+        </div>
+        <div class="col-md-4"><label class="form-label">Điện thoại</label><input class="form-control" name="phone" value="{{ form_data.get('phone') or '' }}"></div>
+        <div class="col-md-4"><label class="form-label">Email</label><input class="form-control" type="email" name="email" value="{{ form_data.get('email') or '' }}"></div>
+        <div class="col-md-4"><label class="form-label">Ngày sinh</label><input class="form-control js-date-picker {% if form_errors.get('birth_date') %}is-invalid{% endif %}" type="text" name="birth_date" value="{{ form_data.get('birth_date_raw') or '' }}" placeholder="DD-MM-YYYY" data-date-picker>{% if form_errors.get('birth_date') %}<div class="invalid-feedback">{{ form_errors.birth_date }}</div>{% endif %}</div>
+        <div class="col-md-6"><label class="form-label">Địa chỉ</label><textarea class="form-control" name="address" rows="3">{{ form_data.get('address') or '' }}</textarea></div>
+        <div class="col-md-6"><label class="form-label">Ghi chú</label><textarea class="form-control" name="notes" rows="3">{{ form_data.get('notes') or '' }}</textarea></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+      <span class="fw-semibold">Thông tin mở rộng</span>
+      <span class="text-muted small">Chỉ thêm các trường cần dùng.</span>
+    </div>
+    <div class="card-body">
+      {% for key, message in form_errors.items() if key.startswith('field_') %}
+        <div class="alert alert-danger py-2">{{ message }}</div>
+      {% endfor %}
+      <div class="row g-2 mb-3">
+        <div class="col-md-5">
+          <label class="form-label">Trường dữ liệu</label>
+          <select class="form-select" data-partner-field-select>
+            <option value="">Chọn trường dữ liệu</option>
+            {% for field in field_definitions %}
+              <option value="{{ field.id }}">{{ field.label }}{% if field.group_name %} · {{ field.group_name }}{% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3 d-flex align-items-end">
+          <button class="btn btn-outline-primary w-100" type="button" data-add-partner-field><i class="bi bi-plus-lg me-1"></i>Thêm trường dữ liệu</button>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Bộ trường dữ liệu</label>
+          <select class="form-select" data-partner-collection-select>
+            <option value="">Chọn bộ trường</option>
+            {% for collection in field_collections %}
+              <option value="{{ collection.id }}">{{ collection.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="vstack gap-3" id="fieldRows" data-partner-fields
+        data-next-index="{{ field_rows|length }}"
+        data-definitions='[
+          {% for field in field_definitions %}
+            {"id": {{ field.id }}, "label": {{ field.label|tojson }}, "field_type": {{ field.field_type|tojson }}, "options": {{ (field.options_json or [])|tojson }}, "group_name": {{ (field.group_name or "")|tojson }}}{% if not loop.last %},{% endif %}
+          {% endfor %}
+        ]'
+        data-collections='[
+          {% for collection in field_collections %}
+            {"id": {{ collection.id }}, "field_ids": [{% for item in collection.items %}{{ item.field_definition_id }}{% if not loop.last %},{% endif %}{% endfor %}]}{% if not loop.last %},{% endif %}
+          {% endfor %}
+        ]'>
+        {% for row in field_rows if row.field_definition_id %}
+          <div class="border rounded p-3" data-field-row data-field-id="{{ row.field_definition_id }}">
+            <div class="d-flex justify-content-between gap-2 mb-2">
+              <label class="form-label mb-0">{{ row.label }}</label>
+              <button class="btn btn-sm btn-outline-danger" type="button" data-remove-field aria-label="Xóa trường"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <input type="hidden" name="fields[{{ loop.index0 }}][field_definition_id]" value="{{ row.field_definition_id }}">
+            {% set input_name = 'fields[' ~ loop.index0 ~ '][value]' %}
+            {% set input_value = row.value %}
+            {% set field = {'field_type': row.field_type, 'options_json': row.options} %}
+            {% include "partners/_field_input.html" %}
+          </div>
+        {% else %}
+          <div class="text-muted small" data-empty-fields>Chưa có thông tin mở rộng.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex justify-content-end gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_for('partners.index') }}">Quay lại</a>
+    <button class="btn btn-primary" type="submit">Lưu đối tác</button>
+  </div>
+</form>
+{% endblock %}

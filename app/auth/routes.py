@@ -1,21 +1,25 @@
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
-from flask import flash, redirect, render_template, request, url_for
+from flask import current_app, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy import or_
 from werkzeug.security import generate_password_hash
 
 from app.auth import bp
 from app.auth.forms import ChangePasswordForm, LoginForm
+from app.auth.permissions import permitted_modules
 from app.extensions import db
+from app.extensions import limiter
+from app.audit import log_audit
 from app.models import User
 
 
 @bp.route("/login", methods=["GET", "POST"])
+@limiter.limit(lambda: current_app.config.get("RATELIMIT_LOGIN_LIMIT", "5 per minute"), methods=["POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("dashboard.index"))
+        return redirect(_post_login_redirect())
 
     form = LoginForm()
     if form.validate_on_submit():
@@ -27,14 +31,20 @@ def login():
             )
         ).first()
 
-        if not user or not user.is_active or not user.check_password(form.password.data):
+        if not user or not user.check_password(form.password.data):
+            log_audit("auth.login_failed", "User", user.id if user else None, new_values={"login": login_value})
+            db.session.commit()
             flash("Tên đăng nhập/email hoặc mật khẩu không đúng.", "danger")
             return render_template("auth/login.html", form=form), 401
+
+        if not user.is_active:
+            flash("Tài khoản của bạn đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên.", "danger")
+            return render_template("auth/login.html", form=form), 403
 
         user.last_login_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.session.commit()
         login_user(user, remember=form.remember.data)
-        return redirect(_safe_next_url() or url_for("dashboard.index"))
+        return redirect(_safe_next_url() or _post_login_redirect(user))
 
     return render_template("auth/login.html", form=form)
 
@@ -42,6 +52,7 @@ def login():
 @bp.post("/logout")
 @login_required
 def logout():
+    session.pop("active_module", None)
     logout_user()
     flash("Bạn đã đăng xuất.", "info")
     return redirect(url_for("auth.login"))
@@ -74,3 +85,16 @@ def _safe_next_url():
         return None
 
     return next_url
+
+
+def _post_login_redirect(user=None):
+    user = user or current_user
+    modules = permitted_modules(user)
+    if len(modules) > 1:
+        session.pop("active_module", None)
+        return url_for("modules.index")
+    if modules == ["partners"]:
+        session["active_module"] = "partners"
+        return url_for("partners.dashboard")
+    session["active_module"] = "reports"
+    return url_for("dashboard.index")

@@ -1,0 +1,27 @@
+{% if field.field_type == 'textarea' %}
+  <textarea class="form-control" name="{{ input_name }}" rows="3">{{ input_value }}</textarea>
+{% elif field.field_type == 'number' %}
+  <input class="form-control" type="number" step="any" name="{{ input_name }}" value="{{ input_value }}">
+{% elif field.field_type == 'date' %}
+  <input class="form-control js-date-picker" type="text" name="{{ input_name }}" value="{{ input_value }}" placeholder="DD-MM-YYYY" data-date-picker>
+{% elif field.field_type == 'boolean' %}
+  <div class="form-check">
+    <input class="form-check-input" type="checkbox" name="{{ input_name }}" {% if input_value in ['Có', 'on', '1', true] %}checked{% endif %}>
+    <label class="form-check-label">Có</label>
+  </div>
+{% elif field.field_type == 'select' %}
+  <select class="form-select" name="{{ input_name }}">
+    <option value="">Chọn</option>
+    {% for option in field.options_json or [] %}
+      <option value="{{ option }}" {% if input_value == option %}selected{% endif %}>{{ option }}</option>
+    {% endfor %}
+  </select>
+{% elif field.field_type == 'multi_select' %}
+  <select class="form-select" name="{{ input_name }}" multiple>
+    {% for option in field.options_json or [] %}
+      <option value="{{ option }}" {% if option in input_value %}selected{% endif %}>{{ option }}</option>
+    {% endfor %}
+  </select>
+{% else %}
+  <input class="form-control" type="{{ 'email' if field.field_type == 'email' else 'url' if field.field_type == 'url' else 'text' }}" name="{{ input_name }}" value="{{ input_value }}">
+{% endif %}

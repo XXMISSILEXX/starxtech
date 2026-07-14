@@ -27,7 +27,7 @@ def test_viewer_admin_can_read_admin_pages_but_cannot_post(client):
             "username": "blocked",
             "email": "blocked@example.com",
             "role": "REPORTER",
-            "password": "password123",
+            "password": "Password123!",
             "is_active": "on",
         },
     )
@@ -52,7 +52,7 @@ def test_super_admin_creates_user_and_duplicate_validation_fails(client, app):
             "username": "newreporter",
             "email": "newreporter@example.com",
             "role": "REPORTER",
-            "password": "password123",
+            "password": "Password123!",
             "is_active": "on",
         },
     )
@@ -70,7 +70,7 @@ def test_super_admin_creates_user_and_duplicate_validation_fails(client, app):
             "username": "newreporter",
             "email": "newreporter@example.com",
             "role": "REPORTER",
-            "password": "password123",
+            "password": "Password123!",
             "is_active": "on",
         },
     )
