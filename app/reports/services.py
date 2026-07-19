@@ -35,14 +35,14 @@ class ReportValidationError(ValueError):
 
 def accessible_projects_query():
     query = Project.query.filter(Project.deleted_at.is_(None))
-    if current_user.role in {UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value}:
+    if current_user.role_code in {UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value}:
         query = query.join(Project.user_assignments).filter_by(user_id=current_user.id)
     return query.order_by(Project.code.asc(), Project.name.asc())
 
 
 def reports_query():
     query = DailyReport.query.filter(DailyReport.deleted_at.is_(None)).join(DailyReport.project)
-    if current_user.role in {UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value}:
+    if current_user.role_code in {UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value}:
         query = query.join(Project.user_assignments).filter_by(user_id=current_user.id)
     return query
 

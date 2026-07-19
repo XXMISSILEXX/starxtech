@@ -68,6 +68,7 @@ Initialize and run migrations:
 flask db init
 flask db migrate -m "initial schema"
 flask db upgrade
+flask sync-permissions --apply-defaults
 ```
 
 This repository includes an initial migration. If `migrations/` already exists, run only:
@@ -111,6 +112,16 @@ flask seed-admin --username admin --password 'Admin@123456' --email admin@exampl
 ```
 
 Mật khẩu admin phải có ít nhất 12 ký tự và chứa ít nhất 3 trong 4 nhóm: chữ hoa, chữ thường, số, ký tự đặc biệt. Lệnh seed tạo hoặc cập nhật chính tài khoản được chỉ định thành `SUPER_ADMIN` và không in mật khẩu.
+
+## RBAC canonical
+
+Sau migration, đồng bộ registry quyền có kiểm soát:
+
+```bash
+flask sync-permissions --apply-defaults
+```
+
+Lệnh mặc định chỉ tạo/cập nhật metadata vai trò và quyền. Dùng `--reset-defaults --confirm "RESET DEFAULTS"` khi chủ động muốn thay toàn bộ grant mặc định của các system role.
 
 ## Reset local và kiểm tra bảo mật
 

@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block title %}Vai trò & phân quyền{% endblock %}
+{% block page_title %}Vai trò & phân quyền{% endblock %}
+{% block content %}<div class="form-card"><table class="table"><thead><tr><th>Vai trò</th><th>Mã</th><th></th></tr></thead><tbody>{% for role in roles %}<tr><td>{{ role.name }}</td><td><code>{{ role.code }}</code></td><td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.role_permissions', role_id=role.id) }}">Chi tiết</a></td></tr>{% endfor %}</tbody></table></div>{% endblock %}

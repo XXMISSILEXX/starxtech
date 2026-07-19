@@ -17,7 +17,7 @@ def role_required(*roles):
     def decorator(view):
         @wraps(view)
         def wrapped(*args, **kwargs):
-            if not current_user.is_authenticated or current_user.role not in allowed_roles:
+            if not current_user.is_authenticated or current_user.role_code not in allowed_roles:
                 abort(403)
             return view(*args, **kwargs)
 
@@ -40,26 +40,26 @@ def super_admin_required():
 
 def can_manage_users(user=None):
     user = user or current_user
-    return bool(user.is_authenticated and user.role in ADMIN_ROLES | {UserRole.VIEWER_ADMIN.value})
+    return bool(user.is_authenticated and user.role_code in ADMIN_ROLES | {UserRole.VIEWER_ADMIN.value})
 
 
 def can_write_users(user=None):
     user = user or current_user
-    return bool(user.is_authenticated and user.role == UserRole.SUPER_ADMIN.value)
+    return bool(user.is_authenticated and user.has_role(UserRole.SUPER_ADMIN.value))
 
 
 def can_access_reports_module(user=None):
     user = user or current_user
     if not user.is_authenticated:
         return False
-    if user.role in ADMIN_ROLES | {UserRole.VIEWER_ADMIN.value}:
+    if user.role_code in ADMIN_ROLES | {UserRole.VIEWER_ADMIN.value}:
         return True
-    return user.role in ASSIGNED_PROJECT_ROLES
+    return user.role_code in ASSIGNED_PROJECT_ROLES
 
 
 def can_access_partners_module(user=None):
     user = user or current_user
-    return bool(user.is_authenticated and user.role in PARTNER_READ_ROLES)
+    return bool(user.is_authenticated and user.role_code in PARTNER_READ_ROLES)
 
 
 def permitted_modules(user=None):
@@ -74,12 +74,12 @@ def permitted_modules(user=None):
 
 def can_manage_partner_fields(user=None):
     user = user or current_user
-    return bool(user.is_authenticated and user.role in ADMIN_ROLES)
+    return bool(user.is_authenticated and user.role_code in ADMIN_ROLES)
 
 
 def can_create_partner(user=None):
     user = user or current_user
-    return bool(user.is_authenticated and user.role in PARTNER_WRITE_ROLES)
+    return bool(user.is_authenticated and user.role_code in PARTNER_WRITE_ROLES)
 
 
 def can_edit_partner(user=None, partner=None):
@@ -87,7 +87,7 @@ def can_edit_partner(user=None, partner=None):
         partner = user
         user = current_user
     user = user or current_user
-    return bool(user.is_authenticated and user.role in PARTNER_WRITE_ROLES)
+    return bool(user.is_authenticated and user.role_code in PARTNER_WRITE_ROLES)
 
 
 def can_delete_partner(user=None, partner=None):
@@ -95,7 +95,7 @@ def can_delete_partner(user=None, partner=None):
         partner = user
         user = current_user
     user = user or current_user
-    return bool(user.is_authenticated and user.role in ADMIN_ROLES)
+    return bool(user.is_authenticated and user.role_code in ADMIN_ROLES)
 
 
 def can_view_partner(user=None, partner=None):
@@ -103,17 +103,17 @@ def can_view_partner(user=None, partner=None):
         partner = user
         user = current_user
     user = user or current_user
-    return bool(user.is_authenticated and user.role in PARTNER_READ_ROLES)
+    return bool(user.is_authenticated and user.role_code in PARTNER_READ_ROLES)
 
 
 def can_read_project(project_id):
     if not current_user.is_authenticated:
         return False
 
-    if current_user.role in ADMIN_ROLES | {UserRole.VIEWER_ADMIN.value}:
+    if current_user.role_code in ADMIN_ROLES | {UserRole.VIEWER_ADMIN.value}:
         return True
 
-    if current_user.role not in ASSIGNED_PROJECT_ROLES:
+    if current_user.role_code not in ASSIGNED_PROJECT_ROLES:
         return False
 
     return _is_assigned_to_project(project_id)
@@ -123,13 +123,13 @@ def can_write_project(project_id):
     if not current_user.is_authenticated:
         return False
 
-    if current_user.role in ADMIN_ROLES:
+    if current_user.role_code in ADMIN_ROLES:
         return True
 
-    if current_user.role == UserRole.VIEWER_ADMIN.value:
+    if current_user.has_role(UserRole.VIEWER_ADMIN.value):
         return False
 
-    if current_user.role not in ASSIGNED_PROJECT_ROLES:
+    if current_user.role_code not in ASSIGNED_PROJECT_ROLES:
         return False
 
     return _is_assigned_to_project(project_id)
@@ -139,10 +139,10 @@ def can_manage_project(project_id):
     if not current_user.is_authenticated:
         return False
 
-    if current_user.role in ADMIN_ROLES:
+    if current_user.role_code in ADMIN_ROLES:
         return True
 
-    if current_user.role == UserRole.PROJECT_MANAGER.value:
+    if current_user.has_role(UserRole.PROJECT_MANAGER.value):
         return _is_assigned_to_project(project_id)
 
     return False
@@ -164,10 +164,10 @@ def can_create_persistent_issue(project_id=None):
     if not current_user.is_authenticated:
         return False
 
-    if current_user.role in ADMIN_ROLES:
+    if current_user.role_code in ADMIN_ROLES:
         return True
 
-    if current_user.role == UserRole.PROJECT_MANAGER.value:
+    if current_user.has_role(UserRole.PROJECT_MANAGER.value):
         if project_id is None:
             return _has_any_project_assignment()
         return _is_assigned_to_project(project_id)

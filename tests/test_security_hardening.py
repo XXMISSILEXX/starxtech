@@ -4,7 +4,7 @@ from werkzeug.security import check_password_hash
 from app import create_app
 from app.attachments.routes import _resolve_attachment_path
 from app.extensions import db
-from app.models import User, UserRole
+from app.models import Role, User, UserRole
 from app.security import password_policy_errors
 
 
@@ -56,7 +56,7 @@ def test_seed_admin_updates_requested_account_and_never_echoes_password(app):
     assert password not in result.output
     with app.app_context():
         user = User.query.filter_by(username="newadmin").one()
-        assert user.role == UserRole.SUPER_ADMIN.value
+        assert user.role_code == UserRole.SUPER_ADMIN.value
         assert user.is_active is True
         assert check_password_hash(user.password_hash, password)
 
@@ -86,7 +86,7 @@ def test_reset_local_dev_runs_migrations_and_seeds_admin(tmp_path):
     )
     assert result.exit_code == 0, result.output
     with reset_app.app_context():
-        assert User.query.filter_by(username="admin", role=UserRole.SUPER_ADMIN.value).count() == 1
+        assert User.query.join(Role).filter(User.username == "admin", Role.code == UserRole.SUPER_ADMIN.value).count() == 1
     audit = reset_app.test_cli_runner().invoke(args=["security-audit"])
     assert audit.exit_code == 0, audit.output
 

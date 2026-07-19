@@ -22,16 +22,16 @@
     <a class="btn btn-outline-primary btn-sm" href="{{ url_for('reports.index', **report_args) }}"><i class="bi bi-journal-text me-1"></i>Xem báo cáo đã lọc</a>
     {% if filters.project_id %}
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('projects.issues', project_id=filters.project_id, **issue_args) }}"><i class="bi bi-exclamation-diamond me-1"></i>Xem vấn đề tồn đọng</a>
-      {% if selected_project and current_user.role != 'VIEWER_ADMIN' %}
+      {% if selected_project and current_user.role_code != 'VIEWER_ADMIN' %}
         <a class="btn btn-primary btn-sm" href="{{ url_for('projects.reports_create', project_id=filters.project_id) }}"><i class="bi bi-plus-lg me-1"></i>Tạo báo cáo mới</a>
       {% endif %}
-      {% if current_user.role in ['SUPER_ADMIN', 'PROJECT_MANAGER'] %}
+      {% if current_user.role_code in ['SUPER_ADMIN', 'PROJECT_MANAGER'] %}
         <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.categories_index', project_id=filters.project_id) }}"><i class="bi bi-tags me-1"></i>Quản lý hạng mục</a>
       {% endif %}
     {% else %}
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('issues.index', **issue_args) }}"><i class="bi bi-exclamation-diamond me-1"></i>Xem vấn đề tồn đọng</a>
     {% endif %}
-    {% if current_user.role == 'SUPER_ADMIN' %}
+    {% if current_user.role_code == 'SUPER_ADMIN' %}
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-kanban me-1"></i>Quản lý dự án</a>
     {% endif %}
   </div>

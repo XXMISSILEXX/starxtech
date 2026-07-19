@@ -10,6 +10,7 @@ from app.models import (
     PersistentIssue,
     Project,
     ProjectUser,
+    Role,
     User,
     UserRole,
 )
@@ -176,10 +177,10 @@ def filtered_issues_query(filters):
 def accessible_reporters():
     query = User.query.filter(
         User.is_active.is_(True),
-        User.role.in_([UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value]),
+        User.role.has(Role.code.in_([UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value])),
         User.deleted_at.is_(None),
     )
-    if current_user.role in ASSIGNED_PROJECT_ROLES:
+    if current_user.role_code in ASSIGNED_PROJECT_ROLES:
         project_ids = [project.id for project in accessible_projects_query().all()]
         query = query.join(ProjectUser, ProjectUser.user_id == User.id).filter(
             ProjectUser.project_id.in_(project_ids or [0])
@@ -198,7 +199,7 @@ def _status_counts(query):
 
 def _apply_project_scope(query):
     query = query.filter(Project.deleted_at.is_(None))
-    if current_user.role in ASSIGNED_PROJECT_ROLES:
+    if current_user.role_code in ASSIGNED_PROJECT_ROLES:
         query = query.join(ProjectUser, ProjectUser.project_id == Project.id).filter(
             ProjectUser.user_id == current_user.id
         )

@@ -25,8 +25,8 @@ def upgrade():
         sa.Column("parent_department_id", sa.BigInteger(), nullable=True),
         sa.Column("display_order", sa.Integer(), server_default="0", nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default="true", nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
         sa.ForeignKeyConstraint(["company_id"], ["companies.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["parent_department_id"], ["company_departments.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
@@ -69,8 +69,8 @@ def upgrade():
             department,
             0,
             true,
-            now(),
-            now()
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
         FROM (
             SELECT DISTINCT company_id, department
             FROM partners

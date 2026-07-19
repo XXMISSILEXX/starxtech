@@ -23,6 +23,7 @@ from app.models import (
     PartnerRelationship,
     User,
     UserRole,
+    Role,
 )
 from app.partners.services import _add_with_sqlite_id
 from app.security import is_default_secret_key, password_policy_errors, production_configuration_errors
@@ -42,6 +43,16 @@ PARTNER_SEED_TABLES = [
 
 
 def register_cli(app):
+    @app.cli.command("sync-permissions")
+    @click.option("--apply-defaults", is_flag=True, help="Add missing default grants only.")
+    @click.option("--reset-defaults", is_flag=True, help="Replace system role grants with defaults.")
+    @click.option("--confirm", default="", help='Required with --reset-defaults: "RESET DEFAULTS".')
+    def sync_permissions(apply_defaults, reset_defaults, confirm):
+        if reset_defaults and confirm != "RESET DEFAULTS":
+            raise click.UsageError('Pass --confirm "RESET DEFAULTS" exactly to reset grants.')
+        from app.permissions.sync import sync_registry
+        summary = sync_registry(apply_defaults=apply_defaults or reset_defaults, reset_defaults=reset_defaults)
+        click.echo("roles={roles_created} permissions={permissions_created} grants={grants_added} deprecated-orphan={deprecated_orphan}".format(**summary))
     @app.cli.command("reset-database")
     @click.option("--confirm", required=True, help='Must be exactly "RESET DATABASE".')
     @click.option("--delete-uploads", is_flag=True, help="Delete files inside UPLOAD_ROOT as well.")
@@ -144,6 +155,14 @@ def _seed_admin(username, password, email, full_name):
     if not username or not email or not full_name:
         raise click.UsageError("username, email and full-name must not be empty.")
 
+    # Synchronize before adding a User: sync_registry commits, and the legacy
+    # users.role column is still NOT NULL in this compatibility release.
+    role = Role.query.filter_by(code=UserRole.SUPER_ADMIN.value).first()
+    if role is None:
+        from app.permissions.sync import sync_registry
+        sync_registry()
+        role = Role.query.filter_by(code=UserRole.SUPER_ADMIN.value).one()
+
     user = User.query.filter_by(username=username).first()
     email_user = User.query.filter_by(email=email).first()
     if user and email_user and user.id != email_user.id:
@@ -157,14 +176,16 @@ def _seed_admin(username, password, email, full_name):
     user.email = email
     user.full_name = full_name
     user.password_hash = generate_password_hash(password)
-    user.role = UserRole.SUPER_ADMIN.value
+    user.role = role
+    user.role_id = role.id
+    user.legacy_role = UserRole.SUPER_ADMIN.value
     user.is_active = True
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     if user.created_at is None:
         user.created_at = now
     user.updated_at = now
     db.session.flush()
-    audit_record = log_audit(action, "User", user.id, new_values={"username": user.username, "email": user.email, "role": user.role})
+    audit_record = log_audit(action, "User", user.id, new_values={"username": user.username, "email": user.email, "role": user.role_code})
     audit_record.created_at = now
     db.session.commit()
     click.echo(f"SUPER_ADMIN seeded: username={username}")
@@ -240,11 +261,16 @@ def _security_audit():
             except metadata.PackageNotFoundError:
                 unavailable.append(package)
         check(not unavailable, "dependencies-installed", "all pinned dependencies are installed", "missing/version mismatch: " + ", ".join(unavailable))
+        inspector = inspect(db.engine)
+        rbac_tables = {"roles", "permissions", "role_permissions"}
+        check(rbac_tables.issubset(set(inspector.get_table_names())), "rbac-schema", "RBAC tables exist", "one or more RBAC tables are missing")
+        invalid_role_users = User.query.outerjoin(Role).filter((User.role_id.is_(None)) | (Role.id.is_(None))).count()
+        check(invalid_role_users == 0, "rbac-user-roles", "all users reference a valid role", f"{invalid_role_users} user(s) have an invalid role_id")
         version = db.session.execute(text("SELECT version_num FROM alembic_version")).scalar()
         check(version == _migration_head(), "migration-state", f"at head {version}", f"current={version}, expected={_migration_head()}")
         hashes = [row[0] for row in db.session.query(User.password_hash).all()]
         check(all(value.startswith(("scrypt:", "pbkdf2:")) for value in hashes), "password-hashes", "Werkzeug password hashes in use", "weak or invalid password hash found")
-        check(User.query.filter_by(role=UserRole.SUPER_ADMIN.value, is_active=True).count() > 0, "super-admin", "active SUPER_ADMIN exists", "no active SUPER_ADMIN")
+        check(User.query.join(Role).filter(User.role_id == Role.id, Role.code == UserRole.SUPER_ADMIN.value, User.is_active.is_(True)).count() > 0, "super-admin", "active SUPER_ADMIN exists", "no active SUPER_ADMIN")
         demos = Partner.query.filter(Partner.notes.like(f"{DEMO_NOTE_PREFIX}%")).count()
         if config.get("APP_ENV") == "production":
             check(demos == 0, "production-demo-data", "no demo partners", f"{demos} demo partner(s) found")

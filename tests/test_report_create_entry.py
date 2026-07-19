@@ -1,7 +1,7 @@
 from werkzeug.security import generate_password_hash
 
 from app.extensions import db
-from app.models import User, UserRole
+from app.models import Role, User, UserRole
 
 
 def login(client, username_or_email, password="password123"):
@@ -52,7 +52,8 @@ def test_reporter_without_project_access_does_not_see_create_report_entry(client
                 email="no_project@example.com",
                 full_name="No Project",
                 password_hash=generate_password_hash("password123"),
-                role=UserRole.REPORTER.value,
+                role=Role.query.filter_by(code=UserRole.REPORTER.value).one(),
+                legacy_role=UserRole.REPORTER.value,
                 is_active=True,
             )
         )

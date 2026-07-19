@@ -45,10 +45,11 @@
             <a class="nav-link {% if endpoint.startswith('projects.') %}active{% endif %}" href="{{ url_for('projects.index') }}"><i class="bi bi-building"></i><span>Dự án</span></a>
             <a class="nav-link {% if endpoint.startswith('reports.') %}active{% endif %}" href="{{ url_for('reports.index') }}"><i class="bi bi-journal-text"></i><span>Báo cáo</span></a>
             <a class="nav-link {% if endpoint.startswith('issues.') %}active{% endif %}" href="{{ url_for('issues.index') }}"><i class="bi bi-exclamation-diamond"></i><span>Vấn đề</span></a>
-            {% if current_user.role in ['SUPER_ADMIN', 'ADMIN', 'VIEWER_ADMIN'] %}
+            {% if current_user.role_code in ['SUPER_ADMIN', 'ADMIN', 'VIEWER_ADMIN'] %}
               <div class="nav-section">Quản trị</div>
               <a class="nav-link {% if endpoint.startswith('admin.users') %}active{% endif %}" href="{{ url_for('admin.users_index') }}"><i class="bi bi-people"></i><span>Người dùng</span></a>
               <a class="nav-link {% if endpoint.startswith('admin.projects') or endpoint.startswith('admin.categories') %}active{% endif %}" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-kanban"></i><span>Quản lý dự án</span></a>
+              {% if current_user.can('roles.view') %}<a class="nav-link {% if endpoint.startswith('admin.roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>{% endif %}
             {% endif %}
           {% endif %}
           {% if can_access_reports_module() and can_access_partners_module() %}
@@ -75,7 +76,7 @@
             <div class="avatar">{{ initials[:2] }}</div>
             <div class="min-w-0">
               <div class="fw-semibold">{{ current_user.full_name }}</div>
-              <div class="text-muted small">{{ current_user.role|role_label }}</div>
+              <div class="text-muted small">{{ current_user.role_code|role_label }}</div>
               <div class="text-muted small text-truncate">{{ current_user.email or current_user.username }}</div>
             </div>
           </div>
@@ -98,10 +99,11 @@
               <a class="nav-link {% if endpoint.startswith('projects.') %}active{% endif %}" href="{{ url_for('projects.index') }}"><i class="bi bi-building"></i><span>Dự án</span></a>
               <a class="nav-link {% if endpoint.startswith('reports.') %}active{% endif %}" href="{{ url_for('reports.index') }}"><i class="bi bi-journal-text"></i><span>Báo cáo</span></a>
               <a class="nav-link {% if endpoint.startswith('issues.') %}active{% endif %}" href="{{ url_for('issues.index') }}"><i class="bi bi-exclamation-diamond"></i><span>Vấn đề</span></a>
-              {% if current_user.role in ['SUPER_ADMIN', 'ADMIN', 'VIEWER_ADMIN'] %}
+              {% if current_user.role_code in ['SUPER_ADMIN', 'ADMIN', 'VIEWER_ADMIN'] %}
                 <div class="nav-section">Quản trị</div>
                 <a class="nav-link {% if endpoint.startswith('admin.users') %}active{% endif %}" href="{{ url_for('admin.users_index') }}"><i class="bi bi-people"></i><span>Người dùng</span></a>
                 <a class="nav-link {% if endpoint.startswith('admin.projects') or endpoint.startswith('admin.categories') %}active{% endif %}" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-kanban"></i><span>Quản lý dự án</span></a>
+                {% if current_user.can('roles.view') %}<a class="nav-link {% if endpoint.startswith('admin.roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>{% endif %}
               {% endif %}
             {% endif %}
             {% if can_access_reports_module() and can_access_partners_module() %}
@@ -138,7 +140,7 @@
               <div class="avatar">{{ initials[:2] }}</div>
               <div class="d-none d-sm-block">
                 <div class="fw-semibold">{{ current_user.full_name }}</div>
-                <div class="text-muted small">{{ current_user.role|role_label }}</div>
+                <div class="text-muted small">{{ current_user.role_code|role_label }}</div>
               </div>
             </div>
             <form method="post" action="{{ url_for('auth.logout') }}">
@@ -177,7 +179,7 @@
               <div class="avatar account-modal-avatar">{{ initials[:2] }}</div>
               <div class="min-w-0">
                 <div class="fw-bold">{{ current_user.full_name }}</div>
-                <div class="text-muted small">{{ current_user.role|role_label }}</div>
+                <div class="text-muted small">{{ current_user.role_code|role_label }}</div>
               </div>
             </div>
             <dl class="account-info-list mb-0">
@@ -186,7 +188,7 @@
               <dt>Email</dt>
               <dd>{{ current_user.email or '-' }}</dd>
               <dt>Vai trò</dt>
-              <dd>{{ current_user.role|role_label }}</dd>
+              <dd>{{ current_user.role_code|role_label }}</dd>
             </dl>
           </div>
           <div class="modal-footer">

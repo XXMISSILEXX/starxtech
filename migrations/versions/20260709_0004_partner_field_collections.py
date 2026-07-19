@@ -23,8 +23,8 @@ def upgrade():
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("sort_order", sa.Integer(), server_default="0", nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default="true", nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_partner_field_collections_name"), "partner_field_collections", ["name"], unique=False)
@@ -35,8 +35,8 @@ def upgrade():
         sa.Column("collection_id", sa.BigInteger(), nullable=False),
         sa.Column("field_definition_id", sa.BigInteger(), nullable=False),
         sa.Column("sort_order", sa.Integer(), server_default="0", nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
         sa.ForeignKeyConstraint(["collection_id"], ["partner_field_collections.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["field_definition_id"], ["partner_field_definitions.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),

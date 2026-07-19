@@ -4,7 +4,7 @@
 {% block page_title %}{{ 'Sửa dự án' if project else 'Tạo dự án' }}{% endblock %}
 
 {% block content %}
-{% set can_write = current_user.role == 'SUPER_ADMIN' %}
+{% set can_write = current_user.role_code == 'SUPER_ADMIN' %}
 <form method="post" class="form-card row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-4">

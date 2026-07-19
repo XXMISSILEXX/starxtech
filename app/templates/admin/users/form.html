@@ -4,7 +4,7 @@
 {% block page_title %}{{ 'Sửa người dùng' if user else 'Tạo người dùng' }}{% endblock %}
 
 {% block content %}
-{% set can_write = current_user.role == 'SUPER_ADMIN' %}
+{% set can_write = current_user.role_code == 'SUPER_ADMIN' %}
 <form method="post" class="form-card row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-6">
@@ -20,11 +20,11 @@
     <input class="form-control" id="email" name="email" type="email" value="{{ request.form.get('email', user.email if user and user.email else '') }}" {% if not can_write %}disabled{% endif %}>
   </div>
   <div class="col-md-6">
-    <label class="form-label" for="role">Vai trò</label>
-    {% set selected_role = request.form.get('role', user.role if user else 'REPORTER') %}
-    <select class="form-select" id="role" name="role" required {% if not can_write %}disabled{% endif %}>
+    <label class="form-label" for="role_id">Vai trò</label>
+    {% set selected_role = request.form.get('role_id', user.role_id if user else '') %}
+    <select class="form-select" id="role_id" name="role_id" required {% if not can_write %}disabled{% endif %}>
       {% for role in roles %}
-        <option value="{{ role }}" {% if selected_role == role %}selected{% endif %}>{{ role|role_label }}</option>
+        <option value="{{ role.id }}" {% if selected_role|string == role.id|string %}selected{% endif %}>{{ role.name }}</option>
       {% endfor %}
     </select>
   </div>

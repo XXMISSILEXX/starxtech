@@ -6,7 +6,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div class="text-muted">Quản lý dự án và phân quyền người báo cáo/quản lý dự án.</div>
-  {% if current_user.role == 'SUPER_ADMIN' %}
+  {% if current_user.role_code == 'SUPER_ADMIN' %}
     <a class="btn btn-primary" href="{{ url_for('admin.projects_new') }}"><i class="bi bi-plus-lg me-1"></i>Tạo dự án</a>
   {% endif %}
 </div>
@@ -33,7 +33,7 @@
             <div class="mobile-card-actions">
               <a class="btn btn-sm btn-outline-secondary btn-action-mobile" href="{{ url_for('admin.projects_reporters', project_id=project.id) }}" aria-label="Phân quyền" title="Phân quyền"><i class="bi bi-people"></i><span class="action-label">Phân quyền</span></a>
               <a class="btn btn-sm btn-outline-secondary btn-action-mobile" href="{{ url_for('admin.categories_index', project_id=project.id) }}" aria-label="Hạng mục" title="Hạng mục"><i class="bi bi-tags"></i><span class="action-label">Hạng mục</span></a>
-              {% if current_user.role == 'SUPER_ADMIN' %}
+              {% if current_user.role_code == 'SUPER_ADMIN' %}
                 <a class="btn btn-sm btn-outline-primary btn-action-mobile" href="{{ url_for('admin.projects_edit', project_id=project.id) }}" aria-label="Sửa" title="Sửa"><i class="bi bi-pencil"></i><span class="action-label">Sửa</span></a>
                 {% if project.status != 'archived' %}
                   <form method="post" action="{{ url_for('admin.projects_archive', project_id=project.id) }}">

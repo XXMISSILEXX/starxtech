@@ -4,7 +4,7 @@ from werkzeug.security import generate_password_hash
 from app import create_app
 from app.auth.permissions import project_read_required, project_write_required
 from app.extensions import db
-from app.models import Project, ProjectUser, ReportCategory, User, UserRole
+from app.models import Project, ProjectUser, ReportCategory, Role, User, UserRole
 
 
 class TestConfig:
@@ -52,13 +52,17 @@ def client(app):
 
 
 def seed_test_data():
+    roles = [Role(id=index, code=role.value, name=role.value, is_system=True) for index, role in enumerate(UserRole, start=1)]
+    db.session.add_all(roles)
+    db.session.flush()
+    role_map = {role.code: role for role in roles}
     users = [
-        make_user(1, "super", "super@example.com", UserRole.SUPER_ADMIN.value),
-        make_user(2, "viewer", "viewer@example.com", UserRole.VIEWER_ADMIN.value),
-        make_user(3, "reporter", "reporter@example.com", UserRole.REPORTER.value),
-        make_user(4, "inactive", "inactive@example.com", UserRole.REPORTER.value, is_active=False),
-        make_user(5, "pm", "pm@example.com", UserRole.PROJECT_MANAGER.value),
-        make_user(6, "admin", "admin@example.com", UserRole.ADMIN.value),
+        make_user(1, "super", "super@example.com", role_map[UserRole.SUPER_ADMIN.value]),
+        make_user(2, "viewer", "viewer@example.com", role_map[UserRole.VIEWER_ADMIN.value]),
+        make_user(3, "reporter", "reporter@example.com", role_map[UserRole.REPORTER.value]),
+        make_user(4, "inactive", "inactive@example.com", role_map[UserRole.REPORTER.value], is_active=False),
+        make_user(5, "pm", "pm@example.com", role_map[UserRole.PROJECT_MANAGER.value]),
+        make_user(6, "admin", "admin@example.com", role_map[UserRole.ADMIN.value]),
     ]
     projects = [
         Project(id=1, code="P001", name="Assigned Project"),
@@ -86,5 +90,6 @@ def make_user(user_id, username, email, role, is_active=True):
         full_name=username.title(),
         password_hash=generate_password_hash("password123"),
         role=role,
+        legacy_role=role.code,
         is_active=is_active,
     )

@@ -20,6 +20,7 @@ from app.models.partner import (
     PartnerRelationship,
 )
 from app.models.project import Project, ProjectUser, ReportCategory
+from app.models.rbac import Permission, Role, RolePermission
 from app.models.user import User
 
 __all__ = [
@@ -43,6 +44,9 @@ __all__ = [
     "ProjectUser",
     "ReportAttachment",
     "ReportCategory",
+    "Permission",
+    "Role",
+    "RolePermission",
     "SectionStatus",
     "User",
     "UserRole",

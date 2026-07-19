@@ -16,8 +16,9 @@ from app.admin.services import (
     validate_unique_user,
 )
 from app.auth.permissions import admin_read_required, can_manage_categories_for_project, super_admin_required
+from app.permissions.services import permission_required
 from app.extensions import db
-from app.models import Project, ProjectStatus, ReportCategory, User, UserRole
+from app.models import Permission, Project, ProjectStatus, ReportCategory, Role, RolePermission, User, UserRole
 from app.security import password_policy_errors
 
 
@@ -44,7 +45,7 @@ def users_new():
     return render_template(
         "admin/users/form.html",
         user=None,
-        roles=[role.value for role in UserRole],
+        roles=Role.query.filter_by(is_system=True).order_by(Role.id).all(),
     )
 
 
@@ -59,7 +60,7 @@ def users_edit(user_id):
     return render_template(
         "admin/users/form.html",
         user=user,
-        roles=[role.value for role in UserRole],
+        roles=Role.query.filter_by(is_system=True).order_by(Role.id).all(),
     )
 
 
@@ -67,6 +68,7 @@ def users_edit(user_id):
 @super_admin_required()
 def users_deactivate(user_id):
     user = User.query.get_or_404(user_id)
+    ensure_not_last_active_super_admin(user, new_is_active=False)
     old_values = {"is_active": user.is_active}
     user.is_active = False
     audit("user.deactivate", "User", user.id, old_values, {"is_active": user.is_active})
@@ -85,6 +87,52 @@ def users_activate(user_id):
     db.session.commit()
     flash("Đã kích hoạt người dùng.", "success")
     return redirect(url_for("admin.users_index"))
+
+
+@bp.get("/roles")
+@permission_required("roles.view")
+def roles_index():
+    return render_template("admin/roles/index.html", roles=Role.query.order_by(Role.id).all())
+
+
+@bp.route("/roles/<int:role_id>/permissions", methods=["GET", "POST"])
+@permission_required("roles.view")
+def role_permissions(role_id):
+    role = Role.query.get_or_404(role_id)
+    if request.method == "POST":
+        if not current_user.can("roles.manage") or role.code == UserRole.SUPER_ADMIN.value:
+            abort(403)
+        selected = {int(value) for value in request.form.getlist("permission_ids") if value.isdigit()}
+        old = {item.permission_id for item in role.role_permissions}
+        RolePermission.query.filter_by(role_id=role.id).delete()
+        for permission_id in selected:
+            if db.session.get(Permission, permission_id):
+                db.session.add(RolePermission(role_id=role.id, permission_id=permission_id))
+        audit("role.permissions.update", "Role", role.id, {"permission_ids": sorted(old)}, {"permission_ids": sorted(selected)})
+        db.session.commit(); flash("Đã cập nhật phân quyền.", "success")
+        return redirect(url_for("admin.role_permissions", role_id=role.id))
+    grouped = {}
+    for permission in Permission.query.order_by(Permission.module, Permission.sort_order, Permission.code).all():
+        grouped.setdefault(permission.group_name, []).append(permission)
+    return render_template("admin/roles/permissions.html", role=role, grouped=grouped,
+                           selected_ids={item.permission_id for item in role.role_permissions}, can_manage=current_user.can("roles.manage"))
+
+
+@bp.post("/roles/<int:role_id>/permissions/reset-defaults")
+@permission_required("roles.manage")
+def role_permissions_reset_defaults(role_id):
+    role = Role.query.get_or_404(role_id)
+    if role.code == UserRole.SUPER_ADMIN.value:
+        abort(400)
+    from app.permissions.registry import DEFAULTS
+    wanted = DEFAULTS.get(role.code, set())
+    permissions = Permission.query.filter(Permission.code.in_(wanted)).all()
+    old = {item.permission_id for item in role.role_permissions}
+    RolePermission.query.filter_by(role_id=role.id).delete()
+    db.session.add_all([RolePermission(role_id=role.id, permission_id=item.id) for item in permissions])
+    audit("role.permissions.reset_defaults", "Role", role.id, {"permission_ids": sorted(old)}, {"permission_ids": sorted(item.id for item in permissions)})
+    db.session.commit(); flash("Đã khôi phục quyền mặc định.", "success")
+    return redirect(url_for("admin.role_permissions", role_id=role.id))
 
 
 @bp.post("/users/<int:user_id>/reset-password")
@@ -153,7 +201,7 @@ def projects_reporters(project_id):
     project = Project.query.get_or_404(project_id)
     reporters = (
         User.query.filter(
-            User.role.in_([UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value]),
+            User.role.has(Role.code.in_([UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value])),
             User.is_active.is_(True),
         )
         .order_by(User.full_name.asc())
@@ -292,7 +340,8 @@ def _save_user(user=None):
     full_name = request.form.get("full_name", "").strip()
     username = request.form.get("username", "").strip()
     email = optional_text("email")
-    role = request.form.get("role", "").strip()
+    role_id = request.form.get("role_id", "").strip()
+    legacy_role_code = request.form.get("role", "").strip()
     is_active = form_bool("is_active")
     password = request.form.get("password", "")
 
@@ -301,7 +350,18 @@ def _save_user(user=None):
         errors.append("Họ tên là bắt buộc.")
     if not username:
         errors.append("Tên đăng nhập là bắt buộc.")
-    if role not in [role.value for role in UserRole]:
+    # role_id is canonical. Keep accepting the legacy role code during Phase 1
+    # because older forms and integrations still submit `role=REPORTER`.
+    role = db.session.get(Role, int(role_id)) if role_id.isdigit() else None
+    if role_id and not role_id.isdigit():
+        errors.append("Vai trò không hợp lệ.")
+    if role is None and not role_id and legacy_role_code:
+        role = Role.query.filter_by(code=legacy_role_code).first()
+        if role is None:
+            errors.append("Vai trò được chọn chưa tồn tại trong hệ thống.")
+    if role is None and not errors:
+        errors.append("Vui lòng chọn vai trò hợp lệ.")
+    elif role is not None and not role.is_system:
         errors.append("Vai trò không hợp lệ.")
     if is_new:
         errors.extend(password_policy_errors(password))
@@ -313,7 +373,7 @@ def _save_user(user=None):
         return render_template(
             "admin/users/form.html",
             user=user,
-            roles=[role.value for role in UserRole],
+            roles=Role.query.filter_by(is_system=True).order_by(Role.id).all(),
         ), 400
 
     old_values = _user_snapshot(user) if user else None
@@ -323,7 +383,11 @@ def _save_user(user=None):
     user.full_name = full_name
     user.username = username
     user.email = email
+    if not is_new:
+        ensure_not_last_active_super_admin(user, new_role=role, new_is_active=is_active)
     user.role = role
+    user.role_id = role.id
+    user.legacy_role = role.code
     user.is_active = is_active
 
     db.session.flush()
@@ -455,12 +519,12 @@ def _save_category(project, category=None):
 
 
 def _require_super_admin_post():
-    if current_user.role not in {UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value}:
+    if current_user.role_code not in {UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value}:
         abort(403)
 
 
 def _require_can_view_categories(project_id):
-    if current_user.role in {UserRole.SUPER_ADMIN.value, UserRole.VIEWER_ADMIN.value}:
+    if current_user.role_code in {UserRole.SUPER_ADMIN.value, UserRole.VIEWER_ADMIN.value}:
         return
     if can_manage_categories_for_project(project_id):
         return
@@ -487,9 +551,23 @@ def _user_snapshot(user):
         "full_name": user.full_name,
         "username": user.username,
         "email": user.email,
-        "role": user.role,
+        "role": user.role_code,
         "is_active": user.is_active,
     }
+
+
+def count_active_super_admins(exclude_user_id=None):
+    query = User.query.join(Role).filter(Role.code == UserRole.SUPER_ADMIN.value, User.is_active.is_(True))
+    if exclude_user_id is not None:
+        query = query.filter(User.id != exclude_user_id)
+    return query.count()
+
+
+def ensure_not_last_active_super_admin(user, new_role=None, new_is_active=None):
+    will_remain = (new_role or user.role).code == UserRole.SUPER_ADMIN.value and (user.is_active if new_is_active is None else new_is_active)
+    if user.has_role(UserRole.SUPER_ADMIN.value) and user.is_active and not will_remain and count_active_super_admins(user.id) == 0:
+        flash("Không thể thay đổi vì hệ thống phải luôn có ít nhất một Quản trị tổng đang hoạt động.", "danger")
+        abort(400)
 
 
 def _project_snapshot(project):
