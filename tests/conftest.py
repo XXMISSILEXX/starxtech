@@ -38,6 +38,8 @@ def app():
     with app.app_context():
         db.create_all()
         seed_test_data()
+        from app.permissions.sync import sync_registry
+        sync_registry(apply_defaults=True)
 
     yield app
 

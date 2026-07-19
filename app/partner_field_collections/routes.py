@@ -1,7 +1,9 @@
 from flask import abort, flash, redirect, render_template, request, url_for
 from sqlalchemy import or_
 
-from app.auth.permissions import can_access_partners_module, can_manage_partner_fields
+from app.auth.permissions import can_access_partners_module
+from app.audit import audit
+from app.permissions.services import permission_required
 from app.extensions import db
 from app.models import PartnerFieldCollection, PartnerFieldCollectionItem, PartnerFieldDefinition
 from app.partner_field_collections import bp
@@ -11,12 +13,11 @@ from app.partners.services import _add_with_sqlite_id
 @bp.before_request
 def require_partner_module():
     if not can_access_partners_module():
-        abort(403)
-    if not can_manage_partner_fields():
-        abort(403)
+        abort(403, description="Bạn không có quyền truy cập phân hệ Quản lý đối tác.")
 
 
 @bp.get("/")
+@permission_required("partner_field_collections.view")
 def index():
     query = PartnerFieldCollection.query
     search = request.args.get("q", "").strip()
@@ -29,10 +30,11 @@ def index():
     elif active == "0":
         query = query.filter(PartnerFieldCollection.is_active.is_(False))
     collections = query.order_by(PartnerFieldCollection.sort_order.asc(), PartnerFieldCollection.name.asc()).all()
-    return render_template("partner_field_collections/index.html", collections=collections, filters=request.args)
+    return render_template("partner_field_collections/index.html", collections=collections, filters=request.args, can_manage=_can_manage())
 
 
 @bp.route("/new", methods=["GET", "POST"])
+@permission_required("partner_field_collections.manage")
 def new():
     collection = PartnerFieldCollection(is_active=True)
     if request.method == "POST":
@@ -41,6 +43,7 @@ def new():
 
 
 @bp.route("/<int:collection_id>/edit", methods=["GET", "POST"])
+@permission_required("partner_field_collections.manage")
 def edit(collection_id):
     collection = PartnerFieldCollection.query.get_or_404(collection_id)
     if request.method == "POST":
@@ -49,15 +52,20 @@ def edit(collection_id):
 
 
 @bp.post("/<int:collection_id>/deactivate")
+@permission_required("partner_field_collections.manage")
 def deactivate(collection_id):
     collection = PartnerFieldCollection.query.get_or_404(collection_id)
+    old_values = _snapshot(collection)
     collection.is_active = False
+    audit("partner_field_collection.deactivate", "PartnerFieldCollection", collection.id, old_values, _snapshot(collection))
     db.session.commit()
     flash("Đã vô hiệu hóa bộ trường dữ liệu.", "success")
     return redirect(url_for("partner_field_collections.index"))
 
 
 def _save_collection(collection):
+    is_new = collection.id is None
+    old_values = None if is_new else _snapshot(collection)
     errors = {}
     name = request.form.get("name", "").strip()
     if not name:
@@ -81,6 +89,7 @@ def _save_collection(collection):
         )
         _add_with_sqlite_id(item)
         collection.items.append(item)
+    audit("partner_field_collection.create" if is_new else "partner_field_collection.update", "PartnerFieldCollection", collection.id, old_values, _snapshot(collection))
     db.session.commit()
     flash("Đã lưu bộ trường dữ liệu.", "success")
     return redirect(url_for("partner_field_collections.index"))
@@ -119,3 +128,13 @@ def _int_or_zero(value):
         return int(value or 0)
     except ValueError:
         return 0
+
+
+def _can_manage():
+    from flask_login import current_user
+    return current_user.can("partner_field_collections.manage")
+
+
+def _snapshot(collection):
+    return {"name": collection.name, "description": collection.description, "sort_order": collection.sort_order,
+            "is_active": collection.is_active, "field_definition_ids": sorted(item.field_definition_id for item in collection.items)}

@@ -4,13 +4,14 @@ from flask import abort, flash, redirect, render_template, request, url_for
 from sqlalchemy import func
 
 from app.auth.permissions import (
-    can_access_partners_module,
     can_create_partner,
     can_delete_partner,
     can_edit_partner,
     can_manage_partner_fields,
     can_view_partner,
 )
+from app.audit import audit
+from app.permissions.services import permission_required
 from app.extensions import db
 from app.models import Company, CompanyDepartment, Partner, PartnerFieldDefinition
 from app.partners import bp
@@ -28,11 +29,13 @@ from app.partners.services import (
 
 @bp.before_request
 def require_partner_module():
+    from app.auth.permissions import can_access_partners_module, PARTNER_MODULE_DENY_MESSAGE
     if not can_access_partners_module():
-        abort(403)
+        abort(403, description=PARTNER_MODULE_DENY_MESSAGE)
 
 
 @bp.get("/dashboard")
+@permission_required("partners.view")
 def dashboard():
     start_of_month = date.today().replace(day=1)
     query = apply_partner_filters(partners_query(), request.args)
@@ -74,10 +77,13 @@ def dashboard():
         filters=request.args,
         can_create=can_create_partner(),
         can_manage_fields=can_manage_partner_fields(),
+        can_create_company=request_user_can("partner_companies.create"),
+        can_view_relations=request_user_can("partner_relations.view"),
     )
 
 
 @bp.get("/")
+@permission_required("partners.view")
 def index():
     query = apply_partner_filters(partners_query(), request.args)
     partners = query.order_by(Partner.full_name.asc()).all()
@@ -118,12 +124,13 @@ def index():
 
 
 @bp.route("/new", methods=["GET", "POST"])
+@permission_required("partners.create")
 def new():
-    if not can_create_partner():
-        abort(403)
     if request.method == "POST":
+        _require_head_permission_if_changed(None)
         try:
             partner = save_partner(request.form)
+            audit("partner.create", "Partner", partner.id, new_values=_partner_snapshot(partner))
             db.session.commit()
         except PartnerValidationError as exc:
             db.session.rollback()
@@ -135,6 +142,7 @@ def new():
 
 
 @bp.get("/<int:partner_id>")
+@permission_required("partners.view")
 def detail(partner_id):
     partner = _partner_or_404(partner_id)
     if not can_view_partner(partner):
@@ -152,13 +160,17 @@ def detail(partner_id):
 
 
 @bp.route("/<int:partner_id>/edit", methods=["GET", "POST"])
+@permission_required("partners.edit")
 def edit(partner_id):
     partner = _partner_or_404(partner_id)
     if not can_edit_partner(partner):
         abort(403)
     if request.method == "POST":
+        _require_head_permission_if_changed(partner)
+        old_values = _partner_snapshot(partner)
         try:
             save_partner(request.form, partner)
+            audit("partner.update", "Partner", partner.id, old_values, _partner_snapshot(partner))
             db.session.commit()
         except PartnerValidationError as exc:
             db.session.rollback()
@@ -170,12 +182,14 @@ def edit(partner_id):
 
 
 @bp.post("/<int:partner_id>/deactivate")
+@permission_required("partners.delete")
 def deactivate(partner_id):
     partner = _partner_or_404(partner_id)
     if not can_delete_partner(partner):
         abort(403)
     partner.is_active = False
     partner.deleted_at = func.now()
+    audit("partner.deactivate", "Partner", partner.id, _partner_snapshot(partner), {"is_active": False, "deleted_at": True})
     db.session.commit()
     flash("Đã vô hiệu hóa đối tác.", "success")
     return redirect(url_for("partners.index"))
@@ -198,8 +212,28 @@ def _render_form(partner=None, form_errors=None, form=None):
         field_rows=build_field_form_rows(form, partner),
         form_data=build_partner_form_data(form, partner),
         form_errors=form_errors or {},
+        can_manage_department_head=request_user_can("partner_relations.manage"),
     )
 
 
 def _partner_or_404(partner_id):
     return Partner.query.filter(Partner.id == partner_id, Partner.deleted_at.is_(None)).first_or_404()
+
+
+def request_user_can(code):
+    from flask_login import current_user
+    return current_user.can(code)
+
+
+def _require_head_permission_if_changed(partner):
+    if "is_department_head" not in request.form:
+        return
+    requested = request.form.get("is_department_head") == "on"
+    if requested != (partner.is_department_head if partner else False) and not request_user_can("partner_relations.manage"):
+        abort(403)
+
+
+def _partner_snapshot(partner):
+    return {"full_name": partner.full_name, "company_id": partner.company_id,
+            "department_id": partner.department_id, "position": partner.position,
+            "is_department_head": partner.is_department_head, "is_active": partner.is_active}

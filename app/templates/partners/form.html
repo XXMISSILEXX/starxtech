@@ -40,11 +40,12 @@
           <label class="form-label">Vị trí <span class="text-danger">*</span></label>
           <input class="form-control {% if form_errors.get('position') %}is-invalid{% endif %}" name="position" value="{{ form_data.get('position') or '' }}" data-position-input>
           {% if form_errors.get('position') %}<div class="invalid-feedback">{{ form_errors.position }}</div>{% endif %}
-          <div class="form-check mt-2" data-department-head-wrapper>
+          {% if can_manage_department_head %}<div class="form-check mt-2" data-department-head-wrapper>
             <input class="form-check-input" type="checkbox" name="is_department_head" id="is_department_head" data-department-head-checkbox {% if form_data.get('is_department_head') %}checked{% endif %}>
             <label class="form-check-label" for="is_department_head">Là trưởng phòng</label>
             <div class="form-text">Khi chọn, vị trí sẽ tự động là “Trưởng phòng”. Phòng ban đặc biệt không dùng tùy chọn này.</div>
           </div>
+          {% endif %}
         </div>
         <div class="col-md-4"><label class="form-label">Điện thoại</label><input class="form-control" name="phone" value="{{ form_data.get('phone') or '' }}"></div>
         <div class="col-md-4"><label class="form-label">Email</label><input class="form-control" type="email" name="email" value="{{ form_data.get('email') or '' }}"></div>

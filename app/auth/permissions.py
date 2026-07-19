@@ -7,8 +7,7 @@ from app.models import ProjectUser, UserRole
 
 ASSIGNED_PROJECT_ROLES = {UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value}
 ADMIN_ROLES = {UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value}
-PARTNER_WRITE_ROLES = ADMIN_ROLES | {UserRole.PROJECT_MANAGER.value}
-PARTNER_READ_ROLES = PARTNER_WRITE_ROLES | {UserRole.VIEWER_ADMIN.value, UserRole.REPORTER.value}
+PARTNER_MODULE_DENY_MESSAGE = "Bạn không có quyền truy cập phân hệ Quản lý đối tác."
 
 
 def role_required(*roles):
@@ -59,7 +58,16 @@ def can_access_reports_module(user=None):
 
 def can_access_partners_module(user=None):
     user = user or current_user
-    return bool(user.is_authenticated and user.role_code in PARTNER_READ_ROLES)
+    return bool(user.is_authenticated and user.can("modules.partners.access"))
+
+
+def partner_module_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not can_access_partners_module():
+            abort(403, description=PARTNER_MODULE_DENY_MESSAGE)
+        return view(*args, **kwargs)
+    return wrapped
 
 
 def permitted_modules(user=None):
@@ -74,12 +82,12 @@ def permitted_modules(user=None):
 
 def can_manage_partner_fields(user=None):
     user = user or current_user
-    return bool(user.is_authenticated and user.role_code in ADMIN_ROLES)
+    return bool(user.is_authenticated and user.can("partner_fields.manage"))
 
 
 def can_create_partner(user=None):
     user = user or current_user
-    return bool(user.is_authenticated and user.role_code in PARTNER_WRITE_ROLES)
+    return bool(user.is_authenticated and user.can("partners.create"))
 
 
 def can_edit_partner(user=None, partner=None):
@@ -87,7 +95,7 @@ def can_edit_partner(user=None, partner=None):
         partner = user
         user = current_user
     user = user or current_user
-    return bool(user.is_authenticated and user.role_code in PARTNER_WRITE_ROLES)
+    return bool(user.is_authenticated and user.can("partners.edit"))
 
 
 def can_delete_partner(user=None, partner=None):
@@ -95,7 +103,7 @@ def can_delete_partner(user=None, partner=None):
         partner = user
         user = current_user
     user = user or current_user
-    return bool(user.is_authenticated and user.role_code in ADMIN_ROLES)
+    return bool(user.is_authenticated and user.can("partners.delete"))
 
 
 def can_view_partner(user=None, partner=None):
@@ -103,7 +111,7 @@ def can_view_partner(user=None, partner=None):
         partner = user
         user = current_user
     user = user or current_user
-    return bool(user.is_authenticated and user.role_code in PARTNER_READ_ROLES)
+    return bool(user.is_authenticated and user.can("partners.view"))
 
 
 def can_read_project(project_id):

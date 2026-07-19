@@ -81,7 +81,7 @@ def apply_partner_filters(query, args):
 
 def save_partner(form, partner=None):
     is_new = partner is None
-    form_data = build_partner_form_data(form)
+    form_data = build_partner_form_data(form, partner)
     errors = _validate_partner_data(form_data)
     field_rows = build_field_value_rows(form)
     field_errors = _validate_field_value_rows(field_rows)
@@ -124,7 +124,7 @@ def build_partner_form_data(form, partner=None):
             "department_id": _optional_int(form.get("department_id")),
             "department": None,
             "position": _optional_text(form.get("position")),
-            "is_department_head": form.get("is_department_head") == "on",
+            "is_department_head": form.get("is_department_head") == "on" if "is_department_head" in form else (partner.is_department_head if partner else False),
             "phone": _optional_text(form.get("phone")),
             "email": _optional_text(form.get("email")),
             "birth_date": parse_vn_date(form.get("birth_date")),

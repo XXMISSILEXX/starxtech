@@ -31,36 +31,14 @@ def test_module_selection_sets_active_module_and_sidebar(client):
     assert "Báo cáo</span>".encode() not in page.data
 
 
-def test_project_manager_can_create_partner_but_not_manage_fields(client, app):
+def test_project_manager_has_no_default_partner_access(client, app):
     login(client, "pm")
 
-    forbidden = client.get("/partner-fields/")
-    assert forbidden.status_code == 403
-
-    created = client.post(
-        "/partner-companies/new",
-        data={"name": "Acme", "industry": "Thi công", "is_active": "on"},
-    )
-    assert created.status_code == 302
-    with app.app_context():
-        company = Company.query.filter_by(name="Acme").one()
-        company_id = company.id
-    with app.app_context():
-        department = CompanyDepartment(id=1000, company_id=company_id, name="Ban giám đốc", is_active=True)
-        db.session.add(department)
-        db.session.commit()
-        department_id = department.id
-
-    response = client.post(
-        "/partners/new",
-        data={"full_name": "Nguyen Van A", "company_id": str(company_id), "department_id": str(department_id), "position": "CEO"},
-    )
-    assert response.status_code == 302
-    with app.app_context():
-        assert Partner.query.filter_by(full_name="Nguyen Van A").first() is not None
+    assert client.get("/partners/").status_code == 403
+    assert client.post("/partner-companies/new", data={"name": "Acme"}).status_code == 403
 
 
-def test_reporter_can_view_partners_but_cannot_write(client, app):
+def test_reporter_has_no_default_partner_access(client, app):
     with app.app_context():
         company = Company(id=1, name="View Co")
         partner = Partner(id=1, full_name="Read Only", company=company)
@@ -69,7 +47,7 @@ def test_reporter_can_view_partners_but_cannot_write(client, app):
 
     login(client, "reporter")
 
-    assert client.get("/partners/1").status_code == 200
+    assert client.get("/partners/1").status_code == 403
     assert client.post("/partners/new", data={"full_name": "Blocked"}).status_code == 403
     assert client.get("/partner-fields/").status_code == 403
 

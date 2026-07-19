@@ -6,8 +6,8 @@
 {% block content %}
 <div class="d-flex justify-content-end gap-2 mb-3">
   <a class="btn btn-outline-secondary" href="{{ url_for('partner_companies.index') }}">Quay lại</a>
+  <a class="btn btn-outline-primary" href="{{ url_for('partner_companies.departments', company_id=company.id) }}">Phòng ban</a>
   {% if can_edit %}
-    <a class="btn btn-outline-primary" href="{{ url_for('partner_companies.departments', company_id=company.id) }}">Phòng ban</a>
     <a class="btn btn-primary" href="{{ url_for('partner_companies.edit', company_id=company.id) }}">Sửa</a>
   {% endif %}
 </div>
@@ -25,7 +25,7 @@
     </div></div>
   </div>
   <div class="col-lg-7">
-    <div class="card mb-3"><div class="card-header bg-white d-flex justify-content-between align-items-center"><span class="fw-semibold">Phòng ban</span>{% if can_edit %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('partner_companies.departments_new', company_id=company.id) }}">Thêm phòng ban</a>{% endif %}</div><div class="card-body">
+    <div class="card mb-3"><div class="card-header bg-white d-flex justify-content-between align-items-center"><span class="fw-semibold">Phòng ban</span>{% if can_create_department %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('partner_companies.departments_new', company_id=company.id) }}">Thêm phòng ban</a>{% endif %}</div><div class="card-body">
       {% for department in departments %}
         <div class="d-flex justify-content-between gap-2 border-bottom py-2">
           <div>

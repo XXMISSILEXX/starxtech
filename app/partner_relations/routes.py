@@ -1,7 +1,9 @@
 from flask import abort, flash, redirect, render_template, request, url_for
 from sqlalchemy import func, or_
 
-from app.auth.permissions import can_access_partners_module, can_edit_partner
+from app.auth.permissions import can_access_partners_module
+from app.audit import audit
+from app.permissions.services import permission_required
 from app.extensions import db
 from app.models import Company, CompanyDepartment, Partner, PartnerRelationship
 from app.partner_relations import bp
@@ -21,10 +23,11 @@ RELATIONSHIP_TYPES = {
 @bp.before_request
 def require_partner_module():
     if not can_access_partners_module():
-        abort(403)
+        abort(403, description="Bạn không có quyền truy cập phân hệ Quản lý đối tác.")
 
 
 @bp.get("/")
+@permission_required("partner_relations.view")
 def index():
     company_id = request.args.get("company_id", "").strip()
     search = request.args.get("q", "").strip()
@@ -57,11 +60,12 @@ def index():
         departments=departments,
         filters=request.args,
         partners_without_company=partners_without_company,
-        can_edit=can_edit_partner(),
+        can_manage=_can("partner_relations.manage"),
     )
 
 
 @bp.get("/company/<int:company_id>")
+@permission_required("partner_relations.view")
 def company(company_id):
     company = _company_or_404(company_id)
     relationships = _relationship_rows(company.id, request.args.get("q", ""), request.args.get("department", ""))
@@ -71,16 +75,15 @@ def company(company_id):
         relationships=relationships,
         grouped_relationships=_group_relationships(relationships),
         filters=request.args,
-        can_edit=can_edit_partner(),
+        can_manage=_can("partner_relations.manage"),
         relationship_type_labels=RELATIONSHIP_TYPES,
         departments=_company_departments(company.id),
     )
 
 
 @bp.route("/company/<int:company_id>/manage", methods=["GET", "POST"])
+@permission_required("partner_relations.manage")
 def manage_company(company_id):
-    if not can_edit_partner():
-        abort(403)
     company = _company_or_404(company_id)
     partners = _company_partners(company.id)
     relationship = None
@@ -91,6 +94,7 @@ def manage_company(company_id):
         errors, form_data = _relationship_form_data(company, partners)
         if not errors:
             _save_relationship(relationship, company, form_data)
+            audit("partner_relationship.create", "PartnerRelationship", relationship.id, new_values=_snapshot(relationship))
             db.session.commit()
             flash("Đã thêm quan hệ.", "success")
             return redirect(url_for("partner_relations.manage_company", company_id=company.id))
@@ -100,18 +104,19 @@ def manage_company(company_id):
 
 
 @bp.route("/company/<int:company_id>/relationships/<int:relationship_id>/edit", methods=["GET", "POST"])
+@permission_required("partner_relations.manage")
 def edit_relationship(company_id, relationship_id):
-    if not can_edit_partner():
-        abort(403)
     company = _company_or_404(company_id)
     partners = _company_partners(company.id)
     relationship = _relationship_or_404(company.id, relationship_id)
     errors = {}
     form_data = _relationship_to_form_data(relationship)
     if request.method == "POST":
+        old_values = _snapshot(relationship)
         errors, form_data = _relationship_form_data(company, partners, relationship)
         if not errors:
             _save_relationship(relationship, company, form_data)
+            audit("partner_relationship.update", "PartnerRelationship", relationship.id, old_values, _snapshot(relationship))
             db.session.commit()
             flash("Đã cập nhật quan hệ.", "success")
             return redirect(url_for("partner_relations.manage_company", company_id=company.id))
@@ -121,19 +126,21 @@ def edit_relationship(company_id, relationship_id):
 
 
 @bp.post("/company/<int:company_id>/relationships/<int:relationship_id>/delete")
+@permission_required("partner_relations.delete")
 def delete_relationship(company_id, relationship_id):
-    if not can_edit_partner():
-        abort(403)
     company = _company_or_404(company_id)
     relationship = _relationship_or_404(company.id, relationship_id)
+    old_values = _snapshot(relationship)
     relationship.deleted_at = func.now()
     relationship.is_active = False
+    audit("partner_relationship.delete", "PartnerRelationship", relationship.id, old_values, {"is_active": False, "deleted_at": True})
     db.session.commit()
     flash("Đã xóa quan hệ.", "success")
     return redirect(url_for("partner_relations.manage_company", company_id=company.id))
 
 
 @bp.get("/company/<int:company_id>/tree")
+@permission_required("partner_relations.view")
 def tree(company_id):
     company = _company_or_404(company_id)
     relationships = _relationship_rows(company.id, request.args.get("q", ""), request.args.get("department", ""))
@@ -144,13 +151,14 @@ def tree(company_id):
         tree_data=tree_data,
         relationships=relationships,
         filters=request.args,
-        can_edit=can_edit_partner(),
+        can_manage=_can("partner_relations.manage"),
         relationship_type_labels=RELATIONSHIP_TYPES,
         departments=_company_departments(company.id),
     )
 
 
 @bp.get("/departments/<int:department_id>/summary")
+@permission_required("partner_relations.view")
 def department_summary(department_id):
     department = (
         CompanyDepartment.query.join(Company)
@@ -180,6 +188,7 @@ def department_summary(department_id):
 
 
 @bp.route("/company/<int:company_id>/edit", methods=["GET", "POST"])
+@permission_required("partner_relations.manage")
 def edit_company(company_id):
     return redirect(url_for("partner_relations.manage_company", company_id=company_id))
 
@@ -525,3 +534,14 @@ def _int_or_zero(value):
         return int(value or 0)
     except ValueError:
         return 0
+
+
+def _can(code):
+    from flask_login import current_user
+    return current_user.can(code)
+
+
+def _snapshot(relationship):
+    return {"company_id": relationship.company_id, "partner_id": relationship.partner_id,
+            "parent_partner_id": relationship.parent_partner_id, "department_id": relationship.department_id,
+            "relationship_type": relationship.relationship_type, "is_active": relationship.is_active}

@@ -7,7 +7,7 @@
 <div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
   <a class="btn btn-outline-secondary" href="{{ url_for('partner_relations.index') }}">Quay lại</a>
   <a class="btn btn-outline-primary" href="{{ url_for('partner_relations.tree', company_id=company.id) }}"><i class="bi bi-diagram-3 me-1"></i><span class="action-label">Xem sơ đồ cây</span></a>
-  {% if can_edit %}<a class="btn btn-primary" href="{{ url_for('partner_relations.manage_company', company_id=company.id) }}"><i class="bi bi-pencil me-1"></i><span class="action-label">Quản lý quan hệ</span></a>{% endif %}
+  {% if can_manage %}<a class="btn btn-primary" href="{{ url_for('partner_relations.manage_company', company_id=company.id) }}"><i class="bi bi-pencil me-1"></i><span class="action-label">Quản lý quan hệ</span></a>{% endif %}
 </div>
 
 <div class="card mb-3">

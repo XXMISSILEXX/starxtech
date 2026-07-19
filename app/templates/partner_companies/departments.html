@@ -6,7 +6,7 @@
 {% block content %}
 <div class="d-flex justify-content-end gap-2 mb-3">
   <a class="btn btn-outline-secondary" href="{{ url_for('partner_companies.detail', company_id=company.id) }}">Quay lại</a>
-  <a class="btn btn-primary" href="{{ url_for('partner_companies.departments_new', company_id=company.id) }}"><i class="bi bi-plus-lg me-1"></i>Thêm phòng ban</a>
+  {% if can_create %}<a class="btn btn-primary" href="{{ url_for('partner_companies.departments_new', company_id=company.id) }}"><i class="bi bi-plus-lg me-1"></i>Thêm phòng ban</a>{% endif %}
 </div>
 
 <div class="card mb-3">
@@ -42,8 +42,8 @@
           <td data-label="Trạng thái">{{ 'Đang hoạt động' if department.is_active else 'Đã vô hiệu hóa' }}</td>
           <td data-label="Thao tác" class="text-end">
             <div class="mobile-card-actions justify-content-end">
-              <a class="btn btn-sm btn-outline-primary btn-action-mobile" href="{{ url_for('partner_companies.departments_edit', company_id=company.id, department_id=department.id) }}" aria-label="Sửa" title="Sửa"><i class="bi bi-pencil"></i><span class="action-label">Sửa</span></a>
-              {% if department.is_active %}
+              {% if can_edit %}<a class="btn btn-sm btn-outline-primary btn-action-mobile" href="{{ url_for('partner_companies.departments_edit', company_id=company.id, department_id=department.id) }}" aria-label="Sửa" title="Sửa"><i class="bi bi-pencil"></i><span class="action-label">Sửa</span></a>{% endif %}
+              {% if can_delete and department.is_active %}
                 <form method="post" action="{{ url_for('partner_companies.departments_delete', company_id=company.id, department_id=department.id) }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button class="btn btn-sm btn-outline-danger btn-action-mobile" type="submit" data-confirm="Vô hiệu hóa phòng ban này?" aria-label="Vô hiệu hóa" title="Vô hiệu hóa"><i class="bi bi-trash"></i><span class="action-label">Vô hiệu hóa</span></button>

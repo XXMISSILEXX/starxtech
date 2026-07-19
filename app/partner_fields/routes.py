@@ -1,7 +1,9 @@
 from flask import abort, flash, redirect, render_template, request, url_for
 from sqlalchemy import or_
 
-from app.auth.permissions import can_access_partners_module, can_manage_partner_fields
+from app.auth.permissions import can_access_partners_module
+from app.audit import audit
+from app.permissions.services import permission_required
 from app.extensions import db
 from app.models import PartnerFieldDefinition
 from app.partner_fields import bp
@@ -11,13 +13,12 @@ from app.partners.services import FIELD_TYPES, PartnerValidationError, save_fiel
 @bp.before_request
 def require_partner_module():
     if not can_access_partners_module():
-        abort(403)
+        abort(403, description="Bạn không có quyền truy cập phân hệ Quản lý đối tác.")
 
 
 @bp.get("/")
+@permission_required("partner_fields.view")
 def index():
-    if not can_manage_partner_fields():
-        abort(403)
     query = PartnerFieldDefinition.query
     search = request.args.get("q", "").strip()
     field_type = request.args.get("field_type", "").strip()
@@ -50,16 +51,17 @@ def index():
         group_names=group_names,
         filters=request.args,
         errors={},
+        can_manage=_can_manage(),
     )
 
 
 @bp.route("/new", methods=["GET", "POST"])
+@permission_required("partner_fields.manage")
 def new():
-    if not can_manage_partner_fields():
-        abort(403)
     if request.method == "POST":
         try:
             field = save_field_definition(request.form)
+            audit("partner_field.create", "PartnerFieldDefinition", field.id, new_values=_snapshot(field))
             db.session.commit()
         except PartnerValidationError as exc:
             db.session.rollback()
@@ -71,13 +73,14 @@ def new():
 
 
 @bp.route("/<int:field_id>/edit", methods=["GET", "POST"])
+@permission_required("partner_fields.manage")
 def edit(field_id):
-    if not can_manage_partner_fields():
-        abort(403)
     field = PartnerFieldDefinition.query.get_or_404(field_id)
     if request.method == "POST":
+        old_values = _snapshot(field)
         try:
             save_field_definition(request.form, field)
+            audit("partner_field.update", "PartnerFieldDefinition", field.id, old_values, _snapshot(field))
             db.session.commit()
         except PartnerValidationError as exc:
             db.session.rollback()
@@ -89,24 +92,38 @@ def edit(field_id):
 
 
 @bp.post("/<int:field_id>/deactivate")
+@permission_required("partner_fields.manage")
 def deactivate(field_id):
-    if not can_manage_partner_fields():
-        abort(403)
     field = PartnerFieldDefinition.query.get_or_404(field_id)
+    old_values = _snapshot(field)
     field.is_active = False
+    audit("partner_field.deactivate", "PartnerFieldDefinition", field.id, old_values, _snapshot(field))
     db.session.commit()
     flash("Đã vô hiệu hóa trường dữ liệu.", "success")
     return redirect(url_for("partner_fields.index"))
 
 
 @bp.post("/reorder")
+@permission_required("partner_fields.manage")
 def reorder():
-    if not can_manage_partner_fields():
-        abort(403)
     for field in PartnerFieldDefinition.query.all():
         raw = request.form.get(f"sort_order_{field.id}")
         if raw and raw.strip().lstrip("-").isdigit():
-            field.sort_order = int(raw)
+            sort_order = int(raw)
+            if field.sort_order != sort_order:
+                old_values = _snapshot(field)
+                field.sort_order = sort_order
+                audit("partner_field.update", "PartnerFieldDefinition", field.id, old_values, _snapshot(field))
     db.session.commit()
     flash("Đã cập nhật thứ tự trường dữ liệu.", "success")
     return redirect(url_for("partner_fields.index"))
+
+
+def _can_manage():
+    from flask_login import current_user
+    return current_user.can("partner_fields.manage")
+
+
+def _snapshot(field):
+    return {"label": field.label, "field_key": field.field_key, "field_type": field.field_type,
+            "group_name": field.group_name, "sort_order": field.sort_order, "is_active": field.is_active}

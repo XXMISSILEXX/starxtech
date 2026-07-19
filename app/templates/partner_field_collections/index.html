@@ -24,7 +24,7 @@
 </div>
 
 <div class="d-flex justify-content-end mb-3">
-  <a class="btn btn-primary" href="{{ url_for('partner_field_collections.new') }}"><i class="bi bi-plus-lg me-1"></i>Thêm bộ trường</a>
+  {% if can_manage %}<a class="btn btn-primary" href="{{ url_for('partner_field_collections.new') }}"><i class="bi bi-plus-lg me-1"></i>Thêm bộ trường</a>{% endif %}
 </div>
 
 <div class="card">
@@ -39,10 +39,10 @@
           <td>{{ collection.items|length }}</td>
           <td>{{ 'Đang dùng' if collection.is_active else 'Đã vô hiệu hóa' }}</td>
           <td class="text-end">
-            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('partner_field_collections.edit', collection_id=collection.id) }}">Sửa</a>
+            {% if can_manage %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('partner_field_collections.edit', collection_id=collection.id) }}">Sửa</a>
             {% if collection.is_active %}
               <button class="btn btn-sm btn-outline-danger" form="deactivate-collection-{{ collection.id }}" type="submit">Vô hiệu hóa</button>
-            {% endif %}
+            {% endif %}{% endif %}
           </td>
         </tr>
       {% else %}
