@@ -1,5 +1,7 @@
 from flask import abort, flash, redirect, render_template, request, url_for
-from app.auth.permissions import can_delete_report_for_project, can_read_project, can_write_project
+from flask_login import current_user
+
+from app.auth.permissions import can_create_report, can_delete_report, can_edit_report, can_view_report
 from app.extensions import db
 from app.models import DailyReport, DailyReportStatus, Project, SectionStatus
 from app.reports import bp
@@ -17,6 +19,8 @@ from app.reports.services import (
 @bp.get("")
 @bp.get("/")
 def index():
+    if not current_user.can("reports.view"):
+        abort(403)
     query = reports_query()
     projects = accessible_projects_query().all()
 
@@ -47,8 +51,8 @@ def index():
             "date_to": date_to,
         },
         project=None,
-        can_create_report_entry=any(can_write_project(project.id) for project in projects),
-        can_write_by_project={report.id: can_write_project(report.project_id) for report in reports},
+        can_create_report_entry=any(can_create_report(current_user, project.id) for project in projects),
+        can_write_by_project={report.id: can_edit_report(current_user, report) for report in reports},
         can_delete_by_report={report.id: _can_delete_report(report) for report in reports},
     )
 
@@ -60,7 +64,7 @@ def detail(report_id):
     return render_template(
         "reports/detail.html",
         report=report,
-        can_write=can_write_project(report.project_id),
+        can_write=can_edit_report(current_user, report),
         can_delete=_can_delete_report(report),
     )
 
@@ -109,7 +113,8 @@ def _render_form(report, form_data=None, form_errors=None):
         categories=categories_for_report(report),
         statuses=[status.value for status in DailyReportStatus],
         section_statuses=[status.value for status in SectionStatus],
-        can_write=can_write_project(report.project_id),
+        can_write=can_edit_report(current_user, report),
+        can_delete_attachment=current_user.can("report_attachments.delete") and can_edit_report(current_user, report),
     )
 
 
@@ -122,17 +127,17 @@ def _report_or_404(report_id):
 
 def _require_can_read(report):
     project = Project.query.filter(Project.id == report.project_id, Project.deleted_at.is_(None)).first()
-    if not project or not can_read_project(report.project_id):
+    if not project or not can_view_report(current_user, report):
         abort(403)
 
 
 def _require_can_write(report):
-    if not can_write_project(report.project_id):
+    if not can_edit_report(current_user, report):
         abort(403)
 
 
 def _can_delete_report(report):
-    return can_delete_report_for_project(report.project_id)
+    return can_delete_report(current_user, report)
 
 
 def _flash_reselect_images_if_needed(files):

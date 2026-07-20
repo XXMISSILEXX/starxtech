@@ -8,11 +8,12 @@
   <a class="btn btn-outline-secondary" href="{{ url_for('partners.index') }}">Quay lại</a>
   {% if can_edit %}<a class="btn btn-primary" href="{{ url_for('partners.edit', partner_id=partner.id) }}">Sửa</a>{% endif %}
   {% if can_delete %}
-    <form method="post" action="{{ url_for('partners.deactivate', partner_id=partner.id) }}">
+    <form method="post" action="{{ url_for('partners.archive', partner_id=partner.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button class="btn btn-outline-danger" type="submit">Vô hiệu hóa</button>
+      <button class="btn btn-outline-danger" type="submit">Lưu trữ</button>
     </form>
   {% endif %}
+  {% if can_restore %}<form method="post" action="{{ url_for('partners.restore', partner_id=partner.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-outline-success" type="submit">Khôi phục</button></form>{% endif %}
 </div>
 
 <div class="row g-3">
@@ -32,7 +33,7 @@
   <div class="col-lg-6">
     <div class="card h-100"><div class="card-header bg-white fw-semibold">Công ty</div><div class="card-body">
       {% if partner.company %}
-        <h2 class="h5"><a href="{{ url_for('partner_companies.detail', company_id=partner.company.id) }}">{{ partner.company.name }}</a></h2>
+        <h2 class="h5"><a href="{{ url_for('partner_companies.detail', company_id=partner.company.id) }}">{{ partner.company.name }}</a>{% if partner.company.deleted_at or not partner.company.is_active %} <span class="badge text-bg-secondary">Đã lưu trữ</span>{% endif %}</h2>
         <div class="text-muted">{{ partner.company.industry or '-' }}</div>
         <div>{{ partner.company.phone or '' }}</div>
         <div>{{ partner.company.email or '' }}</div>

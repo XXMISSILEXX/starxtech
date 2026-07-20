@@ -4,7 +4,7 @@
 {% block page_title %}{{ 'Sửa người dùng' if user else 'Tạo người dùng' }}{% endblock %}
 
 {% block content %}
-{% set can_write = current_user.role_code == 'SUPER_ADMIN' %}
+{% set can_write = current_user.can('users.manage') %}
 <form method="post" class="form-card row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-6">

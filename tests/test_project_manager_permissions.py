@@ -1,7 +1,7 @@
 from datetime import date
 
 from app.extensions import db
-from app.models import AuditLog, DailyReport, PersistentIssue, ReportCategory
+from app.models import AuditLog, DailyReport, Permission, PersistentIssue, ReportCategory, RolePermission, User
 
 
 def login(client, username_or_email, password="password123"):
@@ -26,6 +26,14 @@ def issue_form(title="PM issue", owner_user_id="5"):
     }
 
 
+def grant_pm(app, code):
+    with app.app_context():
+        user = User.query.filter_by(username="pm").one()
+        permission = Permission.query.filter_by(code=code).one()
+        db.session.add(RolePermission(role_id=user.role_id, permission_id=permission.id))
+        db.session.commit()
+
+
 def test_project_manager_accesses_only_assigned_projects(client):
     login(client, "pm")
 
@@ -37,6 +45,7 @@ def test_project_manager_accesses_only_assigned_projects(client):
 
 
 def test_project_manager_can_manage_categories_only_for_assigned_project(client, app):
+    grant_pm(app, "categories.manage")
     login(client, "pm")
 
     created = client.post(
@@ -92,12 +101,14 @@ def test_project_manager_can_delete_reports_only_for_assigned_project(client, ap
         )
         db.session.commit()
 
+    grant_pm(app, "reports.delete")
     login(client, "pm")
     assert client.post("/reports/501/delete").status_code == 302
     assert client.post("/reports/502/delete").status_code == 403
 
 
 def test_project_manager_can_manage_issues_only_for_assigned_project(client, app):
+    grant_pm(app, "issues.delete")
     login(client, "pm")
 
     created = client.post("/projects/1/issues/create", data=issue_form())

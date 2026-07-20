@@ -1,11 +1,12 @@
 from flask import abort, flash, redirect, render_template, request, url_for
+from flask_login import current_user
 
 from app.auth.permissions import (
     can_create_persistent_issue,
+    can_close_persistent_issue,
     can_delete_persistent_issue,
     can_edit_persistent_issue,
-    can_read_project,
-    can_write_project,
+    can_view_issue,
 )
 from app.extensions import db
 from app.issues import bp
@@ -26,6 +27,8 @@ from app.reports.services import accessible_projects_query
 @bp.get("")
 @bp.get("/")
 def index():
+    if not current_user.can("issues.view"):
+        abort(403)
     projects = accessible_projects_query().all()
     project_ids = [project.id for project in projects]
     issues = []
@@ -49,12 +52,15 @@ def index():
         can_create=can_create,
         create_url=url_for("issues.new") if can_create else None,
         can_edit_by_issue={issue.id: can_edit_persistent_issue(issue) for issue in issues},
+        can_close_by_issue={issue.id: can_close_persistent_issue(issue) for issue in issues},
         can_delete_by_issue={issue.id: can_delete_persistent_issue(issue) for issue in issues},
     )
 
 
 @bp.route("/new", methods=["GET", "POST"])
 def new():
+    if not current_user.can("issues.view"):
+        abort(403)
     projects = [
         project
         for project in accessible_projects_query().all()
@@ -96,7 +102,7 @@ def new():
 @bp.route("/<int:issue_id>/edit", methods=["GET", "POST"])
 def edit(issue_id):
     issue = _issue_or_404(issue_id)
-    if not can_read_project(issue.project_id):
+    if not can_view_issue(current_user, issue):
         abort(403)
 
     if request.method == "POST":
@@ -120,7 +126,7 @@ def edit(issue_id):
 @bp.post("/<int:issue_id>/close")
 def close(issue_id):
     issue = _issue_or_404(issue_id)
-    if not can_edit_persistent_issue(issue):
+    if not can_close_persistent_issue(issue):
         abort(403)
     close_issue(issue)
     flash("Đã đóng vấn đề tồn đọng.", "success")
@@ -130,7 +136,7 @@ def close(issue_id):
 @bp.post("/<int:issue_id>/reopen")
 def reopen(issue_id):
     issue = _issue_or_404(issue_id)
-    if not can_edit_persistent_issue(issue):
+    if not can_close_persistent_issue(issue):
         abort(403)
     reopen_issue(issue)
     flash("Đã mở lại vấn đề tồn đọng.", "success")
@@ -156,7 +162,7 @@ def _render_form(issue, form_errors=None):
         owners=owner_choices(issue.project_id),
         severities=[severity.value for severity in IssueSeverity],
         statuses=[status.value for status in IssueStatus],
-        can_write=can_write_project(issue.project_id),
+        can_write=can_edit_persistent_issue(issue),
         can_delete=can_delete_persistent_issue(issue),
         form_errors=form_errors or {},
     )
@@ -171,7 +177,7 @@ def _render_new_form(issue, projects, selected_project, form_errors=None):
         owners=owner_choices(selected_project.id) if selected_project else [],
         severities=[severity.value for severity in IssueSeverity],
         statuses=[status.value for status in IssueStatus],
-        can_write=True,
+        can_write=bool(selected_project and can_create_persistent_issue(selected_project.id)),
         can_delete=False,
         form_errors=form_errors or {},
     )

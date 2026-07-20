@@ -1,5 +1,5 @@
 from app.extensions import db
-from app.models import AuditLog, Project, ProjectStatus, ProjectUser, ReportCategory, User
+from app.models import AuditLog, Project, ProjectStatus, ProjectUser, ReportCategory, Role, User, UserRole
 
 
 def login(client, username_or_email, password="password123"):
@@ -33,6 +33,60 @@ def test_viewer_admin_can_read_admin_pages_but_cannot_post(client):
     )
 
     assert response.status_code == 403
+
+
+def test_users_view_is_read_only_and_users_manage_allows_admin_mutations(client, app):
+    login(client, "viewer")
+    assert client.get("/admin/users").status_code == 200
+    assert client.get("/admin/users/new").status_code == 200
+    assert b"/admin/users/new" not in client.get("/admin/users").data
+    assert client.post("/admin/users/3/deactivate").status_code == 403
+
+    client.post("/logout")
+    login(client, "admin")
+    with app.app_context():
+        reporter_role = Role.query.filter_by(code=UserRole.REPORTER.value).one()
+
+    response = client.post(
+        "/admin/users/new",
+        data={
+            "full_name": "Managed User",
+            "username": "managed-user",
+            "email": "managed-user@example.com",
+            "role_id": str(reporter_role.id),
+            "password": "Password123!",
+            "is_active": "on",
+        },
+    )
+
+    assert response.status_code == 302
+    with app.app_context():
+        assert User.query.filter_by(username="managed-user").one().is_active is True
+
+
+def test_last_active_super_admin_cannot_be_deactivated_or_reassigned(client, app):
+    login(client, "super")
+    with app.app_context():
+        super_user = User.query.filter_by(username="super").one()
+        reporter_role = Role.query.filter_by(code=UserRole.REPORTER.value).one()
+
+    assert client.post(f"/admin/users/{super_user.id}/deactivate").status_code == 400
+    reassigned = client.post(
+        f"/admin/users/{super_user.id}/edit",
+        data={
+            "full_name": super_user.full_name,
+            "username": super_user.username,
+            "email": super_user.email,
+            "role_id": str(reporter_role.id),
+            "is_active": "on",
+        },
+    )
+    assert reassigned.status_code == 400
+
+    with app.app_context():
+        super_user = db.session.get(User, super_user.id)
+        assert super_user.is_active is True
+        assert super_user.role_code == UserRole.SUPER_ADMIN.value
 
 
 def test_reporter_cannot_access_admin_routes(client):

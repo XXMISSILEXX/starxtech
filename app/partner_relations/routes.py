@@ -90,6 +90,7 @@ def manage_company(company_id):
     errors = {}
     form_data = {}
     if request.method == "POST":
+        _require_active_company_for_mutation(company)
         relationship = PartnerRelationship()
         errors, form_data = _relationship_form_data(company, partners)
         if not errors:
@@ -112,6 +113,7 @@ def edit_relationship(company_id, relationship_id):
     errors = {}
     form_data = _relationship_to_form_data(relationship)
     if request.method == "POST":
+        _require_active_company_for_mutation(company)
         old_values = _snapshot(relationship)
         errors, form_data = _relationship_form_data(company, partners, relationship)
         if not errors:
@@ -129,13 +131,14 @@ def edit_relationship(company_id, relationship_id):
 @permission_required("partner_relations.delete")
 def delete_relationship(company_id, relationship_id):
     company = _company_or_404(company_id)
+    _require_active_company_for_mutation(company)
     relationship = _relationship_or_404(company.id, relationship_id)
     old_values = _snapshot(relationship)
     relationship.deleted_at = func.now()
     relationship.is_active = False
     audit("partner_relationship.delete", "PartnerRelationship", relationship.id, old_values, {"is_active": False, "deleted_at": True})
     db.session.commit()
-    flash("Đã xóa quan hệ.", "success")
+    flash("Đã lưu trữ quan hệ.", "success")
     return redirect(url_for("partner_relations.manage_company", company_id=company.id))
 
 
@@ -205,6 +208,8 @@ def _render_manage(company, partners, relationship, errors, form_data):
         departments=_company_departments(company.id),
         errors=errors,
         form_data=form_data,
+        can_edit=_can("partner_relations.manage"),
+        can_delete=_can("partner_relations.delete"),
     )
 
 
@@ -297,6 +302,8 @@ def _relationship_rows(company_id, search="", department=""):
             PartnerRelationship.company_id == company_id,
             PartnerRelationship.deleted_at.is_(None),
             PartnerRelationship.is_active.is_(True),
+            Partner.deleted_at.is_(None),
+            Partner.is_active.is_(True),
         )
     )
     search = (search or "").strip()
@@ -501,12 +508,19 @@ def _creates_cycle(company_id, partner_id, parent_partner_id, current_relationsh
 
 
 def _company_or_404(company_id):
-    return Company.query.filter(Company.id == company_id, Company.deleted_at.is_(None)).first_or_404()
+    return Company.query.filter(Company.id == company_id).first_or_404()
+
+
+def _require_active_company_for_mutation(company):
+    if company.deleted_at is None and company.is_active:
+        return
+    flash("Không thể thay đổi quan hệ khi công ty đã lưu trữ.", "danger")
+    abort(400)
 
 
 def _company_partners(company_id):
     return (
-        Partner.query.filter(Partner.company_id == company_id, Partner.deleted_at.is_(None))
+        Partner.query.filter(Partner.company_id == company_id, Partner.deleted_at.is_(None), Partner.is_active.is_(True))
         .order_by(Partner.full_name.asc())
         .all()
     )

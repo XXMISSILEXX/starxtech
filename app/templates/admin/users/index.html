@@ -6,7 +6,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div class="text-muted">Quản lý tài khoản và vai trò người dùng.</div>
-  {% if current_user.role_code == 'SUPER_ADMIN' %}
+  {% if current_user.can('users.manage') %}
     <a class="btn btn-primary" href="{{ url_for('admin.users_new') }}"><i class="bi bi-person-plus me-1"></i>Tạo người dùng</a>
   {% endif %}
 </div>
@@ -20,7 +20,7 @@
         <th>Email</th>
         <th>Vai trò</th>
         <th>Trạng thái</th>
-        {% if current_user.role_code == 'SUPER_ADMIN' %}<th class="text-end">Thao tác</th>{% endif %}
+        {% if current_user.can('users.manage') %}<th class="text-end">Thao tác</th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -37,7 +37,7 @@
               <span class="badge status-badge status-muted">Ngưng hoạt động</span>
             {% endif %}
           </td>
-          {% if current_user.role_code == 'SUPER_ADMIN' %}
+          {% if current_user.can('users.manage') %}
             <td class="text-end">
               <div class="d-inline-flex gap-1">
                 <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.users_edit', user_id=user.id) }}"><i class="bi bi-pencil me-1"></i>Sửa</a>
@@ -61,7 +61,7 @@
           {% endif %}
         </tr>
       {% else %}
-        <tr><td colspan="{{ 6 if current_user.role_code == 'SUPER_ADMIN' else 5 }}"><div class="empty-state"><i class="bi bi-people"></i>Chưa có người dùng.</div></td></tr>
+        <tr><td colspan="{{ 6 if current_user.can('users.manage') else 5 }}"><div class="empty-state"><i class="bi bi-people"></i>Chưa có người dùng.</div></td></tr>
       {% endfor %}
     </tbody>
   </table>

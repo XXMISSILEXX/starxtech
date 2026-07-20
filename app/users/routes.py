@@ -1,8 +1,8 @@
 from app.users import bp
-from app.auth.permissions import viewer_or_admin_required
+from app.permissions.services import permission_required
 
 
 @bp.get("/")
-@viewer_or_admin_required()
+@permission_required("users.view")
 def index():
     return "Users blueprint ready"

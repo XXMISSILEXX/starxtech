@@ -42,12 +42,15 @@ def parse_filters(args):
 
 def dashboard_context(filters):
     reports = filtered_reports_query(filters)
-    issues = filtered_issues_query(filters)
-    open_issues = issues.filter(PersistentIssue.status.in_(OPEN_ISSUE_STATUSES))
-    critical_issues = issues.filter(PersistentIssue.severity == "CRITICAL")
+    # A report dashboard may be visible without the separately granted issue
+    # resource.  Do not leak issue counters or rows in that case.
+    issues = filtered_issues_query(filters) if current_user.can("issues.view") else None
+    open_issues = issues.filter(PersistentIssue.status.in_(OPEN_ISSUE_STATUSES)) if issues is not None else None
+    critical_issues = issues.filter(PersistentIssue.severity == "CRITICAL") if issues is not None else None
     status_counts = _status_counts(reports)
 
     return {
+        "can_view_issues": issues is not None,
         "filters": filters,
         "projects": accessible_projects_query().all(),
         "reporters": accessible_reporters(),
@@ -58,9 +61,9 @@ def dashboard_context(filters):
             "processing_reports": status_counts.get(DailyReportStatus.PROCESSING.value, 0),
             "attention_reports": status_counts.get(DailyReportStatus.ATTENTION.value, 0),
             "critical_reports": status_counts.get(DailyReportStatus.CRITICAL.value, 0),
-            "total_issues": issues.count(),
-            "open_issues": open_issues.count(),
-            "critical_issues": critical_issues.count(),
+            "total_issues": issues.count() if issues is not None else 0,
+            "open_issues": open_issues.count() if open_issues is not None else 0,
+            "critical_issues": critical_issues.count() if critical_issues is not None else 0,
         },
         "latest_reports": reports.order_by(
             DailyReport.report_date.desc(),
@@ -74,13 +77,13 @@ def dashboard_context(filters):
             PersistentIssue.id.desc(),
         )
         .limit(10)
-        .all(),
+        .all() if open_issues is not None else [],
         "recent_issues": issues.order_by(
             PersistentIssue.opened_date.desc(),
             PersistentIssue.id.desc(),
         )
         .limit(10)
-        .all(),
+        .all() if issues is not None else [],
     }
 
 

@@ -1,12 +1,16 @@
 from flask import abort, flash, redirect, render_template, request, url_for
+from flask_login import current_user
 
 from app.auth.permissions import (
     can_create_persistent_issue,
-    can_delete_issue_for_project,
-    can_delete_report_for_project,
+    can_close_persistent_issue,
+    can_delete_persistent_issue,
+    can_delete_report,
+    can_edit_report,
     can_edit_persistent_issue,
+    can_create_report,
     can_read_project,
-    can_write_project,
+    can_view_issue,
 )
 from app.dashboard.services import project_dashboard_context
 from app.extensions import db
@@ -33,6 +37,8 @@ from app.reports.services import (
 @bp.get("/")
 @bp.get("")
 def index():
+    if not current_user.can("projects.view"):
+        abort(403)
     projects = accessible_projects_query().all()
     create_report_mode = request.args.get("create_report") == "1"
     if create_report_mode:
@@ -41,18 +47,18 @@ def index():
         "projects/index.html",
         projects=projects,
         create_report_mode=create_report_mode,
-        can_write_by_project={project.id: can_write_project(project.id) for project in projects},
+        can_write_by_project={project.id: can_create_report(current_user, project.id) for project in projects},
     )
 
 
 @bp.get("/<int:project_id>/dashboard")
 def dashboard(project_id):
     project = _project_or_404(project_id)
-    if not can_read_project(project.id):
+    if not can_read_project(project.id) or not current_user.can("reports.view"):
         abort(403)
     return render_template(
         "dashboard/project.html",
-        can_write=can_write_project(project.id),
+        can_write=can_create_report(current_user, project.id),
         **project_dashboard_context(project),
     )
 
@@ -60,7 +66,7 @@ def dashboard(project_id):
 @bp.get("/<int:project_id>/reports")
 def reports(project_id):
     project = _project_or_404(project_id)
-    if not can_read_project(project.id):
+    if not can_read_project(project.id) or not current_user.can("reports.view"):
         abort(403)
 
     query = reports_query().filter(DailyReport.project_id == project.id)
@@ -87,23 +93,23 @@ def reports(project_id):
             "date_to": date_to,
         },
         project=project,
-        can_create_report_entry=can_write_project(project.id),
-        can_write_by_project={report.id: can_write_project(report.project_id) for report in reports},
-        can_delete_by_report={report.id: can_delete_report_for_project(report.project_id) for report in reports},
+        can_create_report_entry=can_create_report(current_user, project.id),
+        can_write_by_project={report.id: can_edit_report(current_user, report) for report in reports},
+        can_delete_by_report={report.id: can_delete_report(current_user, report) for report in reports},
     )
 
 
 @bp.route("/<int:project_id>/reports/create", methods=["GET", "POST"])
 def reports_create(project_id):
     project = _project_or_404(project_id)
-    if not can_read_project(project.id):
+    if not can_read_project(project.id) or not current_user.can("reports.view"):
         abort(403)
 
     report = DailyReport(project_id=project.id)
     report.sections = []
 
     if request.method == "POST":
-        if not can_write_project(project.id):
+        if not can_create_report(current_user, project.id):
             abort(403)
         try:
             report, duplicate = create_report(project, request.form, request.files)
@@ -129,7 +135,7 @@ def reports_create(project_id):
 @bp.get("/<int:project_id>/issues")
 def issues(project_id):
     project = _project_or_404(project_id)
-    if not can_read_project(project.id):
+    if not can_read_project(project.id) or not current_user.can("issues.view"):
         abort(403)
     issues = _apply_issue_filters(project_issues_query(project.id)).all()
     can_create = can_create_persistent_issue(project.id)
@@ -137,24 +143,25 @@ def issues(project_id):
         "issues/index.html",
         project=project,
         issues=issues,
-        can_write=can_write_project(project.id),
-        can_delete=can_delete_issue_for_project(project.id),
+        can_write=False,
+        can_delete=False,
         can_create=can_create,
         create_url=url_for("projects.issues_create", project_id=project.id) if can_create else None,
         can_edit_by_issue={issue.id: can_edit_persistent_issue(issue) for issue in issues},
-        can_delete_by_issue={issue.id: can_delete_issue_for_project(issue.project_id) for issue in issues},
+        can_close_by_issue={issue.id: can_close_persistent_issue(issue, current_user) for issue in issues},
+        can_delete_by_issue={issue.id: can_delete_persistent_issue(issue, current_user) for issue in issues},
     )
 
 
 @bp.route("/<int:project_id>/issues/create", methods=["GET", "POST"])
 def issues_create(project_id):
     project = _project_or_404(project_id)
-    if not can_read_project(project.id):
+    if not can_read_project(project.id) or not current_user.can("issues.view"):
         abort(403)
 
     issue = PersistentIssue(project_id=project.id)
     if request.method == "POST":
-        if not can_write_project(project.id):
+        if not can_create_persistent_issue(project.id, current_user):
             abort(403)
         try:
             create_issue(project, request.form)
@@ -182,7 +189,8 @@ def _render_create_form(project, report, form_data=None, form_errors=None):
         categories=categories_for_create(project.id),
         statuses=[status.value for status in DailyReportStatus],
         section_statuses=[status.value for status in SectionStatus],
-        can_write=can_write_project(project.id),
+        can_write=can_create_report(current_user, project.id),
+        can_delete_attachment=False,
     )
 
 
@@ -194,8 +202,8 @@ def _render_issue_form(project, issue, form_errors=None):
         owners=owner_choices(project.id),
         severities=[severity.value for severity in IssueSeverity],
         statuses=[status.value for status in IssueStatus],
-        can_write=can_write_project(project.id),
-        can_delete=can_delete_issue_for_project(project.id),
+        can_write=can_create_persistent_issue(project.id, current_user),
+        can_delete=False,
         form_errors=form_errors or {},
     )
 

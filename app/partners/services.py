@@ -82,7 +82,7 @@ def apply_partner_filters(query, args):
 def save_partner(form, partner=None):
     is_new = partner is None
     form_data = build_partner_form_data(form, partner)
-    errors = _validate_partner_data(form_data)
+    errors = _validate_partner_data(form_data, partner)
     field_rows = build_field_value_rows(form)
     field_errors = _validate_field_value_rows(field_rows)
     errors.update(field_errors)
@@ -314,7 +314,7 @@ def _field_posted_value(form, index, field_type):
     return form.get(key, "")
 
 
-def _validate_partner_data(data):
+def _validate_partner_data(data, partner=None):
     errors = {}
     if not data["full_name"]:
         errors["full_name"] = "Họ tên là bắt buộc."
@@ -324,12 +324,18 @@ def _validate_partner_data(data):
         errors["department_id"] = "Vui lòng chọn phòng ban."
     if data["birth_date_raw"] and data["birth_date"] is None:
         errors["birth_date"] = "Ngày sinh phải có định dạng DD-MM-YYYY."
-    if data["company_id"] and not db.session.get(Company, data["company_id"]):
+    company = db.session.get(Company, data["company_id"]) if data["company_id"] else None
+    if data["company_id"] and not company:
         errors["company_id"] = "Công ty không hợp lệ."
+    elif company and (company.deleted_at is not None or not company.is_active) and data["company_id"] != (partner.company_id if partner else None):
+        errors["company_id"] = "Không thể chọn công ty đã lưu trữ."
     if data["department_id"]:
         department = db.session.get(CompanyDepartment, data["department_id"])
-        if not department or department.company_id != data["company_id"] or not department.is_active:
+        is_current_department = partner is not None and department and department.id == partner.department_id
+        if not department or department.company_id != data["company_id"]:
             errors["department_id"] = "Phòng ban không hợp lệ."
+        elif not department.is_active and not is_current_department:
+            errors["department_id"] = "Không thể chọn phòng ban đã lưu trữ."
         elif department.is_special_department:
             data["is_department_head"] = False
         elif data["is_department_head"]:

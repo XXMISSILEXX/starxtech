@@ -21,8 +21,7 @@
     ('Tốt', cards.good_reports, 'bi-check-circle', 'status-good'),
     ('Đang xử lý', cards.processing_reports, 'bi-arrow-repeat', 'status-processing'),
     ('Cần chú ý', cards.attention_reports, 'bi-exclamation-circle', 'status-attention'),
-    ('Nghiêm trọng', cards.critical_reports, 'bi-fire', 'status-critical'),
-    ('Vấn đề đang mở', cards.open_issues, 'bi-exclamation-diamond', 'status-open')
+    ('Nghiêm trọng', cards.critical_reports, 'bi-fire', 'status-critical')
   ] %}
   {% for label, value, icon, tone in card_items %}
     <div class="col-xl-2 col-md-4 col-sm-6">
@@ -35,6 +34,9 @@
       </div>
     </div>
   {% endfor %}
+  {% if can_view_issues %}
+    <div class="col-xl-2 col-md-4 col-sm-6"><div class="stat-card"><div class="stat-icon status-open"><i class="bi bi-exclamation-diamond"></i></div><div><div class="stat-label">Vấn đề đang mở</div><div class="stat-value">{{ cards.open_issues }}</div></div></div></div>
+  {% endif %}
 </div>
 
 <div class="row g-3 mb-4">
@@ -87,7 +89,7 @@
   </div>
 </div>
 
-<div class="card">
+{% if can_view_issues %}<div class="card">
   <div class="card-header py-3">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <h2 class="h6 mb-0">Vấn đề tồn đọng đang mở</h2>
@@ -120,5 +122,5 @@
       </tbody>
     </table>
   </div>
-</div>
+</div>{% endif %}
 {% endblock %}

@@ -4,7 +4,7 @@ from PIL import Image
 from werkzeug.datastructures import MultiDict
 
 from app.extensions import db
-from app.models import AuditLog, DailyReport, ReportAttachment
+from app.models import AuditLog, DailyReport, Permission, ReportAttachment, RolePermission, User
 
 
 def login(client, username_or_email, password="password123"):
@@ -208,6 +208,52 @@ def test_attachment_delete_soft_deletes_and_audits(client, app):
         attachment = db.session.get(ReportAttachment, attachment_id)
         assert attachment.deleted_at is not None
         assert AuditLog.query.filter_by(action="attachment.delete", entity_id=attachment_id).count() == 1
+
+
+def test_reporter_cannot_delete_attachment_from_another_reporter(client, app):
+    login(client, "super")
+    data = report_form()
+    data.add("sections-0-images", image_upload())
+    client.post("/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    with app.app_context():
+        attachment_id = ReportAttachment.query.one().id
+
+    client.post("/logout")
+    login(client, "reporter")
+    assert client.post(f"/attachments/{attachment_id}/delete").status_code == 403
+
+    with app.app_context():
+        assert db.session.get(ReportAttachment, attachment_id).deleted_at is None
+
+
+def test_viewer_admin_cannot_delete_report_attachment(client, app):
+    login(client, "super")
+    data = report_form()
+    data.add("sections-0-images", image_upload())
+    client.post("/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    with app.app_context():
+        attachment_id = ReportAttachment.query.one().id
+
+    client.post("/logout")
+    login(client, "viewer")
+    assert client.post(f"/attachments/{attachment_id}/delete").status_code == 403
+
+
+def test_attachment_delete_requires_explicit_permission(client, app):
+    with app.app_context():
+        reporter = User.query.filter_by(username="reporter").one()
+        permission = Permission.query.filter_by(code="report_attachments.delete").one()
+        RolePermission.query.filter_by(role_id=reporter.role_id, permission_id=permission.id).delete()
+        db.session.commit()
+
+    login(client, "reporter")
+    data = report_form()
+    data.add("sections-0-images", image_upload())
+    client.post("/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    with app.app_context():
+        attachment_id = ReportAttachment.query.one().id
+
+    assert client.post(f"/attachments/{attachment_id}/delete").status_code == 403
 
 
 def test_report_update_and_delete_write_audit_rows(client, app):

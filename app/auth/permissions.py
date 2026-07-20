@@ -8,6 +8,7 @@ from app.models import ProjectUser, UserRole
 ASSIGNED_PROJECT_ROLES = {UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value}
 ADMIN_ROLES = {UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value}
 PARTNER_MODULE_DENY_MESSAGE = "Bạn không có quyền truy cập phân hệ Quản lý đối tác."
+REPORTS_MODULE_DENY_MESSAGE = "Bạn không có quyền truy cập phân hệ Báo cáo hàng ngày."
 
 
 def role_required(*roles):
@@ -39,21 +40,26 @@ def super_admin_required():
 
 def can_manage_users(user=None):
     user = user or current_user
-    return bool(user.is_authenticated and user.role_code in ADMIN_ROLES | {UserRole.VIEWER_ADMIN.value})
+    return bool(user.is_authenticated and user.can("users.view"))
 
 
 def can_write_users(user=None):
     user = user or current_user
-    return bool(user.is_authenticated and user.has_role(UserRole.SUPER_ADMIN.value))
+    return bool(user.is_authenticated and user.can("users.manage"))
 
 
 def can_access_reports_module(user=None):
     user = user or current_user
-    if not user.is_authenticated:
-        return False
-    if user.role_code in ADMIN_ROLES | {UserRole.VIEWER_ADMIN.value}:
-        return True
-    return user.role_code in ASSIGNED_PROJECT_ROLES
+    return bool(user.is_authenticated and user.can("modules.reports.access"))
+
+
+def reports_module_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not can_access_reports_module():
+            abort(403, description=REPORTS_MODULE_DENY_MESSAGE)
+        return view(*args, **kwargs)
+    return wrapped
 
 
 def can_access_partners_module(user=None):
@@ -114,85 +120,107 @@ def can_view_partner(user=None, partner=None):
     return bool(user.is_authenticated and user.can("partners.view"))
 
 
-def can_read_project(project_id):
-    if not current_user.is_authenticated:
-        return False
+def _user_or_current(user=None):
+    return user or current_user
 
-    if current_user.role_code in ADMIN_ROLES | {UserRole.VIEWER_ADMIN.value}:
+
+def _has_project_scope(user, project_id):
+    if not user.is_authenticated:
+        return False
+    if user.role_code in ADMIN_ROLES | {UserRole.VIEWER_ADMIN.value}:
         return True
-
-    if current_user.role_code not in ASSIGNED_PROJECT_ROLES:
+    if user.role_code not in ASSIGNED_PROJECT_ROLES:
         return False
+    return _is_assigned_to_project(project_id, user)
 
-    return _is_assigned_to_project(project_id)
+
+def _can_in_project(permission, project_id, user=None):
+    user = _user_or_current(user)
+    return bool(user.is_authenticated and user.can(permission) and _has_project_scope(user, project_id))
 
 
+def can_read_project(project_id, user=None):
+    return _can_in_project("projects.view", project_id, user)
+
+
+def can_create_report(user, project_id):
+    return _can_in_project("reports.create", project_id, user)
+
+
+def can_view_report(user, report):
+    return _can_in_project("reports.view", report.project_id, user)
+
+
+def can_edit_report(user, report):
+    user = _user_or_current(user)
+    if not _can_in_project("reports.edit", report.project_id, user):
+        return False
+    if user.role_code in ADMIN_ROLES:
+        return True
+    if user.has_role(UserRole.PROJECT_MANAGER.value):
+        return True
+    return user.has_role(UserRole.REPORTER.value) and report.created_by_user_id == user.id
+
+
+def can_delete_report(user, report):
+    user = _user_or_current(user)
+    if not _can_in_project("reports.delete", report.project_id, user):
+        return False
+    return user.role_code in ADMIN_ROLES or user.has_role(UserRole.PROJECT_MANAGER.value)
+
+
+def can_view_issue(user, issue):
+    return _can_in_project("issues.view", issue.project_id, user)
+
+
+def can_create_persistent_issue(project_id=None, user=None):
+    user = _user_or_current(user)
+    if project_id is None:
+        return bool(user.is_authenticated and user.can("issues.create") and (
+            user.role_code in ADMIN_ROLES or _has_any_project_assignment(user)
+        ))
+    return _can_in_project("issues.create", project_id, user)
+
+
+def can_edit_persistent_issue(issue, user=None):
+    return _can_in_project("issues.edit", issue.project_id, user)
+
+
+def can_close_persistent_issue(issue, user=None):
+    return _can_in_project("issues.close", issue.project_id, user)
+
+
+def can_delete_persistent_issue(issue, user=None):
+    return _can_in_project("issues.delete", issue.project_id, user)
+
+
+def can_manage_categories_for_project(project_id, user=None):
+    return _can_in_project("categories.manage", project_id, user)
+
+
+def can_view_categories_for_project(project_id, user=None):
+    return _can_in_project("categories.view", project_id, user)
+
+
+# Compatibility adapters retained for older templates and integrations.
 def can_write_project(project_id):
-    if not current_user.is_authenticated:
-        return False
-
-    if current_user.role_code in ADMIN_ROLES:
-        return True
-
-    if current_user.has_role(UserRole.VIEWER_ADMIN.value):
-        return False
-
-    if current_user.role_code not in ASSIGNED_PROJECT_ROLES:
-        return False
-
-    return _is_assigned_to_project(project_id)
+    return _can_in_project("reports.edit", project_id)
 
 
 def can_manage_project(project_id):
-    if not current_user.is_authenticated:
-        return False
-
-    if current_user.role_code in ADMIN_ROLES:
-        return True
-
-    if current_user.has_role(UserRole.PROJECT_MANAGER.value):
-        return _is_assigned_to_project(project_id)
-
-    return False
+    return _can_in_project("projects.manage", project_id)
 
 
 def can_delete_report_for_project(project_id):
-    return can_manage_project(project_id)
-
-
-def can_delete_issue_for_project(project_id):
-    return can_manage_project(project_id)
-
-
-def can_manage_persistent_issues(project_id):
-    return can_manage_project(project_id)
-
-
-def can_create_persistent_issue(project_id=None):
-    if not current_user.is_authenticated:
-        return False
-
-    if current_user.role_code in ADMIN_ROLES:
-        return True
-
-    if current_user.has_role(UserRole.PROJECT_MANAGER.value):
-        if project_id is None:
-            return _has_any_project_assignment()
-        return _is_assigned_to_project(project_id)
-
     return False
 
 
-def can_edit_persistent_issue(issue):
-    return can_write_project(issue.project_id)
+def can_delete_issue_for_project(project_id):
+    return _can_in_project("issues.delete", project_id)
 
 
-def can_delete_persistent_issue(issue):
-    return can_delete_issue_for_project(issue.project_id)
-
-
-def can_manage_categories_for_project(project_id):
-    return can_manage_project(project_id)
+def can_manage_persistent_issues(project_id):
+    return _can_in_project("issues.edit", project_id)
 
 
 def project_read_required(project_id_arg="project_id"):
@@ -225,7 +253,7 @@ def _project_permission_required(checker, project_id_arg):
     return decorator
 
 
-def _is_assigned_to_project(project_id):
+def _is_assigned_to_project(project_id, user=None):
     try:
         normalized_project_id = int(project_id)
     except (TypeError, ValueError):
@@ -234,11 +262,11 @@ def _is_assigned_to_project(project_id):
     return (
         ProjectUser.query.filter_by(
             project_id=normalized_project_id,
-            user_id=current_user.id,
+            user_id=(user or current_user).id,
         ).first()
         is not None
     )
 
 
-def _has_any_project_assignment():
-    return ProjectUser.query.filter_by(user_id=current_user.id).first() is not None
+def _has_any_project_assignment(user=None):
+    return ProjectUser.query.filter_by(user_id=(user or current_user).id).first() is not None

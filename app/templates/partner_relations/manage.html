@@ -81,11 +81,11 @@
           <td data-label="Thao tác" class="text-end">
             <div class="mobile-card-actions justify-content-end">
               <a class="btn btn-sm btn-outline-secondary btn-action-mobile" href="{{ url_for('partner_relations.tree', company_id=company.id) }}" aria-label="Xem" title="Xem"><i class="bi bi-eye"></i><span class="action-label">Xem</span></a>
-              <a class="btn btn-sm btn-outline-primary btn-action-mobile" href="{{ url_for('partner_relations.edit_relationship', company_id=company.id, relationship_id=item.id) }}" aria-label="Sửa" title="Sửa"><i class="bi bi-pencil"></i><span class="action-label">Sửa</span></a>
-              <form method="post" action="{{ url_for('partner_relations.delete_relationship', company_id=company.id, relationship_id=item.id) }}">
+              {% if can_edit %}<a class="btn btn-sm btn-outline-primary btn-action-mobile" href="{{ url_for('partner_relations.edit_relationship', company_id=company.id, relationship_id=item.id) }}" aria-label="Sửa" title="Sửa"><i class="bi bi-pencil"></i><span class="action-label">Sửa</span></a>{% endif %}
+              {% if can_delete %}<form method="post" action="{{ url_for('partner_relations.delete_relationship', company_id=company.id, relationship_id=item.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn-sm btn-outline-danger btn-action-mobile" type="submit" data-confirm="Xóa quan hệ này?" aria-label="Xóa" title="Xóa"><i class="bi bi-trash"></i><span class="action-label">Xóa</span></button>
-              </form>
+                <button class="btn btn-sm btn-outline-danger btn-action-mobile" type="submit" data-confirm="Lưu trữ quan hệ này?" aria-label="Lưu trữ" title="Lưu trữ"><i class="bi bi-trash"></i><span class="action-label">Lưu trữ</span></button>
+              </form>{% endif %}
             </div>
           </td>
         </tr>

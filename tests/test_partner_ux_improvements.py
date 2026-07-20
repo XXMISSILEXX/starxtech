@@ -1,3 +1,5 @@
+import pytest
+
 from app.extensions import db
 from app.models import (
     Company,
@@ -95,6 +97,29 @@ def test_create_company_department_with_parent_and_search(client, app):
     assert "Kỹ thuật".encode() in search.data
 
 
+@pytest.mark.parametrize("parent_value", ["", "0"])
+def test_create_root_department_accepts_empty_parent_values(client, app, parent_value):
+    with app.app_context():
+        company = Company(id=810, name="Root Department Co")
+        db.session.add(company)
+        db.session.commit()
+
+    login(client, "admin")
+    response = client.post(
+        "/partner-companies/810/departments/new",
+        data={
+            "name": f"Root {parent_value or 'empty'}",
+            "parent_department_id": parent_value,
+            "is_active": "on",
+        },
+    )
+
+    assert response.status_code == 302
+    with app.app_context():
+        department = CompanyDepartment.query.filter_by(company_id=810, name=f"Root {parent_value or 'empty'}").one()
+        assert department.parent_department_id is None
+
+
 def test_department_cannot_set_parent_to_itself(client, app):
     with app.app_context():
         company = Company(id=801, name="Self Parent Co")
@@ -109,6 +134,56 @@ def test_department_cannot_set_parent_to_itself(client, app):
     )
     assert response.status_code == 400
     assert "không thể là cấp trên của chính nó".encode() in response.data
+
+
+def test_department_cannot_use_child_or_other_company_as_parent(client, app):
+    with app.app_context():
+        company = Company(id=811, name="Tree Co")
+        other_company = Company(id=812, name="Other Tree Co")
+        root = CompanyDepartment(id=1811, company=company, name="Root")
+        child = CompanyDepartment(id=1812, company=company, name="Child", parent_department_id=1811)
+        grandchild = CompanyDepartment(id=1813, company=company, name="Grandchild", parent_department_id=1812)
+        other_department = CompanyDepartment(id=1814, company=other_company, name="Other Root")
+        db.session.add_all([company, other_company, root, child, grandchild, other_department])
+        db.session.commit()
+
+    login(client, "admin")
+    child_parent = client.post(
+        "/partner-companies/811/departments/1811/edit",
+        data={"name": "Root", "parent_department_id": "1813", "is_active": "on"},
+    )
+    assert child_parent.status_code == 400
+    assert "Không thể chọn phòng ban con làm phòng ban cấp trên.".encode() in child_parent.data
+
+    other_company_parent = client.post(
+        "/partner-companies/811/departments/1811/edit",
+        data={"name": "Root", "parent_department_id": "1814", "is_active": "on"},
+    )
+    assert other_company_parent.status_code == 400
+    assert "Phòng ban cấp trên phải thuộc cùng công ty.".encode() in other_company_parent.data
+
+    with app.app_context():
+        root = db.session.get(CompanyDepartment, 1811)
+        assert root.parent_department_id is None
+
+
+def test_department_parent_form_excludes_current_department_and_descendants(client, app):
+    with app.app_context():
+        company = Company(id=813, name="Parent Options Co")
+        root = CompanyDepartment(id=1815, company=company, name="Root")
+        child = CompanyDepartment(id=1816, company=company, name="Child", parent_department_id=1815)
+        grandchild = CompanyDepartment(id=1817, company=company, name="Grandchild", parent_department_id=1816)
+        db.session.add_all([company, root, child, grandchild])
+        db.session.commit()
+
+    login(client, "admin")
+    response = client.get("/partner-companies/813/departments/1815/edit")
+
+    assert response.status_code == 200
+    assert b'value="1815"' not in response.data
+    assert b'value="1816"' not in response.data
+    assert b'value="1817"' not in response.data
+    assert b'<option value="">Kh\xc3\xb4ng c\xc3\xb3</option>' in response.data
 
 
 def test_partner_form_uses_department_select_not_free_text(client, app):
@@ -620,7 +695,7 @@ def test_relationship_actions_are_mobile_accessible(client, app):
     assert response.status_code == 200
     assert 'aria-label="Xem"'.encode() in response.data
     assert 'aria-label="Sửa"'.encode() in response.data
-    assert 'aria-label="Xóa"'.encode() in response.data
+    assert 'aria-label="Lưu trữ"'.encode() in response.data
     assert b"action-label" in response.data
 
 

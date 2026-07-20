@@ -6,6 +6,11 @@
 {% block content %}
 <div class="card mb-3">
   <div class="card-body">
+  <div class="nav nav-pills mb-3">
+    {% for value, label in [('active', 'Đang hoạt động'), ('archived', 'Đã lưu trữ'), ('all', 'Tất cả')] %}
+      <a class="nav-link {% if status == value %}active{% endif %}" href="{{ url_for('partners.index', status=value, q=filters.get('q', ''), company_id=filters.get('company_id', ''), industry=filters.get('industry', ''), department=filters.get('department', ''), position=filters.get('position', '')) }}">{{ label }}</a>
+    {% endfor %}
+  </div>
   <form class="row g-2" method="get">
     <div class="col-md-3"><input class="form-control" name="q" value="{{ filters.get('q', '') }}" placeholder="Tìm tên, phone, email, công ty"></div>
     <div class="col-md-2"><select class="form-select" name="company_id"><option value="">Công ty</option>{% for company in companies %}<option value="{{ company.id }}" {% if filters.get('company_id') == company.id|string %}selected{% endif %}>{{ company.name }}</option>{% endfor %}</select></div>
@@ -27,14 +32,16 @@
       <tbody>
       {% for partner in partners %}
         <tr>
-          <td><a class="fw-semibold" href="{{ url_for('partners.detail', partner_id=partner.id) }}">{{ partner.full_name }}</a></td>
-          <td>{{ partner.company.name if partner.company else '-' }}</td>
+          <td><a class="fw-semibold" href="{{ url_for('partners.detail', partner_id=partner.id) }}">{{ partner.full_name }}</a>{% if partner.deleted_at or not partner.is_active %} <span class="badge text-bg-secondary">Đã lưu trữ</span>{% endif %}</td>
+          <td>{{ partner.company.name if partner.company else '-' }}{% if partner.company and (partner.company.deleted_at or not partner.company.is_active) %} <span class="badge text-bg-secondary">Đã lưu trữ</span>{% endif %}</td>
           <td>{{ partner.company_department.name if partner.company_department else (partner.department or '-') }}</td>
           <td>{{ partner.position or '-' }}</td>
           <td><div>{{ partner.phone or '-' }}</div><div class="text-muted small">{{ partner.email or '' }}</div></td>
           <td class="text-end">
             <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('partners.detail', partner_id=partner.id) }}"><i class="bi bi-eye"></i></a>
             {% if can_edit_by_partner[partner.id] %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('partners.edit', partner_id=partner.id) }}"><i class="bi bi-pencil"></i></a>{% endif %}
+            {% if can_delete_by_partner[partner.id] and partner.is_active and not partner.deleted_at %}<form class="d-inline" method="post" action="{{ url_for('partners.archive', partner_id=partner.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger" type="submit">Lưu trữ</button></form>{% endif %}
+            {% if can_restore_by_partner[partner.id] and partner.deleted_at %}<form class="d-inline" method="post" action="{{ url_for('partners.restore', partner_id=partner.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-success" type="submit">Khôi phục</button></form>{% endif %}
           </td>
         </tr>
       {% else %}
@@ -49,10 +56,11 @@
   {% for partner in partners %}
     <div class="card"><div class="card-body">
       <div class="d-flex justify-content-between gap-2">
-        <div><div class="fw-semibold">{{ partner.full_name }}</div><div class="text-muted small">{{ partner.company.name if partner.company else '-' }} · {{ partner.company_department.name if partner.company_department else (partner.department or '-') }} · {{ partner.position or '-' }}</div></div>
+        <div><div class="fw-semibold">{{ partner.full_name }}{% if partner.deleted_at or not partner.is_active %} <span class="badge text-bg-secondary">Đã lưu trữ</span>{% endif %}</div><div class="text-muted small">{{ partner.company.name if partner.company else '-' }} · {{ partner.company_department.name if partner.company_department else (partner.department or '-') }} · {{ partner.position or '-' }}</div></div>
         <div class="btn-group">
           <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('partners.detail', partner_id=partner.id) }}" aria-label="Xem"><i class="bi bi-eye"></i></a>
           {% if can_edit_by_partner[partner.id] %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('partners.edit', partner_id=partner.id) }}" aria-label="Sửa"><i class="bi bi-pencil"></i></a>{% endif %}
+          {% if can_restore_by_partner[partner.id] and partner.deleted_at %}<form class="d-inline" method="post" action="{{ url_for('partners.restore', partner_id=partner.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-success" type="submit">Khôi phục</button></form>{% endif %}
         </div>
       </div>
     </div></div>

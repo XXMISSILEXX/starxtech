@@ -25,6 +25,7 @@ from app.partners.services import (
     partners_query,
     save_partner,
 )
+from app.partners.lifecycle import active_record_query, apply_lifecycle_scope, archived_record_query, lifecycle_status
 
 
 @bp.before_request
@@ -85,7 +86,8 @@ def dashboard():
 @bp.get("/")
 @permission_required("partners.view")
 def index():
-    query = apply_partner_filters(partners_query(), request.args)
+    status = lifecycle_status(request.args)
+    query = apply_partner_filters(apply_lifecycle_scope(partners_query(include_inactive=True), Partner, status), request.args)
     partners = query.order_by(Partner.full_name.asc()).all()
     companies = Company.query.filter(Company.deleted_at.is_(None)).order_by(Company.name.asc()).all()
     industries = [
@@ -116,10 +118,11 @@ def index():
         industries=industries,
         departments=departments,
         positions=positions,
-        filters=request.args,
+        filters=request.args, status=status,
         can_create=can_create_partner(),
-        can_edit_by_partner={partner.id: can_edit_partner(partner) for partner in partners},
+        can_edit_by_partner={partner.id: can_edit_partner(partner) and _is_active(partner) for partner in partners},
         can_delete_by_partner={partner.id: can_delete_partner(partner) for partner in partners},
+        can_restore_by_partner={partner.id: request_user_can("partners.restore") for partner in partners},
     )
 
 
@@ -154,15 +157,16 @@ def detail(partner_id):
         "partners/detail.html",
         partner=partner,
         grouped_fields=grouped_fields,
-        can_edit=can_edit_partner(partner),
-        can_delete=can_delete_partner(partner),
+        can_edit=can_edit_partner(partner) and _is_active(partner),
+        can_delete=can_delete_partner(partner) and _is_active(partner),
+        can_restore=request_user_can("partners.restore") and not _is_active(partner),
     )
 
 
 @bp.route("/<int:partner_id>/edit", methods=["GET", "POST"])
 @permission_required("partners.edit")
 def edit(partner_id):
-    partner = _partner_or_404(partner_id)
+    partner = _active_partner_or_404(partner_id)
     if not can_edit_partner(partner):
         abort(403)
     if request.method == "POST":
@@ -181,18 +185,38 @@ def edit(partner_id):
     return _render_form(partner=partner)
 
 
+@bp.post("/<int:partner_id>/archive")
+@permission_required("partners.delete")
+def archive(partner_id):
+    partner = _active_partner_or_404(partner_id)
+    if not can_delete_partner(partner):
+        abort(403)
+    old_values = _partner_snapshot(partner)
+    partner.is_active = False
+    partner.deleted_at = func.now()
+    audit("partner.archive", "Partner", partner.id, old_values, _lifecycle_snapshot(partner))
+    db.session.commit()
+    flash("Đã lưu trữ đối tác.", "success")
+    return redirect(url_for("partners.index"))
+
+
 @bp.post("/<int:partner_id>/deactivate")
 @permission_required("partners.delete")
 def deactivate(partner_id):
-    partner = _partner_or_404(partner_id)
-    if not can_delete_partner(partner):
-        abort(403)
-    partner.is_active = False
-    partner.deleted_at = func.now()
-    audit("partner.deactivate", "Partner", partner.id, _partner_snapshot(partner), {"is_active": False, "deleted_at": True})
+    return archive(partner_id)
+
+
+@bp.post("/<int:partner_id>/restore")
+@permission_required("partners.restore")
+def restore(partner_id):
+    partner = archived_record_query(Partner).filter(Partner.id == partner_id).first_or_404()
+    old_values = _lifecycle_snapshot(partner)
+    partner.is_active = True
+    partner.deleted_at = None
+    audit("partner.restore", "Partner", partner.id, old_values, _lifecycle_snapshot(partner))
     db.session.commit()
-    flash("Đã vô hiệu hóa đối tác.", "success")
-    return redirect(url_for("partners.index"))
+    flash("Đã khôi phục đối tác.", "success")
+    return redirect(url_for("partners.detail", partner_id=partner.id))
 
 
 def _render_form(partner=None, form_errors=None, form=None):
@@ -202,6 +226,12 @@ def _render_form(partner=None, form_errors=None, form=None):
         .order_by(CompanyDepartment.company_id.asc(), CompanyDepartment.display_order.asc(), CompanyDepartment.name.asc())
         .all()
     )
+    if partner and partner.company and partner.company not in companies:
+        companies.append(partner.company)
+        companies.sort(key=lambda item: item.name.lower())
+    if partner and partner.company_department and partner.company_department not in departments:
+        departments.append(partner.company_department)
+        departments.sort(key=lambda item: (item.company_id, item.display_order, item.name.lower()))
     return render_template(
         "partners/form.html",
         partner=partner,
@@ -217,7 +247,15 @@ def _render_form(partner=None, form_errors=None, form=None):
 
 
 def _partner_or_404(partner_id):
-    return Partner.query.filter(Partner.id == partner_id, Partner.deleted_at.is_(None)).first_or_404()
+    return Partner.query.filter(Partner.id == partner_id).first_or_404()
+
+
+def _active_partner_or_404(partner_id):
+    return active_record_query(Partner).filter(Partner.id == partner_id).first_or_404()
+
+
+def _is_active(partner):
+    return partner.deleted_at is None and partner.is_active
 
 
 def request_user_can(code):
@@ -237,3 +275,8 @@ def _partner_snapshot(partner):
     return {"full_name": partner.full_name, "company_id": partner.company_id,
             "department_id": partner.department_id, "position": partner.position,
             "is_department_head": partner.is_department_head, "is_active": partner.is_active}
+
+
+def _lifecycle_snapshot(partner):
+    return {"id": partner.id, "type": "partner", "full_name": partner.full_name, "is_active": partner.is_active,
+            "deleted_at": partner.deleted_at is not None}

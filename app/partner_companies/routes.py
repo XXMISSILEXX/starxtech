@@ -8,6 +8,7 @@ from app.extensions import db
 from app.models import Company, CompanyDepartment, Partner, PartnerRelationship
 from app.partner_companies import bp
 from app.partners.services import _add_with_sqlite_id
+from app.partners.lifecycle import active_record_query, apply_lifecycle_scope, archived_record_query, lifecycle_status
 
 
 @bp.before_request
@@ -19,7 +20,8 @@ def require_partner_module():
 @bp.get("/")
 @permission_required("partner_companies.view")
 def index():
-    query = Company.query.filter(Company.deleted_at.is_(None))
+    status = lifecycle_status(request.args)
+    query = apply_lifecycle_scope(Company.query, Company, status)
     search = request.args.get("q", "").strip()
     industry = request.args.get("industry", "").strip()
     if search:
@@ -31,11 +33,11 @@ def index():
     industries = [
         row[0]
         for row in db.session.query(Company.industry)
-        .filter(Company.industry.isnot(None), Company.deleted_at.is_(None))
+        .filter(Company.industry.isnot(None))
         .distinct()
         .order_by(Company.industry.asc())
     ]
-    return render_template("partner_companies/index.html", companies=companies, industries=industries, filters=request.args, can_create=_can("partner_companies.create"))
+    return render_template("partner_companies/index.html", companies=companies, industries=industries, filters=request.args, status=status, can_create=_can("partner_companies.create"), can_archive=_can("partner_companies.delete"), can_restore=_can("partner_companies.restore"))
 
 
 @bp.route("/new", methods=["GET", "POST"])
@@ -80,7 +82,10 @@ def detail(company_id):
         departments=_company_departments(company.id),
         grouped_partners=grouped,
         relationships=relationships,
-        can_edit=_can("partner_companies.edit"), can_create_department=_can("partner_companies.create"),
+        can_edit=_can("partner_companies.edit") and _is_active(company),
+        can_create_department=_can("partner_companies.create") and _is_active(company),
+        can_archive=_can("partner_companies.delete") and _is_active(company),
+        can_restore=_can("partner_companies.restore") and not _is_active(company),
     )
 
 
@@ -107,7 +112,7 @@ def departments(company_id):
         departments=rows,
         parent_options=_company_departments(company.id),
         filters=request.args,
-        can_create=_can("partner_companies.create"), can_edit=_can("partner_companies.edit"), can_delete=_can("partner_companies.delete"),
+        can_create=_can("partner_companies.create") and _is_active(company), can_edit=_can("partner_companies.edit") and _is_active(company), can_delete=_can("partner_companies.delete") and _is_active(company),
     )
 
 
@@ -115,6 +120,7 @@ def departments(company_id):
 @permission_required("partner_companies.create")
 def departments_new(company_id):
     company = _company_or_404(company_id)
+    _require_active_company_for_mutation(company)
     department = CompanyDepartment(company_id=company.id, is_active=True)
     if request.method == "POST":
         return _save_department(company, department)
@@ -127,6 +133,7 @@ def departments_edit(company_id, department_id):
     company = _company_or_404(company_id)
     department = _department_or_404(company.id, department_id)
     if request.method == "POST":
+        _require_active_company_for_mutation(company)
         return _save_department(company, department)
     return _render_department_form(company, department, {})
 
@@ -135,12 +142,13 @@ def departments_edit(company_id, department_id):
 @permission_required("partner_companies.delete")
 def departments_delete(company_id, department_id):
     company = _company_or_404(company_id)
+    _require_active_company_for_mutation(company)
     department = _department_or_404(company.id, department_id)
     old_values = _department_snapshot(department)
     department.is_active = False
     audit("partner_department.deactivate", "CompanyDepartment", department.id, old_values, {"is_active": False})
     db.session.commit()
-    flash("Đã vô hiệu hóa phòng ban.", "success")
+    flash("Đã lưu trữ phòng ban.", "success")
     return redirect(url_for("partner_companies.departments", company_id=company.id))
 
 
@@ -153,17 +161,36 @@ def edit(company_id):
     return render_template("partner_companies/form.html", company=company, errors={})
 
 
-@bp.post("/<int:company_id>/deactivate")
+@bp.post("/<int:company_id>/archive")
 @permission_required("partner_companies.delete")
-def deactivate(company_id):
-    company = _company_or_404(company_id)
+def archive(company_id):
+    company = _active_company_or_404(company_id)
     old_values = _company_snapshot(company)
     company.is_active = False
     company.deleted_at = func.now()
-    audit("partner_company.deactivate", "Company", company.id, old_values, {"is_active": False, "deleted_at": True})
+    audit("company.archive", "Company", company.id, old_values, _lifecycle_snapshot(company))
     db.session.commit()
-    flash("Đã vô hiệu hóa công ty.", "success")
+    flash("Đã lưu trữ công ty.", "success")
     return redirect(url_for("partner_companies.index"))
+
+
+@bp.post("/<int:company_id>/deactivate")
+@permission_required("partner_companies.delete")
+def deactivate(company_id):
+    return archive(company_id)
+
+
+@bp.post("/<int:company_id>/restore")
+@permission_required("partner_companies.restore")
+def restore(company_id):
+    company = archived_record_query(Company).filter(Company.id == company_id).first_or_404()
+    old_values = _lifecycle_snapshot(company)
+    company.is_active = True
+    company.deleted_at = None
+    audit("company.restore", "Company", company.id, old_values, _lifecycle_snapshot(company))
+    db.session.commit()
+    flash("Đã khôi phục công ty.", "success")
+    return redirect(url_for("partner_companies.detail", company_id=company.id))
 
 
 def _save_company(company, is_new=False):
@@ -189,7 +216,22 @@ def _save_company(company, is_new=False):
 
 
 def _company_or_404(company_id):
-    return Company.query.filter(Company.id == company_id, Company.deleted_at.is_(None)).first_or_404()
+    return Company.query.filter(Company.id == company_id).first_or_404()
+
+
+def _active_company_or_404(company_id):
+    return active_record_query(Company).filter(Company.id == company_id).first_or_404()
+
+
+def _is_active(company):
+    return company.deleted_at is None and company.is_active
+
+
+def _require_active_company_for_mutation(company):
+    if _is_active(company):
+        return
+    flash("Không thể thay đổi phòng ban khi công ty đã lưu trữ.", "danger")
+    abort(400)
 
 
 def _department_or_404(company_id, department_id):
@@ -207,7 +249,13 @@ def _company_departments(company_id, include_inactive=False):
 
 
 def _render_department_form(company, department, errors):
-    parent_options = [item for item in _company_departments(company.id, include_inactive=True) if item.id != department.id]
+    excluded_ids = _department_descendant_ids(company.id, department.id)
+    if department.id is not None:
+        excluded_ids.add(department.id)
+    parent_options = [
+        item for item in _company_departments(company.id)
+        if item.id not in excluded_ids
+    ]
     return render_template(
         "partner_companies/department_form.html",
         company=company,
@@ -222,13 +270,26 @@ def _save_department(company, department):
     old_values = None if is_new else _department_snapshot(department)
     errors = {}
     name = request.form.get("name", "").strip()
-    parent_id = _optional_int(request.form.get("parent_department_id"))
+    try:
+        parent_id = _parse_optional_int(request.form.get("parent_department_id"))
+    except ValueError:
+        parent_id = None
+        errors["parent_department_id"] = "Phòng ban cấp trên không hợp lệ."
     if not name:
         errors["name"] = "Tên phòng ban là bắt buộc."
-    if parent_id == department.id:
+    parent = None
+    if parent_id is not None:
+        parent = CompanyDepartment.query.filter_by(id=parent_id).first()
+        if parent is None:
+            errors["parent_department_id"] = "Phòng ban cấp trên không tồn tại."
+        elif parent.company_id != company.id:
+            errors["parent_department_id"] = "Phòng ban cấp trên phải thuộc cùng công ty."
+        elif not parent.is_active:
+            errors["parent_department_id"] = "Phòng ban cấp trên phải đang hoạt động."
+    if department.id is not None and parent_id == department.id:
         errors["parent_department_id"] = "Phòng ban không thể là cấp trên của chính nó."
-    elif parent_id and _department_cycle(company.id, department.id, parent_id):
-        errors["parent_department_id"] = "Không thể tạo vòng lặp phòng ban."
+    elif department.id is not None and parent_id in _department_descendant_ids(company.id, department.id):
+        errors["parent_department_id"] = "Không thể chọn phòng ban con làm phòng ban cấp trên."
     existing = CompanyDepartment.query.filter(CompanyDepartment.company_id == company.id, CompanyDepartment.name == name)
     if department.id:
         existing = existing.filter(CompanyDepartment.id != department.id)
@@ -251,27 +312,36 @@ def _save_department(company, department):
     return redirect(url_for("partner_companies.departments", company_id=company.id))
 
 
-def _department_cycle(company_id, department_id, parent_id):
+def _department_descendant_ids(company_id, department_id):
     if department_id is None:
-        return False
-    current = parent_id
-    seen = {department_id}
-    while current:
-        if current in seen:
-            return True
-        seen.add(current)
-        parent = CompanyDepartment.query.filter_by(id=current, company_id=company_id).first()
-        current = parent.parent_department_id if parent else None
-    return False
+        return set()
+    children_by_parent = {}
+    for item_id, parent_id in db.session.query(
+        CompanyDepartment.id,
+        CompanyDepartment.parent_department_id,
+    ).filter(CompanyDepartment.company_id == company_id):
+        children_by_parent.setdefault(parent_id, []).append(item_id)
+
+    descendants = set()
+    pending = list(children_by_parent.get(department_id, []))
+    while pending:
+        child_id = pending.pop()
+        if child_id in descendants:
+            continue
+        descendants.add(child_id)
+        pending.extend(children_by_parent.get(child_id, []))
+    return descendants
 
 
 def _partner_department_name(partner):
     return partner.company_department.name if partner.company_department else (partner.department or "Chưa có phòng ban")
 
 
-def _optional_int(value):
-    value = (value or "").strip()
-    return int(value) if value.isdigit() else None
+def _parse_optional_int(value):
+    normalized = str(value).strip().lower() if value is not None else ""
+    if normalized in {"", "0", "none", "null"}:
+        return None
+    return int(normalized)
 
 
 def _int_or_zero(value):
@@ -293,6 +363,11 @@ def _can(code):
 
 def _company_snapshot(company):
     return {"name": company.name, "industry": company.industry, "is_active": company.is_active}
+
+
+def _lifecycle_snapshot(company):
+    return {"id": company.id, "type": "company", "name": company.name, "is_active": company.is_active,
+            "deleted_at": company.deleted_at is not None}
 
 
 def _department_snapshot(department):

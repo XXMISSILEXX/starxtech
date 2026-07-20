@@ -10,7 +10,10 @@
   {% if can_edit %}
     <a class="btn btn-primary" href="{{ url_for('partner_companies.edit', company_id=company.id) }}">Sửa</a>
   {% endif %}
+  {% if can_archive %}<form method="post" action="{{ url_for('partner_companies.archive', company_id=company.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-outline-danger" type="submit">Lưu trữ</button></form>{% endif %}
+  {% if can_restore %}<form method="post" action="{{ url_for('partner_companies.restore', company_id=company.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-outline-success" type="submit">Khôi phục</button></form>{% endif %}
 </div>
+{% if company.deleted_at or not company.is_active %}<div class="alert alert-warning">Công ty này đã lưu trữ. Chỉ có thể xem dữ liệu; không thể thay đổi phòng ban hoặc quan hệ.</div>{% endif %}
 <div class="row g-3">
   <div class="col-lg-5">
     <div class="card"><div class="card-header bg-white fw-semibold">Thông tin công ty</div><div class="card-body">

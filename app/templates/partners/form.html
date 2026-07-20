@@ -20,7 +20,7 @@
           <select class="form-select {% if form_errors.get('company_id') %}is-invalid{% endif %}" name="company_id" data-company-select>
             <option value="">Chưa chọn</option>
             {% for company in companies %}
-              <option value="{{ company.id }}" {% if form_data.get('company_id') == company.id %}selected{% endif %}>{{ company.name }}</option>
+              <option value="{{ company.id }}" {% if form_data.get('company_id') == company.id %}selected{% endif %}>{{ company.name }}{% if not company.is_active or company.deleted_at %} · Đã lưu trữ{% endif %}</option>
             {% endfor %}
           </select>
           {% if form_errors.get('company_id') %}<div class="invalid-feedback">{{ form_errors.company_id }}</div>{% endif %}
@@ -30,7 +30,7 @@
           <select class="form-select {% if form_errors.get('department_id') %}is-invalid{% endif %}" name="department_id" data-department-select>
             <option value="">Chọn phòng ban</option>
             {% for department in departments %}
-              <option value="{{ department.id }}" data-company-id="{{ department.company_id }}" data-is-special="{{ '1' if department.is_special_department else '0' }}" {% if form_data.get('department_id') == department.id %}selected{% endif %}>{{ department.name }}</option>
+              <option value="{{ department.id }}" data-company-id="{{ department.company_id }}" data-is-special="{{ '1' if department.is_special_department else '0' }}" {% if form_data.get('department_id') == department.id %}selected{% endif %}>{{ department.name }}{% if not department.is_active %} · Đã lưu trữ{% endif %}</option>
             {% endfor %}
           </select>
           <div class="form-text" data-no-departments-message>Công ty này chưa có phòng ban. Vui lòng tạo phòng ban trước.</div>

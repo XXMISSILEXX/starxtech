@@ -40,23 +40,14 @@
               <a class="btn btn-sm btn-outline-primary btn-action-mobile" href="{{ url_for('issues.edit', issue_id=issue.id) }}" aria-label="Xem chi tiết" title="Xem chi tiết"><i class="bi bi-eye"></i><span class="action-label">Xem chi tiết</span></a>
               {% if can_edit_by_issue.get(issue.id) %}
                 <a class="btn btn-sm btn-outline-secondary btn-action-mobile" href="{{ url_for('issues.edit', issue_id=issue.id) }}" aria-label="Sửa" title="Sửa"><i class="bi bi-pencil"></i><span class="action-label">Sửa</span></a>
-                {% if issue.status != 'CLOSED' %}
-                  <form method="post" action="{{ url_for('issues.close', issue_id=issue.id) }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-secondary btn-action-mobile" type="submit" aria-label="Đóng" title="Đóng"><i class="bi bi-check2"></i><span class="action-label">Đóng</span></button>
-                  </form>
-                {% else %}
-                  <form method="post" action="{{ url_for('issues.reopen', issue_id=issue.id) }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-secondary btn-action-mobile" type="submit" aria-label="Mở lại" title="Mở lại"><i class="bi bi-arrow-counterclockwise"></i><span class="action-label">Mở lại</span></button>
-                  </form>
-                {% endif %}
-                {% if can_delete_by_issue.get(issue.id) %}
-                  <form method="post" action="{{ url_for('issues.delete', issue_id=issue.id) }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-danger btn-action-mobile" type="submit" data-confirm="Xóa vấn đề tồn đọng này?" aria-label="Xóa" title="Xóa"><i class="bi bi-trash"></i><span class="action-label">Xóa</span></button>
-                  </form>
-                {% endif %}
+              {% endif %}
+              {% if can_close_by_issue.get(issue.id) and issue.status != 'CLOSED' %}
+                <form method="post" action="{{ url_for('issues.close', issue_id=issue.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-secondary btn-action-mobile" type="submit" aria-label="Đóng" title="Đóng"><i class="bi bi-check2"></i><span class="action-label">Đóng</span></button></form>
+              {% elif can_close_by_issue.get(issue.id) %}
+                <form method="post" action="{{ url_for('issues.reopen', issue_id=issue.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-secondary btn-action-mobile" type="submit" aria-label="Mở lại" title="Mở lại"><i class="bi bi-arrow-counterclockwise"></i><span class="action-label">Mở lại</span></button></form>
+              {% endif %}
+              {% if can_delete_by_issue.get(issue.id) %}
+                <form method="post" action="{{ url_for('issues.delete', issue_id=issue.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger btn-action-mobile" type="submit" data-confirm="Xóa vấn đề tồn đọng này?" aria-label="Xóa" title="Xóa"><i class="bi bi-trash"></i><span class="action-label">Xóa</span></button></form>
               {% endif %}
             </div>
           </td>

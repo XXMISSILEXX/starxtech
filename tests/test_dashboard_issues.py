@@ -153,37 +153,14 @@ def test_dashboard_counts_are_correct_for_seed_data(client, app):
     assert count_chart.get_json()["counts"] == [1, 1, 1]
 
 
-def test_issue_create_edit_close_reopen_and_audit(client, app):
+def test_reporter_cannot_mutate_persistent_issues_by_default(client, app):
     login(client, "reporter")
 
     created = client.post("/projects/1/issues/create", data=issue_form())
-    assert created.status_code == 302
+    assert created.status_code == 403
 
     with app.app_context():
-        issue = PersistentIssue.query.filter_by(title="New persistent issue").one()
-        issue_id = issue.id
-        assert issue.owner_user_id == 3
-
-    edited = client.post(f"/issues/{issue_id}/edit", data=issue_form("Updated issue", "PROCESSING"))
-    assert edited.status_code == 302
-
-    closed = client.post(f"/issues/{issue_id}/close")
-    assert closed.status_code == 302
-    with app.app_context():
-        issue = db.session.get(PersistentIssue, issue_id)
-        assert issue.status == IssueStatus.CLOSED.value
-        assert issue.closed_date is not None
-
-    reopened = client.post(f"/issues/{issue_id}/reopen")
-    assert reopened.status_code == 302
-    with app.app_context():
-        issue = db.session.get(PersistentIssue, issue_id)
-        assert issue.status == IssueStatus.OPEN.value
-        assert issue.closed_date is None
-        assert AuditLog.query.filter_by(action="issue.create", entity_id=issue_id).count() == 1
-        assert AuditLog.query.filter_by(action="issue.update", entity_id=issue_id).count() == 1
-        assert AuditLog.query.filter_by(action="issue.close", entity_id=issue_id).count() == 1
-        assert AuditLog.query.filter_by(action="issue.reopen", entity_id=issue_id).count() == 1
+        assert PersistentIssue.query.count() == 0
 
 
 def test_reporter_cannot_access_unassigned_project_issues(client, app):

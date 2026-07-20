@@ -109,6 +109,28 @@ def register_auth_guard(app):
 
         return redirect(url_for("auth.login", next=request.full_path.rstrip("?")))
 
+    @app.before_request
+    def require_reports_module_access():
+        """Keep the report system behind its canonical module permission.
+
+        Administration of users/roles remains reachable independently; only
+        report project/category administration belongs to this module.
+        """
+        if not current_user.is_authenticated:
+            return None
+        endpoint = request.endpoint or ""
+        report_endpoints = ("dashboard.", "dashboard_api.", "projects.", "reports.", "issues.", "attachments.")
+        is_report_admin = endpoint in {
+            "admin.projects_index", "admin.projects_new", "admin.projects_edit",
+            "admin.projects_archive", "admin.projects_reporters", "admin.categories_index",
+            "admin.categories_edit", "admin.categories_activate", "admin.categories_deactivate",
+            "admin.categories_delete",
+        }
+        if endpoint.startswith(report_endpoints) or is_report_admin:
+            from app.auth.permissions import REPORTS_MODULE_DENY_MESSAGE, can_access_reports_module
+            if not can_access_reports_module(current_user):
+                abort(403, description=REPORTS_MODULE_DENY_MESSAGE)
+
 
 def register_trusted_host_guard(app):
     configured_hosts = set(app.config.get("TRUSTED_HOSTS", ()))

@@ -15,7 +15,9 @@ from app.admin.services import (
     validate_unique_project_code,
     validate_unique_user,
 )
-from app.auth.permissions import admin_read_required, can_manage_categories_for_project, super_admin_required
+from app.auth.permissions import (
+    can_manage_categories_for_project, can_view_categories_for_project,
+)
 from app.permissions.services import permission_required
 from app.extensions import db
 from app.models import Permission, Project, ProjectStatus, ReportCategory, Role, RolePermission, User, UserRole
@@ -23,23 +25,23 @@ from app.security import password_policy_errors
 
 
 @bp.get("/")
-@admin_read_required()
+@permission_required("users.view")
 def index():
     return redirect(url_for("admin.users_index"))
 
 
 @bp.get("/users")
-@admin_read_required()
+@permission_required("users.view")
 def users_index():
     users = User.query.order_by(User.full_name.asc()).all()
     return render_template("admin/users/index.html", users=users)
 
 
 @bp.route("/users/new", methods=["GET", "POST"])
-@admin_read_required()
+@permission_required("users.view")
 def users_new():
     if request.method == "POST":
-        _require_super_admin_post()
+        _require_users_manage()
         return _save_user()
 
     return render_template(
@@ -50,11 +52,11 @@ def users_new():
 
 
 @bp.route("/users/<int:user_id>/edit", methods=["GET", "POST"])
-@admin_read_required()
+@permission_required("users.view")
 def users_edit(user_id):
     user = User.query.get_or_404(user_id)
     if request.method == "POST":
-        _require_super_admin_post()
+        _require_users_manage()
         return _save_user(user)
 
     return render_template(
@@ -65,7 +67,7 @@ def users_edit(user_id):
 
 
 @bp.post("/users/<int:user_id>/deactivate")
-@super_admin_required()
+@permission_required("users.manage")
 def users_deactivate(user_id):
     user = User.query.get_or_404(user_id)
     ensure_not_last_active_super_admin(user, new_is_active=False)
@@ -78,7 +80,7 @@ def users_deactivate(user_id):
 
 
 @bp.post("/users/<int:user_id>/activate")
-@super_admin_required()
+@permission_required("users.manage")
 def users_activate(user_id):
     user = User.query.get_or_404(user_id)
     old_values = {"is_active": user.is_active}
@@ -136,7 +138,7 @@ def role_permissions_reset_defaults(role_id):
 
 
 @bp.post("/users/<int:user_id>/reset-password")
-@super_admin_required()
+@permission_required("users.manage")
 def users_reset_password(user_id):
     user = User.query.get_or_404(user_id)
     password = temporary_password()
@@ -148,17 +150,16 @@ def users_reset_password(user_id):
 
 
 @bp.get("/projects")
-@admin_read_required()
+@permission_required("projects.view")
 def projects_index():
     projects = Project.query.order_by(Project.code.asc()).all()
     return render_template("admin/projects/index.html", projects=projects)
 
 
 @bp.route("/projects/new", methods=["GET", "POST"])
-@admin_read_required()
+@permission_required("projects.manage")
 def projects_new():
     if request.method == "POST":
-        _require_super_admin_post()
         return _save_project()
 
     return render_template(
@@ -169,11 +170,10 @@ def projects_new():
 
 
 @bp.route("/projects/<int:project_id>/edit", methods=["GET", "POST"])
-@admin_read_required()
+@permission_required("projects.manage")
 def projects_edit(project_id):
     project = Project.query.get_or_404(project_id)
     if request.method == "POST":
-        _require_super_admin_post()
         return _save_project(project)
 
     return render_template(
@@ -184,7 +184,7 @@ def projects_edit(project_id):
 
 
 @bp.post("/projects/<int:project_id>/archive")
-@super_admin_required()
+@permission_required("projects.manage")
 def projects_archive(project_id):
     project = Project.query.get_or_404(project_id)
     old_values = {"status": project.status}
@@ -196,8 +196,12 @@ def projects_archive(project_id):
 
 
 @bp.route("/projects/<int:project_id>/reporters", methods=["GET", "POST"])
-@admin_read_required()
 def projects_reporters(project_id):
+    if request.method == "POST":
+        if not current_user.can("project_assignments.manage"):
+            abort(403)
+    elif not current_user.can("projects.view"):
+        abort(403)
     project = Project.query.get_or_404(project_id)
     reporters = (
         User.query.filter(
@@ -209,7 +213,6 @@ def projects_reporters(project_id):
     )
 
     if request.method == "POST":
-        _require_super_admin_post()
         allowed_ids = {reporter.id for reporter in reporters}
         reporter_ids = {
             int(user_id)
@@ -518,15 +521,13 @@ def _save_category(project, category=None):
     return redirect(url_for("admin.categories_index", project_id=project.id))
 
 
-def _require_super_admin_post():
-    if current_user.role_code not in {UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value}:
+def _require_users_manage():
+    if not current_user.can("users.manage"):
         abort(403)
 
 
 def _require_can_view_categories(project_id):
-    if current_user.role_code in {UserRole.SUPER_ADMIN.value, UserRole.VIEWER_ADMIN.value}:
-        return
-    if can_manage_categories_for_project(project_id):
+    if can_view_categories_for_project(project_id):
         return
     abort(403)
 

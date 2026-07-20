@@ -29,3 +29,18 @@ def test_partner_module_is_denied_without_access_grant(client):
     login(client, "reporter")
     assert client.get("/modules/select/partners").status_code == 403
     assert client.get("/partners/").status_code == 403
+
+
+def test_department_create_still_requires_partner_company_create_permission(client, app):
+    grant(app, "reporter", "modules.partners.access", "partner_companies.view")
+    with app.app_context():
+        db.session.add(Company(id=502, name="Department Permission Co"))
+        db.session.commit()
+
+    login(client, "reporter")
+    response = client.post(
+        "/partner-companies/502/departments/new",
+        data={"name": "Blocked Department", "parent_department_id": ""},
+    )
+
+    assert response.status_code == 403
