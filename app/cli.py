@@ -245,6 +245,11 @@ def _security_audit():
     check(config.get("APP_ENV") != "production" or storage_provider != "fake", "storage-fake-provider-not-production", "fake provider is not used in production", "STORAGE_PROVIDER=fake in production")
     upload_limits = ("STORAGE_MAX_IMAGE_SIZE_MB", "STORAGE_MAX_DOCUMENT_SIZE_MB", "STORAGE_MAX_VIDEO_SIZE_MB", "STORAGE_MAX_AUDIO_SIZE_MB", "STORAGE_MAX_FILES_PER_BATCH", "STORAGE_MAX_BATCH_SIZE_MB")
     check(all(int(config.get(name, 0)) > 0 for name in upload_limits), "storage-upload-limits-configured", "storage upload limits configured", "one or more storage limits are invalid")
+    check(bool(config.get("CELERY_BROKER_URL")) and bool(config.get("CELERY_RESULT_BACKEND")), "celery-config-present", "Celery broker/result configured", "Celery broker/result missing")
+    check(config.get("APP_ENV") != "production" or not config.get("CELERY_TASK_ALWAYS_EAGER"), "celery-eager-not-production", "Celery eager disabled in production", "CELERY_TASK_ALWAYS_EAGER enabled in production")
+    check(bool(config.get("MEDIA_TEMP_ROOT")), "media-temp-root-configured", "media temp root configured", "MEDIA_TEMP_ROOT missing")
+    check(all(int(config.get(n, 0)) > 0 for n in ("CELERY_TASK_TIME_LIMIT_IMAGE_SECONDS", "CELERY_TASK_TIME_LIMIT_VIDEO_SECONDS")), "media-timeouts-configured", "media timeouts configured", "media timeout missing")
+    check(all(int(config.get(n, 0)) > 0 for n in ("MEDIA_IMAGE_THUMBNAIL_MAX_SIZE", "MEDIA_IMAGE_PREVIEW_MAX_SIZE", "MEDIA_VIDEO_POSTER_MAX_SIZE", "MEDIA_PROCESSING_MAX_ATTEMPTS")), "media-processing-limits-configured", "media processing limits configured", "media processing limit missing")
     try:
         _validated_upload_root()
         upload_root_safe = True
