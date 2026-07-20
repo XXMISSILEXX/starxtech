@@ -24,6 +24,7 @@ from app.models.rbac import Permission, Role, RolePermission
 from app.models.user import User
 from app.models.storage import StorageObject, UploadBatch, UploadBatchItem
 from app.models.media_processing import StorageDerivative, MediaProcessingJob
+from app.models.project_document import ProjectDocumentFile, ProjectDocumentFolder, ProjectDocumentFolderPermission
 
 __all__ = [
     "AuditLog",
@@ -56,4 +57,5 @@ __all__ = [
     "UploadBatch",
     "UploadBatchItem",
     "StorageDerivative", "MediaProcessingJob",
+    "ProjectDocumentFolder", "ProjectDocumentFile", "ProjectDocumentFolderPermission",
 ]

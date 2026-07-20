@@ -21,6 +21,7 @@ _RESOURCES = {
     "partner_fields": "Trường dữ liệu đối tác", "partner_field_collections": "Bộ trường dữ liệu",
     "partner_relations": "Quan hệ đối tác", "users": "Người dùng", "roles": "Vai trò & phân quyền",
     "security": "Bảo mật", "system": "Hệ thống", "project_assignments": "Phân quyền dự án",
+    "project_documents": "Hồ sơ tài liệu dự án", "project_document_folders": "Thư mục hồ sơ", "project_document_files": "Tệp hồ sơ",
 }
 
 def _permission(code, name, *, dangerous=False, sort_order=0):
@@ -47,6 +48,9 @@ PERMISSIONS = [
     _permission("project_assignments.manage", "Quản lý phân quyền dự án", dangerous=True),
     _permission("modules.reports.access", "Truy cập phân hệ Báo cáo hàng ngày"),
     _permission("modules.partners.access", "Truy cập phân hệ Quản lý đối tác"),
+    _permission("modules.project_documents.access", "Truy cập phân hệ Hồ sơ tài liệu dự án"),
+    *[_permission(f"project_document_folders.{action}", f"{action.title()} Thư mục hồ sơ", dangerous=action in {"delete", "share"}) for action in ("view", "create", "edit", "delete", "share", "restore")],
+    *[_permission(f"project_document_files.{action}", f"{action.title()} Tệp hồ sơ", dangerous=action == "delete") for action in ("view", "upload", "edit", "delete", "download", "restore")],
     *[_permission(f"partner_companies.{action}", f"{action.title()} Công ty đối tác", dangerous=action == "delete") for action in ("view", "create", "edit", "delete")],
     _permission("partners.restore", "Khôi phục Đối tác", dangerous=True),
     _permission("partner_companies.restore", "Khôi phục Công ty đối tác", dangerous=True),
@@ -61,15 +65,19 @@ DEFAULTS = {
         *{p["code"] for p in PERMISSIONS if p["action"] == "view" and p["code"] != "roles.view"},
         "modules.reports.access",
         "modules.partners.access",
+        "modules.project_documents.access", "project_document_folders.view", "project_document_files.view", "project_document_files.download",
     },
     UserRole.PROJECT_MANAGER.value: {
         "modules.reports.access", "reports.view", "reports.create", "reports.edit",
         "issues.view", "issues.create", "issues.edit", "issues.close",
         "projects.view", "categories.view", "report_attachments.view", "report_attachments.delete",
+        "modules.project_documents.access", "project_document_folders.view", "project_document_folders.create", "project_document_folders.edit",
+        "project_document_files.view", "project_document_files.upload", "project_document_files.edit", "project_document_files.download",
     },
     UserRole.REPORTER.value: {
         "modules.reports.access", "reports.view", "reports.create", "reports.edit",
         "issues.view", "projects.view", "categories.view", "report_attachments.view", "report_attachments.delete",
+        "modules.project_documents.access", "project_document_folders.view", "project_document_files.view", "project_document_files.upload", "project_document_files.download",
     },
     UserRole.SUPER_ADMIN.value: set(),  # bypass; grants intentionally meaningless
 }

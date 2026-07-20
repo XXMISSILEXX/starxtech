@@ -67,6 +67,11 @@ def can_access_partners_module(user=None):
     return bool(user.is_authenticated and user.can("modules.partners.access"))
 
 
+def can_access_project_documents_module(user=None):
+    user = user or current_user
+    return bool(user.is_authenticated and user.can("modules.project_documents.access"))
+
+
 def partner_module_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -83,6 +88,8 @@ def permitted_modules(user=None):
         modules.append("reports")
     if can_access_partners_module(user):
         modules.append("partners")
+    if can_access_project_documents_module(user):
+        modules.append("project_documents")
     return modules
 
 

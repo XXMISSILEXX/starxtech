@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block title %}Hồ sơ dự án{% endblock %}{% block page_title %}Hồ sơ tài liệu dự án{% endblock %}
+{% block content %}
+<div class="row g-3">{% for project in projects %}<div class="col-md-6 col-xl-4"><a class="card h-100 text-reset text-decoration-none" href="{{ url_for('project_documents.project_root', project_id=project.id) }}"><div class="card-body"><i class="bi bi-folder2-open fs-3 text-primary"></i><h2 class="h5 mt-2">{{ project.name }}</h2><span class="text-muted">{{ project.code }}</span></div></a></div>{% else %}<div class="col-12"><div class="alert alert-info">Chưa có dự án bạn được phân quyền.</div></div>{% endfor %}</div>
+{% endblock %}
