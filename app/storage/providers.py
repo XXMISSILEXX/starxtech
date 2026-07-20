@@ -17,6 +17,8 @@ class StorageProvider:
 
     def delete_object(self, bucket, object_key):
         raise NotImplementedError
+    def download_object(self, bucket, object_key, destination_path): raise NotImplementedError
+    def upload_object(self, bucket, object_key, source_path, content_type, metadata=None): raise NotImplementedError
 
 
 class FakeStorageProvider(StorageProvider):
@@ -42,7 +44,15 @@ class FakeStorageProvider(StorageProvider):
         self.deleted.append((bucket, object_key))
 
     def register_object(self, bucket, object_key, size, content_type, checksum_sha256=None):
-        self.objects[(bucket, object_key)] = {"size": int(size), "content_type": content_type, "checksum_sha256": checksum_sha256}
+        self.objects[(bucket, object_key)] = {"size": int(size), "content_type": content_type, "checksum_sha256": checksum_sha256, "bytes": b""}
+    def put_bytes(self, bucket, object_key, data, content_type):
+        self.objects[(bucket, object_key)] = {"size": len(data), "content_type": content_type, "bytes": bytes(data)}
+    def download_object(self, bucket, object_key, destination_path):
+        from pathlib import Path
+        Path(destination_path).write_bytes(self.objects[(bucket, object_key)].get("bytes", b""))
+    def upload_object(self, bucket, object_key, source_path, content_type, metadata=None):
+        from pathlib import Path
+        self.put_bytes(bucket, object_key, Path(source_path).read_bytes(), content_type)
 
 
 class DisabledStorageProvider(StorageProvider):

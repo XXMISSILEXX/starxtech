@@ -21,6 +21,8 @@ def create_app(config_class=Config):
         "STORAGE_MAX_VIDEO_SIZE_MB": 500, "STORAGE_MAX_AUDIO_SIZE_MB": 200,
         "STORAGE_MAX_FILES_PER_BATCH": 20, "STORAGE_MAX_BATCH_SIZE_MB": 1024,
         "STORAGE_PENDING_UPLOAD_HOURS": 24,
+        "CELERY_BROKER_URL": "memory://", "CELERY_RESULT_BACKEND": "cache+memory://", "CELERY_TASK_ALWAYS_EAGER": False, "CELERY_TASK_EAGER_PROPAGATES": True, "CELERY_RESULT_EXPIRES_SECONDS": 3600, "CELERY_WORKER_PREFETCH_MULTIPLIER": 1, "CELERY_TASK_ACKS_LATE": True,
+        "MEDIA_TEMP_ROOT": "/tmp/starx-media-processing", "MEDIA_IMAGE_THUMBNAIL_MAX_SIZE": 480, "MEDIA_IMAGE_PREVIEW_MAX_SIZE": 1600, "MEDIA_VIDEO_POSTER_MAX_SIZE": 720, "CELERY_TASK_TIME_LIMIT_VIDEO_SECONDS": 300,
     }.items():
         app.config.setdefault(key, value)
     if app.config.get("MAX_CONTENT_LENGTH") is None:
@@ -34,6 +36,8 @@ def create_app(config_class=Config):
 
     db.init_app(app)
     migrate.init_app(app, db)
+    from app.celery_app import create_celery_app
+    create_celery_app(app)
     login_manager.init_app(app)
     csrf.init_app(app)
     limiter.init_app(app)
