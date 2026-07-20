@@ -240,6 +240,11 @@ def _security_audit():
         )
     else:
         _audit_line("PASS", "rate-limit-storage", storage_uri)
+    storage_provider = str(config.get("STORAGE_PROVIDER", "disabled")).lower()
+    check(storage_provider in {"fake", "s3", "disabled"}, "storage-provider-config", "recognized storage provider", "unknown STORAGE_PROVIDER")
+    check(config.get("APP_ENV") != "production" or storage_provider != "fake", "storage-fake-provider-not-production", "fake provider is not used in production", "STORAGE_PROVIDER=fake in production")
+    upload_limits = ("STORAGE_MAX_IMAGE_SIZE_MB", "STORAGE_MAX_DOCUMENT_SIZE_MB", "STORAGE_MAX_VIDEO_SIZE_MB", "STORAGE_MAX_AUDIO_SIZE_MB", "STORAGE_MAX_FILES_PER_BATCH", "STORAGE_MAX_BATCH_SIZE_MB")
+    check(all(int(config.get(name, 0)) > 0 for name in upload_limits), "storage-upload-limits-configured", "storage upload limits configured", "one or more storage limits are invalid")
     try:
         _validated_upload_root()
         upload_root_safe = True

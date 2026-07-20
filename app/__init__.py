@@ -14,6 +14,15 @@ def create_app(config_class=Config):
     app.config.setdefault("RATELIMIT_STORAGE_URI", "memory://")
     app.config.setdefault("RATELIMIT_LOGIN_LIMIT", "5 per minute")
     app.config.setdefault("RATELIMIT_EXPORT_LIMIT", "10 per hour")
+    for key, value in {
+        "STORAGE_PROVIDER": "fake", "STORAGE_BUCKET": "starx-local", "STORAGE_PREFIX": "",
+        "STORAGE_UPLOAD_URL_TTL_SECONDS": 300, "STORAGE_DOWNLOAD_URL_TTL_SECONDS": 300,
+        "STORAGE_MAX_IMAGE_SIZE_MB": 50, "STORAGE_MAX_DOCUMENT_SIZE_MB": 200,
+        "STORAGE_MAX_VIDEO_SIZE_MB": 500, "STORAGE_MAX_AUDIO_SIZE_MB": 200,
+        "STORAGE_MAX_FILES_PER_BATCH": 20, "STORAGE_MAX_BATCH_SIZE_MB": 1024,
+        "STORAGE_PENDING_UPLOAD_HOURS": 24,
+    }.items():
+        app.config.setdefault(key, value)
     if app.config.get("MAX_CONTENT_LENGTH") is None:
         app.config["MAX_CONTENT_LENGTH"] = int(app.config.get("MAX_UPLOAD_MB", 10)) * 1024 * 1024
     configuration_errors = production_configuration_errors(app.config)

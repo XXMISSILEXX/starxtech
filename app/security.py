@@ -64,4 +64,9 @@ def production_configuration_errors(config) -> list[str]:
         errors.append("SESSION_COOKIE_HTTPONLY must be enabled in production")
     if str(config.get("SESSION_COOKIE_SAMESITE", "")).lower() not in {"lax", "strict"}:
         errors.append("SESSION_COOKIE_SAMESITE must be Lax or Strict in production")
+    provider = str(config.get("STORAGE_PROVIDER", "disabled")).lower()
+    if provider == "fake":
+        errors.append("STORAGE_PROVIDER=fake is not allowed in production")
+    if provider == "s3" and (not config.get("STORAGE_BUCKET") or not config.get("STORAGE_ACCESS_KEY_ID") or not config.get("STORAGE_SECRET_ACCESS_KEY")):
+        errors.append("S3 storage requires bucket and credentials in production")
     return errors

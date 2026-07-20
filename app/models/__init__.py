@@ -22,6 +22,7 @@ from app.models.partner import (
 from app.models.project import Project, ProjectUser, ReportCategory
 from app.models.rbac import Permission, Role, RolePermission
 from app.models.user import User
+from app.models.storage import StorageObject, UploadBatch, UploadBatchItem
 
 __all__ = [
     "AuditLog",
@@ -50,4 +51,7 @@ __all__ = [
     "SectionStatus",
     "User",
     "UserRole",
+    "StorageObject",
+    "UploadBatch",
+    "UploadBatchItem",
 ]
