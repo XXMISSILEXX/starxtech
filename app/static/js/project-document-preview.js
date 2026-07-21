@@ -9,6 +9,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const modalDownload = modalElement.querySelector("[data-preview-download]");
   const modal = new bootstrap.Modal(modalElement);
 
+  modalElement.addEventListener("hidden.bs.modal", () => {
+    modalBody.querySelectorAll("video").forEach((video) => {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    });
+    modalBody.querySelectorAll("img").forEach((image) => image.removeAttribute("src"));
+    modalBody.replaceChildren();
+    modalDownload.onclick = null;
+  });
+
   const requestJson = async (url, payload = {}) => {
     const response = await fetch(url, {
       method: "POST",

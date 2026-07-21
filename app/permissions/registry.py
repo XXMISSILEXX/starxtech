@@ -22,6 +22,7 @@ _RESOURCES = {
     "partner_relations": "Quan hệ đối tác", "users": "Người dùng", "roles": "Vai trò & phân quyền",
     "security": "Bảo mật", "system": "Hệ thống", "project_assignments": "Phân quyền dự án",
     "project_documents": "Hồ sơ tài liệu dự án", "project_document_folders": "Thư mục hồ sơ", "project_document_files": "Tệp hồ sơ",
+    "company_media": "Thư viện ảnh/video công ty", "company_media_albums": "Album công ty", "company_media_files": "Media công ty",
 }
 
 def _permission(code, name, *, dangerous=False, sort_order=0):
@@ -49,8 +50,11 @@ PERMISSIONS = [
     _permission("modules.reports.access", "Truy cập phân hệ Báo cáo hàng ngày"),
     _permission("modules.partners.access", "Truy cập phân hệ Quản lý đối tác"),
     _permission("modules.project_documents.access", "Truy cập phân hệ Hồ sơ tài liệu dự án"),
+    _permission("modules.company_media.access", "Truy cập phân hệ Thư viện ảnh/video công ty"),
     *[_permission(f"project_document_folders.{action}", f"{action.title()} Thư mục hồ sơ", dangerous=action in {"delete", "share"}) for action in ("view", "create", "edit", "delete", "share", "restore")],
     *[_permission(f"project_document_files.{action}", f"{action.title()} Tệp hồ sơ", dangerous=action == "delete") for action in ("view", "upload", "edit", "delete", "download", "restore")],
+    *[_permission(f"company_media_albums.{action}", f"{action.title()} Album công ty", dangerous=action in {"delete", "share"}) for action in ("view", "create", "edit", "delete", "restore", "share")],
+    *[_permission(f"company_media_files.{action}", f"{action.title()} Media công ty", dangerous=action == "delete") for action in ("view", "upload", "download", "edit", "delete", "restore")],
     *[_permission(f"partner_companies.{action}", f"{action.title()} Công ty đối tác", dangerous=action == "delete") for action in ("view", "create", "edit", "delete")],
     _permission("partners.restore", "Khôi phục Đối tác", dangerous=True),
     _permission("partner_companies.restore", "Khôi phục Công ty đối tác", dangerous=True),
@@ -66,6 +70,7 @@ DEFAULTS = {
         "modules.reports.access",
         "modules.partners.access",
         "modules.project_documents.access", "project_document_folders.view", "project_document_files.view", "project_document_files.download",
+        "modules.company_media.access", "company_media_albums.view", "company_media_files.view", "company_media_files.download",
     },
     UserRole.PROJECT_MANAGER.value: {
         "modules.reports.access", "reports.view", "reports.create", "reports.edit",

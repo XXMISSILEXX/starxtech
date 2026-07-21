@@ -40,5 +40,6 @@
     </div>
   {% endif %}
   {% if can_project_documents %}<div class="col-md-6 col-xl-4"><a class="text-decoration-none text-reset" href="{{ url_for('project_documents.index') }}"><div class="card h-100"><div class="card-body"><div class="d-flex align-items-center gap-3"><div class="stat-icon"><i class="bi bi-folder2-open"></i></div><div><h2 class="h5 mb-1">Hồ sơ dự án</h2><div class="text-muted">Quản lý thư mục và hồ sơ tài liệu theo dự án.</div></div></div></div></div></a></div>{% endif %}
+  {% if can_company_media %}<div class="col-md-6 col-xl-4"><a class="text-decoration-none text-reset" href="{{ url_for('company_media.index') }}"><div class="card h-100"><div class="card-body"><div class="d-flex align-items-center gap-3"><div class="stat-icon"><i class="bi bi-images"></i></div><div><h2 class="h5 mb-1">Thư viện ảnh/video công ty</h2><div class="text-muted">Album truyền thông nội bộ.</div></div></div></div></div></a></div>{% endif %}
 </div>
 {% endblock %}
