@@ -1,19 +1,14 @@
 from flask import abort, flash, redirect, render_template, session, url_for
 from flask_login import current_user
 
-from app.auth.permissions import can_access_partners_module, can_access_project_documents_module, can_access_company_media_module, can_access_reports_module
+from app.auth.permissions import can_access_partners_module, can_access_reports_module
 from app.modules import bp
+from app.modules.services import get_accessible_modules
 
 
 @bp.get("/")
 def index():
-    return render_template(
-        "modules/index.html",
-        can_reports=can_access_reports_module(current_user),
-        can_partners=can_access_partners_module(current_user),
-        can_project_documents=can_access_project_documents_module(current_user),
-        can_company_media=can_access_company_media_module(current_user),
-    )
+    return render_template("modules/index.html", modules=get_accessible_modules(current_user))
 
 
 @bp.get("/select/reports")

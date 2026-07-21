@@ -72,7 +72,8 @@ def can_access_project_documents_module(user=None):
     return bool(user.is_authenticated and user.can("modules.project_documents.access"))
 def can_access_company_media_module(user=None):
     user = user or current_user
-    return bool(user.is_authenticated and user.can("modules.company_media.access"))
+    from app.company_media.permissions import access
+    return access(user)
 
 
 def partner_module_required(view):

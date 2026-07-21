@@ -15,7 +15,7 @@
   <body>
     {% if current_user.is_authenticated %}
     {% set endpoint = request.endpoint or '' %}
-    {% set active_module = session.get('active_module') or ('project_documents' if endpoint.startswith('project_documents.') else ('partners' if endpoint.startswith('partners.') or endpoint.startswith('partner_') else 'reports')) %}
+    {% set active_module = session.get('active_module') or ('company_media' if endpoint.startswith('company_media.') else ('project_documents' if endpoint.startswith('project_documents.') else ('partners' if endpoint.startswith('partners.') or endpoint.startswith('partner_') else 'reports'))) %}
     {% set initials = (current_user.full_name or current_user.username or 'U').split()|map('first')|join('')|upper %}
     {% set can_view_admin_users = current_user.can('users.view') %}
     {% set can_view_roles = current_user.can('roles.view') %}
@@ -61,10 +61,8 @@
               {% if can_view_roles %}<a class="nav-link {% if request.path.startswith('/admin/roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>{% endif %}
             {% endif %}
           {% endif %}
-          {% if can_access_reports_module() and can_access_partners_module() %}
-            <div class="nav-section">Phân hệ</div>
-            <a class="nav-link {% if endpoint.startswith('modules.') %}active{% endif %}" href="{{ url_for('modules.index') }}"><i class="bi bi-arrow-left-right"></i><span>Đổi phân hệ</span></a>
-          {% endif %}
+          <div class="nav-section">Phân hệ</div>
+          <a class="nav-link {% if endpoint.startswith('modules.') %}active{% endif %}" href="{{ url_for('modules.index') }}"><i class="bi bi-arrow-left-right"></i><span>Đổi phân hệ</span></a>
         </nav>
         <div class="sidebar-watermark">Made by Tran Hieu Slayer</div>
       </aside>
@@ -121,10 +119,8 @@
                 {% if can_view_roles %}<a class="nav-link {% if request.path.startswith('/admin/roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>{% endif %}
               {% endif %}
             {% endif %}
-            {% if can_access_reports_module() and can_access_partners_module() %}
-              <div class="nav-section">Phân hệ</div>
-              <a class="nav-link {% if endpoint.startswith('modules.') %}active{% endif %}" href="{{ url_for('modules.index') }}"><i class="bi bi-arrow-left-right"></i><span>Đổi phân hệ</span></a>
-            {% endif %}
+            <div class="nav-section">Phân hệ</div>
+            <a class="nav-link {% if endpoint.startswith('modules.') %}active{% endif %}" href="{{ url_for('modules.index') }}"><i class="bi bi-arrow-left-right"></i><span>Đổi phân hệ</span></a>
             <div class="nav-section">Tài khoản</div>
             <button class="nav-link mobile-account-info-button" type="button" data-bs-toggle="modal" data-bs-target="#accountInfoModal"><i class="bi bi-person-circle"></i><span>Thông tin tài khoản</span></button>
             <a class="nav-link {% if endpoint == 'auth.change_password' %}active{% endif %}" href="{{ url_for('auth.change_password') }}"><i class="bi bi-key"></i><span>Đổi mật khẩu</span></a>

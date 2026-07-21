@@ -96,5 +96,14 @@ def _post_login_redirect(user=None):
     if modules == ["partners"]:
         session["active_module"] = "partners"
         return url_for("partners.dashboard")
+    if modules == ["company_media"]:
+        session["active_module"] = "company_media"
+        return url_for("company_media.index")
+    if modules == ["project_documents"]:
+        session["active_module"] = "project_documents"
+        return url_for("project_documents.index")
+    if not modules:
+        session.pop("active_module", None)
+        return url_for("modules.index")
     session["active_module"] = "reports"
     return url_for("dashboard.index")

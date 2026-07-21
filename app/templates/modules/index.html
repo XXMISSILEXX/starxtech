@@ -4,42 +4,5 @@
 {% block page_title %}Chọn phân hệ làm việc{% endblock %}
 
 {% block content %}
-<div class="row g-3">
-  {% if can_reports %}
-    <div class="col-md-6 col-xl-4">
-      <a class="text-decoration-none text-reset" href="{{ url_for('modules.select_reports') }}">
-        <div class="card h-100">
-          <div class="card-body">
-            <div class="d-flex align-items-center gap-3">
-              <div class="stat-icon"><i class="bi bi-journal-text"></i></div>
-              <div>
-                <h2 class="h5 mb-1">Báo cáo hàng ngày</h2>
-                <div class="text-muted">Theo dõi dự án, báo cáo ngày và vấn đề tồn đọng.</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </a>
-    </div>
-  {% endif %}
-  {% if can_partners %}
-    <div class="col-md-6 col-xl-4">
-      <a class="text-decoration-none text-reset" href="{{ url_for('modules.select_partners') }}">
-        <div class="card h-100">
-          <div class="card-body">
-            <div class="d-flex align-items-center gap-3">
-              <div class="stat-icon"><i class="bi bi-person-vcard"></i></div>
-              <div>
-                <h2 class="h5 mb-1">Quản lý đối tác</h2>
-                <div class="text-muted">Quản lý đối tác, công ty và thông tin mở rộng.</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </a>
-    </div>
-  {% endif %}
-  {% if can_project_documents %}<div class="col-md-6 col-xl-4"><a class="text-decoration-none text-reset" href="{{ url_for('project_documents.index') }}"><div class="card h-100"><div class="card-body"><div class="d-flex align-items-center gap-3"><div class="stat-icon"><i class="bi bi-folder2-open"></i></div><div><h2 class="h5 mb-1">Hồ sơ dự án</h2><div class="text-muted">Quản lý thư mục và hồ sơ tài liệu theo dự án.</div></div></div></div></div></a></div>{% endif %}
-  {% if can_company_media %}<div class="col-md-6 col-xl-4"><a class="text-decoration-none text-reset" href="{{ url_for('company_media.index') }}"><div class="card h-100"><div class="card-body"><div class="d-flex align-items-center gap-3"><div class="stat-icon"><i class="bi bi-images"></i></div><div><h2 class="h5 mb-1">Thư viện ảnh/video công ty</h2><div class="text-muted">Album truyền thông nội bộ.</div></div></div></div></div></a></div>{% endif %}
-</div>
+{% if modules %}<div class="row g-3">{% for module in modules %}<div class="col-md-6 col-xl-4"><a class="text-decoration-none text-reset" href="{{ module.url }}"><div class="card h-100" data-module-card="{{ module.key }}"><div class="card-body"><div class="d-flex align-items-center gap-3"><div class="stat-icon"><i class="bi {{ module.icon }}"></i></div><div><h2 class="h5 mb-1">{{ module.label }}</h2><div class="text-muted">{{ module.description }}</div></div></div></div></div></a></div>{% endfor %}</div>{% else %}<div class="alert alert-info mb-0">Bạn chưa được cấp quyền truy cập phân hệ nào. Vui lòng liên hệ quản trị viên.</div>{% endif %}
 {% endblock %}

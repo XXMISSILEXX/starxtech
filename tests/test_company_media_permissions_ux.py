@@ -143,18 +143,32 @@ def test_viewer_can_read_restricted_album_and_media_but_cannot_mutate(client, ap
 
 def test_normal_user_requires_acl_to_read_restricted_album_and_can_upload_with_acl(client, app):
     album_id = _album(app)
+    upload_payload = {
+        "files": [{"client_file_id": "acl-upload", "filename": "acl-upload.png",
+                   "mime_type": "image/png", "size": 1}],
+    }
     with app.app_context():
         admin, reporter = db.session.get(User, 6), db.session.get(User, 3)
+        admin_id, reporter_id, reporter_role_id = admin.id, reporter.id, reporter.role_id
         codes = {"modules.company_media.access", "company_media_albums.view", "company_media_files.view",
                  "company_media_files.upload"}
-        _grant_role_codes(reporter.role_id, codes)
+        _grant_role_codes(reporter_role_id, codes)
         db.session.commit()
     _login(client, "reporter")
     assert client.get(f"/company-media/albums/{album_id}").status_code == 403
     client.post("/logout")
     with app.app_context():
         album = db.session.get(CompanyMediaAlbum, album_id)
-        set_permission(admin, album, "user", reporter.id, {"can_view": "1", "can_upload": "1"})
+        admin = db.session.get(User, admin_id)
+        set_permission(admin, album, "user", reporter_id, {"can_view": "1"})
+    _login(client, "reporter")
+    assert client.post(f"/company-media/albums/{album_id}/files/presign-batch", json=upload_payload).status_code == 403
+    client.post("/logout")
+    with app.app_context():
+        album = db.session.get(CompanyMediaAlbum, album_id)
+        admin = db.session.get(User, admin_id)
+        set_permission(admin, album, "user", reporter_id, {"can_view": "1", "can_upload": "1"})
     _login(client, "reporter")
     assert client.get(f"/company-media/albums/{album_id}").status_code == 200
-    assert client.post(f"/company-media/albums/{album_id}/files/presign-batch", json={"files": []}).status_code == 200
+    assert client.post(f"/company-media/albums/{album_id}/files/presign-batch", json=upload_payload).status_code == 200
+    assert client.post(f"/company-media/albums/{album_id}/files/presign-batch", json={"files": []}).status_code == 400
