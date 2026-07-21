@@ -18,10 +18,10 @@ def index():
     for album in items:
         custom=CompanyMediaFile.query.filter_by(id=album.cover_media_id,album_id=album.id,is_active=True).filter(CompanyMediaFile.deleted_at.is_(None)).first() if album.cover_media_id else None
         covers[album.id]=custom or CompanyMediaFile.query.filter_by(album_id=album.id,is_active=True).filter(CompanyMediaFile.deleted_at.is_(None)).order_by(CompanyMediaFile.created_at).first()
-    return render_template("company_media/index.html",albums=items,covers=covers,album_status=status,q=request.args.get("q",""),can_create=current_user.can("company_media_albums.create"))
+    return render_template("company_media/index.html",albums=items,covers=covers,album_status=status,q=request.args.get("q",""),can_create=p.create_album(current_user))
 @bp.post("/albums/create")
 def create():
-    if not current_user.can("company_media_albums.create"): abort(403)
+    if not p.create_album(current_user): abort(403)
     try: a=s.create_album(current_user,request.form.get("name"),request.form.get("description"),request.form.get("is_restricted")=="1")
     except s.CompanyMediaError as e: flash(str(e),"danger");return redirect(url_for("company_media.index"))
     return redirect(url_for("company_media.album",album_id=a.id))
@@ -129,4 +129,16 @@ def permissions(album_id):
             try:s.set_permission(current_user,a,request.form.get("principal_type"),request.form.get("principal_id"),request.form)
             except s.CompanyMediaError as e:flash(str(e),"danger")
         return redirect(url_for("company_media.permissions",album_id=a.id))
-    return render_template("company_media/permissions.html",album=a,entries=a.permissions,users=User.query.filter_by(is_active=True).all(),roles=Role.query.all())
+    users = User.query.filter_by(is_active=True).order_by(User.full_name, User.username).all()
+    roles = Role.query.order_by(Role.name, Role.code).all()
+    principal_options = [
+        {"type": "user", "id": user.id, "name": user.full_name, "username": user.username,
+         "email": user.email, "role": user.role.name if user.role else ""}
+        for user in users
+    ] + [
+        {"type": "role", "id": role.id, "name": role.name, "description": role.description,
+         "code": role.code}
+        for role in roles
+    ]
+    return render_template("company_media/permissions.html", album=a, entries=a.permissions,
+                           principal_options=principal_options)

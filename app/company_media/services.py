@@ -62,7 +62,19 @@ def set_cover(user,a,media_id):
     a.cover_media_id=f.id;a.updated_by_id=user.id;audit("company_media.album.cover","CompanyMediaAlbum",a.id);db.session.commit()
 def set_permission(user,a,typ,pid,form):
     if typ not in {"user","role"} or not str(pid).isdigit(): raise CompanyMediaError("Đối tượng phân quyền không hợp lệ.")
-    pid=int(pid); key=typ+"_id"; entry=CompanyMediaAlbumPermission.query.filter_by(album_id=a.id,principal_type=typ,**{key:pid}).first() or CompanyMediaAlbumPermission(album_id=a.id,principal_type=typ,created_by_id=user.id,**{key:pid})
-    for flag in ("can_view","can_upload","can_edit","can_delete","can_download","can_share"): setattr(entry,flag,bool(form.get(flag)))
-    if not any(getattr(entry,x) for x in ("can_view","can_upload","can_edit","can_delete","can_download","can_share")): raise CompanyMediaError("Hãy cấp ít nhất một quyền.")
-    db.session.add(entry);db.session.commit()
+    pid=int(pid)
+    if pid <= 0:
+        raise CompanyMediaError("Đối tượng phân quyền không hợp lệ.")
+    if typ == "user":
+        principal = db.session.get(User, pid)
+        if not principal:
+            raise CompanyMediaError("Người dùng không tồn tại.")
+        if not principal.is_active:
+            raise CompanyMediaError("Người dùng đã ngừng hoạt động.")
+    elif not db.session.get(Role, pid):
+        raise CompanyMediaError("Vai trò không tồn tại.")
+    flags=("can_view","can_upload","can_edit","can_delete","can_download","can_share")
+    if not any(bool(form.get(flag)) for flag in flags): raise CompanyMediaError("Hãy cấp ít nhất một quyền.")
+    key=typ+"_id"; entry=CompanyMediaAlbumPermission.query.filter_by(album_id=a.id,principal_type=typ,**{key:pid}).first() or CompanyMediaAlbumPermission(album_id=a.id,principal_type=typ,created_by_id=user.id,**{key:pid})
+    for flag in flags: setattr(entry,flag,bool(form.get(flag)))
+    db.session.add(entry);db.session.commit();return entry
