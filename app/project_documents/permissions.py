@@ -44,12 +44,21 @@ def can_view_project_document_folder(user, folder, include_archived=False):
 def can_create_project_document_folder(user, parent_folder): return _can(user, parent_folder, "project_document_folders.create", "edit")
 def can_edit_project_document_folder(user, folder): return _can(user, folder, "project_document_folders.edit", "edit")
 def can_delete_project_document_folder(user, folder): return _can(user, folder, "project_document_folders.delete", "delete")
-def can_restore_project_document_folder(user, folder): return _can(user, folder, "project_document_folders.delete", "delete", include_archived=True)
-def can_share_project_document_folder(user, folder): return _can(user, folder, "project_document_folders.share", "share")
+def can_restore_project_document_folder(user, folder): return _can(user, folder, "project_document_folders.restore", "delete", include_archived=True)
+def can_share_project_document_folder(user, folder, include_archived=False): return _can(user, folder, "project_document_folders.share", "share", include_archived)
 def can_upload_project_document_folder(user, folder): return _can(user, folder, "project_document_files.upload", "upload")
 
-def can_view_project_document_file(user, file):
-    return bool(file and file.is_active and file.deleted_at is None and _can(user, file.folder, "project_document_files.view", "view"))
+def can_view_project_document_file(user, file, include_archived=False):
+    return bool(file and (include_archived or (file.is_active and file.deleted_at is None)) and _can(user, file.folder, "project_document_files.view", "view", include_archived))
 
 def can_download_project_document_file(user, file):
     return bool(file and file.is_active and file.deleted_at is None and _can(user, file.folder, "project_document_files.download", "view"))
+
+def can_edit_project_document_file(user, file):
+    return bool(file and file.is_active and file.deleted_at is None and _can(user, file.folder, "project_document_files.edit", "edit"))
+
+def can_delete_project_document_file(user, file):
+    return bool(file and file.is_active and file.deleted_at is None and _can(user, file.folder, "project_document_files.delete", "delete"))
+
+def can_restore_project_document_file(user, file):
+    return bool(file and _can(user, file.folder, "project_document_files.delete", "delete", include_archived=True))

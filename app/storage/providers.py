@@ -86,6 +86,15 @@ class S3StorageProvider(StorageProvider):
     def delete_object(self, bucket, object_key):
         self.client.delete_object(Bucket=bucket, Key=object_key)
 
+    def download_object(self, bucket, object_key, destination_path):
+        self.client.download_file(bucket, object_key, str(destination_path))
+
+    def upload_object(self, bucket, object_key, source_path, content_type, metadata=None):
+        extra = {"ContentType": content_type}
+        if metadata:
+            extra["Metadata"] = metadata
+        self.client.upload_file(str(source_path), bucket, object_key, ExtraArgs=extra)
+
 
 def get_storage_provider():
     provider = current_app.extensions.get("storage_provider")

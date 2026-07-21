@@ -1,9 +1,20 @@
 """Small, shared security helpers for passwords and deployment settings."""
 
 import re
+from urllib.parse import urlparse
 
 
 MIN_PASSWORD_LENGTH = 12
+
+
+def storage_connect_source(config) -> str | None:
+    """Return only a safe S3 endpoint origin for CSP connect-src."""
+    if str(config.get("STORAGE_PROVIDER", "disabled")).lower() != "s3":
+        return None
+    parsed = urlparse(str(config.get("STORAGE_ENDPOINT_URL", "")).strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 def password_policy_errors(password: str) -> list[str]:

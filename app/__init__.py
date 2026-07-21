@@ -166,13 +166,27 @@ def register_trusted_host_guard(app):
 def register_security_headers(app):
     @app.after_request
     def add_security_headers(response):
+        from app.security import storage_connect_source
+        connect_sources = ["'self'"]
+        image_sources = ["'self'", "data:"]
+        media_sources = ["'self'"]
+        frame_sources = ["'self'"]
+        storage_origin = storage_connect_source(app.config)
+        if storage_origin:
+            connect_sources.append(storage_origin)
+            image_sources.append(storage_origin)
+            media_sources.append(storage_origin)
+            frame_sources.append(storage_origin)
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; "
             "script-src 'self' https://cdn.jsdelivr.net; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
             "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; "
-            "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+            "img-src " + " ".join(image_sources) + "; "
+            "media-src " + " ".join(media_sources) + "; "
+            "frame-src " + " ".join(frame_sources) + "; "
+            "connect-src " + " ".join(connect_sources) + "; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
         )
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")

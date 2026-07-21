@@ -1,14 +1,20 @@
-from flask import abort, flash, redirect, render_template, request, url_for
+from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
+from markupsafe import Markup
 
 from app.models import Project, ProjectDocumentFolder, ProjectDocumentFolderPermission, Role, User
 from app.project_documents import bp
 from app.project_documents.permissions import (can_access_project_documents, can_create_project_document_folder,
     can_delete_project_document_folder, can_edit_project_document_folder, can_restore_project_document_folder, can_share_project_document_folder,
-    can_view_project_document_folder)
+    can_view_project_document_folder, can_upload_project_document_folder, can_download_project_document_file,
+    can_edit_project_document_file, can_delete_project_document_file, can_restore_project_document_file,
+    can_view_project_document_file)
 from app.project_documents.services import (DocumentValidationError, archive_folder, build_breadcrumb, create_folder,
     get_or_create_project_root_folder, list_accessible_projects, list_folder_children, list_folder_files, list_move_destinations, move_folder,
-    remove_folder_permission, rename_folder, restore_folder, set_folder_permission)
+    remove_folder_permission, rename_folder, restore_folder, set_folder_permission, presign_folder_upload_batch,
+    complete_folder_upload_item, create_file_download_url, create_file_preview_url, rename_file, archive_file, restore_file, file_payload,
+    bulk_archive_files, bulk_restore_files, bulk_file_download_urls)
+from app.storage.exceptions import StorageNotFoundError, StorageValidationError
 
 
 @bp.before_request
@@ -31,22 +37,173 @@ def project_root(project_id):
     return redirect(url_for("project_documents.folder", folder_id=root.id))
 
 
+def _folder_context(source=None):
+    source = source or request.values
+    folder_status = (source.get("folder_status", "active") or "active").strip().lower()
+    file_status = (source.get("file_status", "active") or "active").strip().lower()
+    return {
+        "q": (source.get("q", "") or "").strip(),
+        "folder_status": folder_status if folder_status in {"active", "archived", "all"} else "active",
+        "file_status": file_status if file_status in {"active", "archived", "all"} else "active",
+    }
+
+
+def _folder_url(folder_id, *, folder_status=None, source=None):
+    context = _folder_context(source)
+    if folder_status is not None:
+        context["folder_status"] = folder_status
+    return url_for("project_documents.folder", folder_id=folder_id, **context)
+
+
 @bp.get("/folders/<int:folder_id>")
 def folder(folder_id):
     target = ProjectDocumentFolder.query.get_or_404(folder_id)
-    if not can_view_project_document_folder(current_user, target): abort(403)
-    q = request.args.get("q", "").strip()
-    status = request.args.get("status", "active").strip().lower()
-    if status not in {"active", "archived", "all"}:
-        status = "active"
-    children = list_folder_children(current_user, target, status, q)
+    if not can_view_project_document_folder(current_user, target, include_archived=True): abort(403)
+    context = _folder_context(request.args)
+    children = list_folder_children(current_user, target, context["folder_status"], context["q"])
+    files = list_folder_files(current_user, target, context["file_status"], context["q"])
+    active_target = target.is_active and target.deleted_at is None
+    can_edit_by_child = {child.id: can_edit_project_document_folder(current_user, child) for child in children if child.is_active and child.deleted_at is None}
+    move_destinations_by_child = {child.id: list_move_destinations(current_user, child) for child in children if can_edit_by_child.get(child.id)}
+    move_destination_options_by_child = {
+        child_id: [{"id": destination.id, "name": destination.name} for destination in destinations]
+        for child_id, destinations in move_destinations_by_child.items()
+    }
     return render_template("project_documents/folder.html", folder=target, breadcrumb=build_breadcrumb(current_user, target),
-        children=children, files=list_folder_files(current_user, target, status, q), q=q, status=status,
+        children=children, files=files, **context,
         can_create=can_create_project_document_folder(current_user, target), can_edit=can_edit_project_document_folder(current_user, target),
-        can_delete=can_delete_project_document_folder(current_user, target), can_share=can_share_project_document_folder(current_user, target),
-        move_destinations_by_child={child.id: list_move_destinations(current_user, child) for child in children if child.is_active and can_edit_project_document_folder(current_user, child)},
-        can_delete_by_child={child.id: can_delete_project_document_folder(current_user, child) for child in children if child.is_active},
-        can_restore_by_child={child.id: can_restore_project_document_folder(current_user, child) for child in children if not child.is_active or child.deleted_at})
+        can_delete=can_delete_project_document_folder(current_user, target), can_restore=can_restore_project_document_folder(current_user, target),
+        can_share=can_share_project_document_folder(current_user, target, include_archived=not active_target),
+        can_upload=can_upload_project_document_folder(current_user, target), active_target=active_target,
+        can_edit_by_child=can_edit_by_child, can_share_by_child={child.id: can_share_project_document_folder(current_user, child, include_archived=not (child.is_active and child.deleted_at is None)) for child in children},
+        move_destinations_by_child=move_destinations_by_child, move_destination_options_by_child=move_destination_options_by_child,
+        can_delete_by_child={child.id: can_delete_project_document_folder(current_user, child) for child in children if child.is_active and child.deleted_at is None},
+        can_restore_by_child={child.id: can_restore_project_document_folder(current_user, child) for child in children if not child.is_active or child.deleted_at},
+        can_any_edit_folder=(active_target and not target.is_root and can_edit_project_document_folder(current_user, target)) or any(can_edit_by_child.values()),
+        can_edit_file_by_id={item.id: can_edit_project_document_file(current_user, item) for item in files if item.is_active},
+        can_delete_file_by_id={item.id: can_delete_project_document_file(current_user, item) for item in files if item.is_active},
+        can_restore_file_by_id={item.id: can_restore_project_document_file(current_user, item) for item in files if not item.is_active or item.deleted_at},
+        can_download_file_by_id={item.id: can_download_project_document_file(current_user, item) for item in files if item.is_active},
+        can_bulk_archive=any(can_delete_project_document_file(current_user, item) for item in files if item.is_active),
+        can_bulk_restore=any(can_restore_project_document_file(current_user, item) for item in files if not item.is_active or item.deleted_at),
+        can_bulk_download=any(can_download_project_document_file(current_user, item) for item in files if item.is_active),
+        can_any_edit_file=any(can_edit_project_document_file(current_user, item) for item in files if item.is_active))
+
+
+def _document_file_or_404(file_id):
+    from app.models import ProjectDocumentFile
+    return ProjectDocumentFile.query.get_or_404(file_id)
+
+
+@bp.post("/folders/<int:folder_id>/files/presign-batch")
+def presign_batch(folder_id):
+    folder = _folder_or_404(folder_id)
+    if not can_upload_project_document_folder(current_user, folder): abort(403)
+    payload = request.get_json(silent=True) or {}
+    try: result = presign_folder_upload_batch(current_user, folder, payload.get("files", []))
+    except (DocumentValidationError, StorageValidationError) as exc: return jsonify(error=str(exc)), 400
+    return jsonify(result)
+
+
+@bp.post("/folders/<int:folder_id>/files/complete-upload")
+def complete_upload(folder_id):
+    folder = _folder_or_404(folder_id)
+    if not can_upload_project_document_folder(current_user, folder): abort(403)
+    payload = request.get_json(silent=True) or request.form
+    try: upload_batch_item_id = int(payload.get("upload_batch_item_id"))
+    except (TypeError, ValueError): return jsonify(error="upload_batch_item_id không hợp lệ."), 400
+    try: result = complete_folder_upload_item(current_user, folder, upload_batch_item_id, payload)
+    except (DocumentValidationError, StorageValidationError, StorageNotFoundError) as exc: return jsonify(error=str(exc)), 400
+    return jsonify(result)
+
+
+@bp.post("/files/<int:file_id>/signed-download")
+def signed_download(file_id):
+    document_file = _document_file_or_404(file_id)
+    if not can_download_project_document_file(current_user, document_file): abort(403)
+    try: return jsonify(create_file_download_url(current_user, document_file))
+    except DocumentValidationError as exc: return jsonify(error=str(exc)), 400
+
+
+@bp.post("/files/<int:file_id>/signed-preview")
+def signed_preview(file_id):
+    document_file = _document_file_or_404(file_id)
+    if not can_view_project_document_file(current_user, document_file): abort(403)
+    payload = request.get_json(silent=True) or {}
+    try: return jsonify(create_file_preview_url(current_user, document_file, variant=payload.get("variant")))
+    except DocumentValidationError as exc: return jsonify(error=str(exc)), 400
+
+
+@bp.post("/files/<int:file_id>/rename")
+def file_rename(file_id):
+    document_file = _document_file_or_404(file_id)
+    if not can_edit_project_document_file(current_user, document_file): abort(403)
+    try: rename_file(current_user, document_file, request.form.get("display_name"))
+    except DocumentValidationError as exc: return _fail(exc, _folder_url(document_file.folder_id, source=request.form))
+    flash("Đã đổi tên tệp.", "success"); return redirect(_folder_url(document_file.folder_id, source=request.form))
+
+
+@bp.post("/files/<int:file_id>/archive")
+def file_archive(file_id):
+    document_file = _document_file_or_404(file_id)
+    if not can_delete_project_document_file(current_user, document_file): abort(403)
+    archive_file(current_user, document_file); flash("Đã lưu trữ tệp.", "success")
+    return redirect(_folder_url(document_file.folder_id, source=request.form))
+
+
+@bp.post("/files/<int:file_id>/restore")
+def file_restore(file_id):
+    document_file = _document_file_or_404(file_id)
+    if not can_restore_project_document_file(current_user, document_file): abort(403)
+    try: restore_file(current_user, document_file)
+    except DocumentValidationError as exc: return _fail(exc, _folder_url(document_file.folder_id, source=request.form))
+    flash("Đã khôi phục tệp.", "success"); return redirect(_folder_url(document_file.folder_id, source=request.form))
+
+
+def _bulk_payload_file_ids():
+    payload = request.get_json(silent=True) or {}
+    return payload.get("file_ids", []) if isinstance(payload, dict) else []
+
+
+def _bulk_folder_or_403(folder_id):
+    folder = _folder_or_404(folder_id)
+    if not can_view_project_document_folder(current_user, folder):
+        abort(403)
+    return folder
+
+
+def _bulk_response(summary, action):
+    changed = summary.get(action, 0)
+    if not changed and summary.get("forbidden", 0):
+        abort(403)
+    return jsonify({"ok": True, **summary})
+
+
+@bp.post("/folders/<int:folder_id>/files/bulk-archive")
+def bulk_archive(folder_id):
+    folder = _bulk_folder_or_403(folder_id)
+    try:
+        return _bulk_response(bulk_archive_files(current_user, folder, _bulk_payload_file_ids()), "archived")
+    except DocumentValidationError as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@bp.post("/folders/<int:folder_id>/files/bulk-restore")
+def bulk_restore(folder_id):
+    folder = _bulk_folder_or_403(folder_id)
+    try:
+        return _bulk_response(bulk_restore_files(current_user, folder, _bulk_payload_file_ids()), "restored")
+    except DocumentValidationError as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@bp.post("/folders/<int:folder_id>/files/bulk-signed-download")
+def bulk_signed_download(folder_id):
+    folder = _bulk_folder_or_403(folder_id)
+    try:
+        return _bulk_response(bulk_file_download_urls(current_user, folder, _bulk_payload_file_ids()), "downloads")
+    except DocumentValidationError as exc:
+        return jsonify(error=str(exc)), 400
 
 
 def _folder_or_404(folder_id): return ProjectDocumentFolder.query.get_or_404(folder_id)
@@ -59,8 +216,8 @@ def new_folder():
     parent = _folder_or_404(request.form.get("parent_id", type=int))
     if not can_create_project_document_folder(current_user, parent): abort(403)
     try: create_folder(current_user, parent, request.form.get("name"), request.form.get("description"), request.form.get("is_restricted") == "1")
-    except DocumentValidationError as exc: return _fail(exc, url_for("project_documents.folder", folder_id=parent.id))
-    flash("Đã tạo thư mục.", "success"); return redirect(url_for("project_documents.folder", folder_id=parent.id))
+    except DocumentValidationError as exc: return _fail(exc, _folder_url(parent.id, source=request.form))
+    flash("Đã tạo thư mục.", "success"); return redirect(_folder_url(parent.id, source=request.form))
 
 
 @bp.post("/folders/<int:folder_id>/rename")
@@ -68,8 +225,8 @@ def rename(folder_id):
     target = _folder_or_404(folder_id)
     if not can_edit_project_document_folder(current_user, target): abort(403)
     try: rename_folder(current_user, target, request.form.get("name"))
-    except DocumentValidationError as exc: return _fail(exc, url_for("project_documents.folder", folder_id=target.parent_id or target.id))
-    flash("Đã đổi tên thư mục.", "success"); return redirect(url_for("project_documents.folder", folder_id=target.parent_id or target.id))
+    except DocumentValidationError as exc: return _fail(exc, _folder_url(target.parent_id or target.id, source=request.form))
+    flash("Đã đổi tên thư mục.", "success"); return redirect(_folder_url(target.parent_id or target.id, source=request.form))
 
 
 @bp.post("/folders/<int:folder_id>/move")
@@ -77,8 +234,8 @@ def move(folder_id):
     target = _folder_or_404(folder_id); destination = _folder_or_404(request.form.get("parent_id", type=int))
     if not can_edit_project_document_folder(current_user, target) or not can_create_project_document_folder(current_user, destination): abort(403)
     try: move_folder(current_user, target, destination)
-    except DocumentValidationError as exc: return _fail(exc, url_for("project_documents.folder", folder_id=target.parent_id or target.id))
-    flash("Đã di chuyển thư mục.", "success"); return redirect(url_for("project_documents.folder", folder_id=destination.id))
+    except DocumentValidationError as exc: return _fail(exc, _folder_url(target.parent_id or target.id, source=request.form))
+    flash("Đã di chuyển thư mục.", "success"); return redirect(_folder_url(destination.id, source=request.form))
 
 
 @bp.post("/folders/<int:folder_id>/archive")
@@ -87,8 +244,10 @@ def archive(folder_id):
     if not can_delete_project_document_folder(current_user, target): abort(403)
     parent_id = target.parent_id
     try: archive_folder(current_user, target)
-    except DocumentValidationError as exc: return _fail(exc, url_for("project_documents.folder", folder_id=target.id))
-    flash("Đã lưu trữ thư mục.", "success"); return redirect(url_for("project_documents.folder", folder_id=parent_id))
+    except DocumentValidationError as exc: return _fail(exc, _folder_url(target.id, source=request.form))
+    archived_url = _folder_url(parent_id, folder_status="archived", source=request.form)
+    flash(Markup(f'Đã lưu trữ thư mục. <a class="alert-link" href="{archived_url}">Xem thư mục đã lưu trữ</a>.'), "success")
+    return redirect(_folder_url(parent_id, folder_status="active", source=request.form))
 
 
 @bp.post("/folders/<int:folder_id>/restore")
@@ -96,14 +255,14 @@ def restore(folder_id):
     target = _folder_or_404(folder_id)
     if not can_restore_project_document_folder(current_user, target): abort(403)
     try: restore_folder(current_user, target)
-    except DocumentValidationError as exc: return _fail(exc, url_for("project_documents.folder", folder_id=target.parent_id or target.id))
-    flash("Đã khôi phục thư mục.", "success"); return redirect(url_for("project_documents.folder", folder_id=target.parent_id, status="active"))
+    except DocumentValidationError as exc: return _fail(exc, _folder_url(target.parent_id or target.id, source=request.form))
+    flash("Đã khôi phục thư mục.", "success"); return redirect(_folder_url(target.parent_id, folder_status="active", source=request.form))
 
 
 @bp.route("/folders/<int:folder_id>/permissions", methods=["GET", "POST"])
 def permissions(folder_id):
     target = _folder_or_404(folder_id)
-    if not can_share_project_document_folder(current_user, target): abort(403)
+    if not can_share_project_document_folder(current_user, target, include_archived=not (target.is_active and target.deleted_at is None)): abort(403)
     if request.method == "POST":
         try:
             if request.form.get("remove_id"): remove_folder_permission(current_user, target, request.form.get("remove_id", type=int))
@@ -111,5 +270,18 @@ def permissions(folder_id):
         except DocumentValidationError as exc: flash(str(exc), "danger")
         else: flash("Đã cập nhật quyền chia sẻ.", "success")
         return redirect(url_for("project_documents.permissions", folder_id=target.id))
-    return render_template("project_documents/permissions.html", folder=target,
-        entries=ProjectDocumentFolderPermission.query.filter_by(folder_id=target.id).all(), users=User.query.filter_by(is_active=True).order_by(User.full_name).all(), roles=Role.query.order_by(Role.name).all())
+    users = User.query.filter_by(is_active=True).order_by(User.full_name, User.username).all()
+    roles = Role.query.order_by(Role.name).all()
+    principal_options = [
+        {"type": "user", "id": item.id, "name": item.full_name, "username": item.username,
+         "email": item.email, "role": item.role.name if item.role else item.role_code}
+        for item in users
+    ] + [
+        {"type": "role", "id": item.id, "name": item.name, "code": item.code,
+         "description": item.description or ""}
+        for item in roles
+    ]
+    entries = ProjectDocumentFolderPermission.query.filter_by(folder_id=target.id).order_by(
+        ProjectDocumentFolderPermission.principal_type, ProjectDocumentFolderPermission.id).all()
+    return render_template("project_documents/permissions.html", folder=target, entries=entries,
+        principal_options=principal_options)

@@ -21,6 +21,20 @@ def test_response_security_headers_are_present(client):
     assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
 
 
+def test_csp_allows_only_valid_configured_s3_endpoint_origin(client, app):
+    app.config.update(STORAGE_PROVIDER="s3", STORAGE_ENDPOINT_URL="http://127.0.0.1:9000/starx-local")
+    csp = client.get("/health").headers["Content-Security-Policy"]
+    assert "connect-src 'self' http://127.0.0.1:9000;" in csp
+    assert "img-src 'self' data: http://127.0.0.1:9000;" in csp
+    assert "media-src 'self' http://127.0.0.1:9000;" in csp
+    assert "frame-src 'self' http://127.0.0.1:9000;" in csp
+    assert "starx-local" not in csp
+    app.config.update(STORAGE_PROVIDER="fake", STORAGE_ENDPOINT_URL="https://fake-storage.invalid")
+    csp = client.get("/health").headers["Content-Security-Policy"]
+    assert "connect-src 'self';" in csp and "img-src 'self' data:;" in csp and "media-src 'self';" in csp and "frame-src 'self';" in csp
+    assert "fake-storage.invalid" not in csp
+
+
 def test_attachment_path_must_stay_inside_upload_root(app, tmp_path):
     app.config["UPLOAD_ROOT"] = str(tmp_path / "uploads")
     with app.app_context():

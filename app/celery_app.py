@@ -7,6 +7,13 @@ def create_celery_app(flask_app):
     class ContextTask(celery_app.Task):
         abstract = True
         def __call__(self, *args, **kwargs):
-            with flask_app.app_context(): return self.run(*args, **kwargs)
+            with flask_app.app_context():
+                try:
+                    return self.run(*args, **kwargs)
+                finally:
+                    # Worker processes are long-lived; never retain a scoped
+                    # SQLAlchemy session after a task finishes or fails.
+                    from app.extensions import db
+                    db.session.remove()
     celery_app.Task = ContextTask
     return celery_app

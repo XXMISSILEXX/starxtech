@@ -98,6 +98,43 @@ def register_cli(app):
         click.echo(f"- Dữ liệu mở rộng: {summary['field_values_created']} tạo mới, {summary['field_values_skipped']} bỏ qua")
         click.echo(f"- Quan hệ: {summary['relationships_created']} tạo mới, {summary['relationships_skipped']} bỏ qua")
 
+    @app.cli.group("media-jobs")
+    def media_jobs():
+        """Inspect and safely retry image/video derivative jobs."""
+
+    @media_jobs.command("status")
+    def media_jobs_status_command():
+        from app.media_processing.services import media_jobs_status
+
+        summary = media_jobs_status()
+        click.echo("Media processing jobs:")
+        for status, count in summary["jobs"].items():
+            click.echo(f"- {status}: {count}")
+        click.echo(f"- ready_storage_objects: {summary['ready_storage_objects']}")
+
+    def _retry_media_jobs(status, dry_run):
+        from app.media_processing.services import retry_media_jobs
+
+        summary = retry_media_jobs(status, dry_run=dry_run)
+        mode = "dry-run" if dry_run else "apply"
+        click.echo(
+            "status={status} mode={mode} matched={matched} re_enqueued={re_enqueued} "
+            "skipped={skipped} failed_to_enqueue={failed_to_enqueue}".format(
+                mode=mode,
+                **summary,
+            )
+        )
+
+    @media_jobs.command("retry-pending")
+    @click.option("--dry-run/--apply", default=True, help="Preview changes or enqueue eligible pending jobs.")
+    def retry_pending_media_jobs(dry_run):
+        _retry_media_jobs("pending", dry_run)
+
+    @media_jobs.command("retry-failed")
+    @click.option("--dry-run/--apply", default=True, help="Preview changes or enqueue eligible failed jobs.")
+    def retry_failed_media_jobs(dry_run):
+        _retry_media_jobs("failed", dry_run)
+
 
 def _require_reset_confirmation(confirm, allow_production):
     if confirm != "RESET DATABASE":

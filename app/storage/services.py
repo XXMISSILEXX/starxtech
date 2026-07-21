@@ -44,6 +44,9 @@ def create_upload_batch_presign(*, user, module_type, target_type, target_id, fi
             db.session.flush()
             batch_item = UploadBatchItem(upload_batch_id=batch.id, storage_object_id=storage_object.id, client_file_id=client_file_id, original_filename=meta["filename"], mime_type=meta["mime_type"], file_size=meta["file_size"], status="accepted")
             _add(batch_item)
+            # SQLite/SQLAlchemy can defer INSERT until commit; response contract
+            # requires this id before the browser starts direct upload.
+            db.session.flush()
             upload = provider.create_presigned_upload(storage_object.bucket, storage_object.object_key, storage_object.mime_type, storage_object.file_size, _config("STORAGE_UPLOAD_URL_TTL_SECONDS"), metadata={"sha256": storage_object.checksum_sha256} if storage_object.checksum_sha256 else None)
             batch.accepted_files += 1
             response_items.append({"client_file_id": client_file_id, "accepted": True, "upload_batch_item_id": batch_item.id, "storage_object_id": storage_object.id, **upload})

@@ -23,6 +23,8 @@ def test_batch_presign_partial_success_generates_private_keys(app):
         result = create_upload_batch_presign(user=db.session.get(User, 3), module_type="project_documents", target_type="folder", target_id=9, files=_files(), provider=FakeStorageProvider())
         assert result["status"] == "uploading"
         assert [item["accepted"] for item in result["items"]] == [True, True, False]
+        assert all(isinstance(item["upload_batch_item_id"], int) and isinstance(item["storage_object_id"], int) for item in result["items"] if item["accepted"])
+        assert "upload_batch_item_id" not in result["items"][2]
         objects = StorageObject.query.all()
         assert len(objects) == 2 and len({item.object_key for item in objects}) == 2
         assert all("summer" not in item.object_key and item.object_key.startswith("originals/") for item in objects)
