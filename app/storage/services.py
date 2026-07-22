@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy import func
 
 from app.extensions import db
-from app.models import StorageObject, UploadBatch, UploadBatchItem, UserRole
+from app.models import StorageObject, UploadBatch, UploadBatchItem, UploadSelectionSession, UserRole
 from app.storage.exceptions import StorageAuthorizationError, StorageNotFoundError, StorageValidationError
 from app.storage.keys import build_original_key, normalize_storage_module
 from app.storage.providers import get_storage_provider
@@ -14,7 +14,22 @@ from app.storage.validation import validate_file_metadata
 VALID_SCOPES = {("project_documents", "folder"), ("company_media", "album")}
 
 
-def create_upload_batch_presign(*, user, module_type, target_type, target_id, files, provider=None):
+def create_upload_selection_session(*, user, module_type, target_type, target_id, declared_files, declared_size_bytes):
+    _require_active_user(user)
+    if (module_type, target_type) not in VALID_SCOPES: raise StorageValidationError("Scope upload không hợp lệ.")
+    try: declared_files, declared_size_bytes = int(declared_files), int(declared_size_bytes)
+    except (TypeError, ValueError): raise StorageValidationError("Thông tin lựa chọn không hợp lệ.")
+    if declared_files < 1 or declared_files > int(_config("UPLOAD_SELECTION_MAX_FILES")) or declared_size_bytes < 1 or declared_size_bytes > int(_config("UPLOAD_SELECTION_MAX_BYTES")):
+        raise StorageValidationError("Lựa chọn vượt quá giới hạn 500 tệp hoặc 2 GB.")
+    session = UploadSelectionSession(module_type=module_type, target_type=target_type, target_id=int(target_id), created_by_id=user.id, declared_files=declared_files, declared_size_bytes=declared_size_bytes, expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=int(_config("UPLOAD_SELECTION_TTL_SECONDS"))))
+    _add(session); db.session.commit(); return {"selection_session_id": session.id, "expires_at": session.expires_at.isoformat()}
+
+def finalize_upload_selection_session(*, user, selection_session_id, module_type, target_type, target_id):
+    session = _selection_session(user, selection_session_id, module_type, target_type, target_id)
+    session.status = "completed"; session.completed_at = datetime.now(timezone.utc).replace(tzinfo=None); db.session.commit()
+    return {"selection_session_id": session.id, "status": session.status}
+
+def create_upload_batch_presign(*, user, module_type, target_type, target_id, files, selection_session_id=None, provider=None):
     _require_active_user(user)
     if (module_type, target_type) not in VALID_SCOPES:
         raise StorageValidationError("Scope upload không hợp lệ.")
@@ -26,20 +41,28 @@ def create_upload_batch_presign(*, user, module_type, target_type, target_id, fi
     declared_total = sum(_safe_size(item.get("size")) for item in files if isinstance(item, dict))
     if declared_total > int(_config("STORAGE_MAX_BATCH_SIZE_MB")) * 1024 * 1024:
         raise StorageValidationError("Tổng dung lượng batch vượt quá giới hạn.")
+    if any(_safe_size(item.get("size")) > int(_config("UPLOAD_SINGLE_FILE_MAX_BYTES")) for item in files if isinstance(item, dict)):
+        raise StorageValidationError("Một tệp vượt quá giới hạn 300 MB.")
+    selection = _selection_session(user, selection_session_id, module_type, target_type, target_id) if selection_session_id else None
+    if selection and (selection.presigned_files + len(files) > selection.declared_files or selection.presigned_size_bytes + declared_total > selection.declared_size_bytes):
+        raise StorageValidationError("Batch vượt số lượng hoặc dung lượng đã khai báo.")
+    from app.storage.quota import ensure_storage_capacity
+    try: ensure_storage_capacity(declared_total)
+    except ValueError as exc: raise StorageValidationError(str(exc))
     client_ids = [str(item.get("client_file_id", "")) for item in files if isinstance(item, dict)]
     if len(set(client_ids)) != len(client_ids) or any(not value for value in client_ids):
         raise StorageValidationError("client_file_id phải duy nhất và không được để trống.")
 
     provider = provider or get_storage_provider()
     storage_module = normalize_storage_module(module_type)
-    batch = UploadBatch(module_type=module_type, target_type=target_type, target_id=int(target_id), created_by_id=user.id, total_files=len(files))
+    batch = UploadBatch(module_type=module_type, target_type=target_type, target_id=int(target_id), created_by_id=user.id, selection_session_id=selection.id if selection else None, total_files=len(files))
     _add(batch)
     db.session.flush()
     response_items = []
     for item in files:
         client_file_id = str(item["client_file_id"])
         try:
-            meta = validate_file_metadata(item.get("filename"), item.get("mime_type"), item.get("size"), item.get("checksum_sha256"))
+            meta = validate_file_metadata(item.get("filename"), item.get("mime_type"), item.get("size"), item.get("checksum_sha256"), module_type=module_type)
             object_key = build_original_key(storage_module, uuid4().hex, meta["filename"], _config("STORAGE_PREFIX"))
             storage_object = StorageObject(bucket=_config("STORAGE_BUCKET"), object_key=object_key, storage_module=storage_module, original_filename=meta["filename"], mime_type=meta["mime_type"], file_ext=meta["file_ext"], file_size=meta["file_size"], checksum_sha256=meta["checksum_sha256"], uploaded_by_id=user.id)
             _add(storage_object)
@@ -58,8 +81,20 @@ def create_upload_batch_presign(*, user, module_type, target_type, target_id, fi
             batch.failed_files += 1
             response_items.append({"client_file_id": client_file_id, "accepted": False, "error": str(exc)})
     batch.status = "uploading" if batch.accepted_files else "failed"
+    if selection:
+        selection.presigned_files += batch.accepted_files; selection.presigned_size_bytes += sum(item.storage_object.file_size for item in batch.items if item.storage_object_id)
     db.session.commit()
     return {"upload_batch_id": batch.id, "status": batch.status, "items": response_items}
+
+def _selection_session(user, selection_session_id, module_type, target_type, target_id):
+    if not selection_session_id: raise StorageValidationError("selection_session_id là bắt buộc.")
+    session = db.session.get(UploadSelectionSession, selection_session_id)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if not session or session.created_by_id != user.id or session.module_type != module_type or session.target_type != target_type or session.target_id != int(target_id): raise StorageAuthorizationError("Upload selection không hợp lệ.")
+    if session.status != "pending" or session.expires_at <= now:
+        if session.status == "pending": session.status = "expired"; db.session.commit()
+        raise StorageValidationError("Upload selection đã hết hạn hoặc hoàn tất.")
+    return session
 
 
 def complete_upload_item(*, user, upload_batch_item_id, reported_etag=None, checksum_sha256=None, provider=None):

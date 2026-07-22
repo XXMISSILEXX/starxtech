@@ -22,7 +22,7 @@ from app.models.partner import (
 from app.models.project import Project, ProjectUser, ReportCategory
 from app.models.rbac import Permission, Role, RolePermission
 from app.models.user import User
-from app.models.storage import StorageObject, UploadBatch, UploadBatchItem
+from app.models.storage import StorageObject, UploadBatch, UploadBatchItem, UploadSelectionSession, DownloadEvent
 from app.models.media_processing import StorageDerivative, MediaProcessingJob
 from app.models.project_document import ProjectDocumentFile, ProjectDocumentFolder, ProjectDocumentFolderPermission
 from app.models.company_media import CompanyMediaAlbum, CompanyMediaFile, CompanyMediaAlbumPermission
@@ -58,6 +58,7 @@ __all__ = [
     "StorageObject",
     "UploadBatch",
     "UploadBatchItem",
+    "UploadSelectionSession", "DownloadEvent",
     "StorageDerivative", "MediaProcessingJob",
     "ProjectDocumentFolder", "ProjectDocumentFile", "ProjectDocumentFolderPermission",
     "CompanyMediaAlbum", "CompanyMediaFile", "CompanyMediaAlbumPermission",

@@ -73,11 +73,11 @@ def list_folder_files(user, folder, status="active", search=""):
     return [item for item in query.order_by(func.lower(ProjectDocumentFile.display_name)).all() if can_view_project_document_file(user, item, include_archived=status != "active")]
 
 
-def presign_folder_upload_batch(user, folder, files, provider=None):
+def presign_folder_upload_batch(user, folder, files, selection_session_id=None, provider=None):
     from app.project_documents.permissions import can_upload_project_document_folder
     if not can_upload_project_document_folder(user, folder):
         raise DocumentValidationError("Bạn không có quyền tải tệp vào thư mục này.")
-    return create_upload_batch_presign(user=user, module_type="project_documents", target_type="folder", target_id=folder.id, files=files, provider=provider)
+    return create_upload_batch_presign(user=user, module_type="project_documents", target_type="folder", target_id=folder.id, files=files, selection_session_id=selection_session_id, provider=provider)
 
 
 def _display_name(value):
@@ -160,10 +160,17 @@ def create_file_download_url(user, document_file, provider=None):
     storage_object = document_file.storage_object
     if storage_object.upload_status != "active" or storage_object.deleted_at is not None:
         raise DocumentValidationError("Tệp chưa sẵn sàng.")
+    from flask import current_app
+    if storage_object.file_size > int(current_app.config["DOWNLOAD_SINGLE_FILE_MAX_BYTES"]):
+        raise DocumentValidationError("Dung lượng tải xuống tối đa là 300 MB mỗi lần.")
+    from app.storage.quota import ensure_bandwidth, record_download
+    try: ensure_bandwidth(user, storage_object.file_size)
+    except ValueError as exc: raise DocumentValidationError(str(exc))
     from app.storage.providers import get_storage_provider
     provider = provider or get_storage_provider()
     result = provider.create_presigned_download(storage_object.bucket, storage_object.object_key, 300, "attachment", document_file.display_name)
     audit("document.file.download", "ProjectDocumentFile", document_file.id)
+    record_download(user, kind="original", estimated_bytes=storage_object.file_size, storage_object_id=storage_object.id)
     db.session.commit()
     return result
 
@@ -187,6 +194,8 @@ def create_file_preview_url(user, document_file, variant=None, provider=None):
         from app.storage.providers import get_storage_provider
         provider = provider or get_storage_provider()
         result = provider.create_presigned_download(storage_object.bucket, storage_object.object_key, 300, "inline", document_file.display_name)
+        from app.storage.quota import ensure_bandwidth, record_download
+        ensure_bandwidth(user, storage_object.file_size, preview=True); record_download(user, kind="preview", estimated_bytes=storage_object.file_size, storage_object_id=storage_object.id); db.session.commit()
         return {"ok": True, "status": "ready", "kind": "video", "mime_type": storage_object.mime_type, **result}
     elif mime_type.startswith("video/"):
         derivative_types = {"poster": ("poster",), None: ("poster",)}.get(variant)
@@ -197,6 +206,8 @@ def create_file_preview_url(user, document_file, variant=None, provider=None):
         from app.storage.providers import get_storage_provider
         provider = provider or get_storage_provider()
         result = provider.create_presigned_download(storage_object.bucket, storage_object.object_key, 300, "inline", document_file.display_name)
+        from app.storage.quota import ensure_bandwidth, record_download
+        ensure_bandwidth(user, storage_object.file_size, preview=True); record_download(user, kind="preview", estimated_bytes=storage_object.file_size, storage_object_id=storage_object.id); db.session.commit()
         return {"ok": True, "status": "ready", "kind": "pdf", "mime_type": storage_object.mime_type, **result}
     else:
         derivative_types = None
@@ -218,10 +229,14 @@ def create_file_preview_url(user, document_file, variant=None, provider=None):
     if not derivative:
         if document_file.storage_object.processing_status in {"queued", "processing"}:
             return {"ok": False, "status": "processing", "message": "Đang xử lý preview."}
+        if document_file.storage_object.processing_status == "failed" and mime_type.startswith("image/"):
+            return {"ok": False, "status": "unavailable", "message": "Không tạo được ảnh xem trước cho tệp này."}
         return {"ok": False, "status": "unavailable", "message": "Chưa có preview."}
     from app.storage.providers import get_storage_provider
     provider = provider or get_storage_provider()
     result = provider.create_presigned_download(derivative.bucket, derivative.object_key, 300, "inline", document_file.display_name)
+    from app.storage.quota import ensure_bandwidth, record_download
+    ensure_bandwidth(user, derivative.file_size, preview=True); record_download(user, kind="preview", estimated_bytes=derivative.file_size, derivative_id=derivative.id); db.session.commit()
     return {"ok": True, "status": "ready", "kind": "image", "mime_type": derivative.mime_type, **result}
 
 

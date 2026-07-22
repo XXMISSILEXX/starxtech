@@ -2,6 +2,11 @@ import json, shutil, subprocess, tempfile
 from datetime import datetime
 from pathlib import Path
 from PIL import Image, UnidentifiedImageError
+try:
+ import pillow_heif
+ pillow_heif.register_heif_opener()
+except ImportError:  # deployment may still serve originals if optional decoder is absent
+ pass
 from app.extensions import db
 from app.models import CompanyMediaFile, MediaProcessingJob, ProjectDocumentFile, StorageDerivative
 from app.storage.keys import build_derivative_key

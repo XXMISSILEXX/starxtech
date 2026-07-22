@@ -25,3 +25,6 @@ dùng RBAC/album ACL `can_download`. Restricted folder/album luôn được gi�
 Không chuyển `ReportAttachment` sang S3, không file-level ACL, không di
 chuyển object legacy, không ZIP permanent archive, và không thay đổi Partner
 hay Daily Reports.
+# Phase 7 namespace and bulk ZIP compatibility
+
+Original and derivative object namespaces remain unchanged. The `document-library/bulk-downloads` and `company-media/bulk-downloads` prefixes are legacy-only: Phase 7.1.1 streams new ZIPs from the web server and does not write ZIP objects to object storage. Existing legacy ZIP jobs can still be read and cleaned up.

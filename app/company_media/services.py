@@ -32,7 +32,7 @@ def create_album(user,name,description="",restricted=False):
 def rename_album(user,a,name): a.name=_name(name);a.updated_by_id=user.id;audit("company_media.album.rename","CompanyMediaAlbum",a.id);db.session.commit()
 def archive_album(user,a): a.is_active=False;a.deleted_at=datetime.utcnow();a.updated_by_id=user.id;audit("company_media.album.archive","CompanyMediaAlbum",a.id);db.session.commit()
 def restore_album(user,a): a.is_active=True;a.deleted_at=None;a.updated_by_id=user.id;audit("company_media.album.restore","CompanyMediaAlbum",a.id);db.session.commit()
-def presign(user,a,items): return create_upload_batch_presign(user=user,module_type="company_media",target_type="album",target_id=a.id,files=items)
+def presign(user,a,items,selection_session_id=None): return create_upload_batch_presign(user=user,module_type="company_media",target_type="album",target_id=a.id,files=items,selection_session_id=selection_session_id)
 def complete(user,a,item_id,payload):
     item=db.session.get(UploadBatchItem,item_id)
     if not item or item.upload_batch.module_type!="company_media" or item.upload_batch.target_id!=a.id: raise CompanyMediaError("Upload item không thuộc album.")
@@ -42,19 +42,34 @@ def complete(user,a,item_id,payload):
     db.session.add(media);db.session.flush();audit("company_media.file.create","CompanyMediaFile",media.id);db.session.commit()
     from app.media_processing.services import enqueue_media_processing_for_storage_object
     enqueue_media_processing_for_storage_object(obj.id);return {**result,"file":{"id":media.id,"display_name":media.display_name}}
-def signed_preview(f,variant=None):
+def signed_preview(f,variant=None,user=None):
     obj=f.storage_object; types=("thumbnail","preview") if obj.mime_type.startswith("image/") else ("poster",)
     if obj.mime_type in {"video/mp4", "video/webm"} and variant in {"preview", "stream"}:
         from app.storage.providers import get_storage_provider
+        from app.storage.quota import ensure_bandwidth, record_download
+        user=user or db.session.get(User, f.created_by_id)
+        ensure_bandwidth(user,obj.file_size,preview=True);record_download(user,kind="preview",estimated_bytes=obj.file_size,storage_object_id=obj.id);db.session.commit()
         return {"ok":True,"status":"ready","kind":"video","mime_type":obj.mime_type,"url":get_storage_provider().create_presigned_download(obj.bucket,obj.object_key,300,"inline",f.display_name)["url"]}
     for typ in types:
         d=StorageDerivative.query.filter_by(storage_object_id=obj.id,derivative_type=typ).filter(StorageDerivative.deleted_at.is_(None)).first()
         if d:
             from app.storage.providers import get_storage_provider
+            from app.storage.quota import ensure_bandwidth, record_download
+            user=user or db.session.get(User, f.created_by_id)
+            ensure_bandwidth(user, d.file_size, preview=True); record_download(user,kind="preview",estimated_bytes=d.file_size,derivative_id=d.id);db.session.commit()
             return {"ok":True,"kind":"image" if obj.mime_type.startswith("image/") else "video","url":get_storage_provider().create_presigned_download(d.bucket,d.object_key,300,"inline",f.display_name)["url"]}
+    if obj.processing_status == "failed" and obj.mime_type.startswith("image/"):
+        return {"ok":False,"status":"unavailable","message":"Không tạo được ảnh xem trước cho tệp này."}
     return {"ok":False,"status":"processing" if obj.processing_status in {"queued","processing"} else "unavailable","message":"Đang xử lý preview."}
-def signed_download(f):
+def signed_download(f, user=None):
     from app.storage.providers import get_storage_provider
+    from flask import current_app
+    user=user or db.session.get(User, f.created_by_id)
+    if f.storage_object.file_size > int(current_app.config["DOWNLOAD_SINGLE_FILE_MAX_BYTES"]): raise CompanyMediaError("Dung lượng tải xuống tối đa là 300 MB mỗi lần.")
+    from app.storage.quota import ensure_bandwidth, record_download
+    try: ensure_bandwidth(user,f.storage_object.file_size)
+    except ValueError as exc: raise CompanyMediaError(str(exc))
+    record_download(user,kind="original",estimated_bytes=f.storage_object.file_size,storage_object_id=f.storage_object_id);db.session.commit()
     return get_storage_provider().create_presigned_download(f.storage_object.bucket,f.storage_object.object_key,300,"attachment",f.display_name)
 def set_cover(user,a,media_id):
     f=db.session.get(CompanyMediaFile,media_id)

@@ -16,13 +16,38 @@ def test_image_pipeline_creates_derivatives(app, tmp_path):
  with app.app_context():
   provider=FakeStorageProvider();app.extensions["storage_provider"]=provider;app.config["MEDIA_TEMP_ROOT"]=str(tmp_path)
   buf=BytesIO();Image.new("RGB",(1000,600),"red").save(buf,"JPEG")
-  obj=StorageObject(bucket="b",object_key="originals/a.jpg",original_filename="a.jpg",mime_type="image/jpeg",file_ext="jpg",file_size=len(buf.getvalue()),uploaded_by_id=3,upload_status="active")
+  obj=StorageObject(bucket="b",object_key="originals/a.jpg",storage_module="company-media",original_filename="a.jpg",mime_type="image/jpeg",file_ext="jpg",file_size=len(buf.getvalue()),uploaded_by_id=3,upload_status="active")
   db.session.add(obj);db.session.commit();provider.put_bytes("b",obj.object_key,buf.getvalue(),"image/jpeg")
   # Unit tests execute the pipeline explicitly below; do not require Redis.
   with patch("app.media_processing.tasks.process_image_derivatives.delay", return_value=SimpleNamespace(id="test-image-task")):
    job=enqueue_media_processing_for_storage_object(obj.id)
   process_job(job.id)
   assert job.status=="succeeded" and obj.processing_status=="completed" and StorageDerivative.query.count()==2 and obj.width==1000
+  assert all("company-media/derivatives/" in item.object_key for item in StorageDerivative.query.all())
+
+def test_heic_decode_failure_keeps_original_and_marks_job_failed(app, tmp_path):
+ with app.app_context():
+  provider=FakeStorageProvider();app.extensions["storage_provider"]=provider;app.config["MEDIA_TEMP_ROOT"]=str(tmp_path)
+  obj=StorageObject(bucket="b",object_key="company-media/originals/a.heic",storage_module="company-media",original_filename="a.heic",mime_type="image/heic",file_ext="heic",file_size=3,uploaded_by_id=3,upload_status="active")
+  db.session.add(obj);db.session.commit();provider.put_bytes("b",obj.object_key,b"bad","image/heic")
+  with patch("app.media_processing.tasks.process_image_derivatives.delay", return_value=SimpleNamespace(id="test-heic-task")):
+   job=enqueue_media_processing_for_storage_object(obj.id)
+  process_job(job.id)
+  assert job.status=="failed" and obj.processing_status=="failed" and obj.upload_status=="active"
+
+def test_heic_pipeline_writes_document_derivatives_with_registered_decoder(app, tmp_path):
+ with app.app_context():
+  provider=FakeStorageProvider();app.extensions["storage_provider"]=provider;app.config["MEDIA_TEMP_ROOT"]=str(tmp_path)
+  # JPEG bytes stand in for a decoder fixture: the pipeline selection is based
+  # on the normalized HEIC metadata and Image.open is the registered decoder seam.
+  buf=BytesIO();Image.new("RGB",(40,20),"blue").save(buf,"JPEG")
+  obj=StorageObject(bucket="b",object_key="document-library/originals/a.heic",storage_module="document-library",original_filename="a.heic",mime_type="image/heic",file_ext="heic",file_size=len(buf.getvalue()),uploaded_by_id=3,upload_status="active")
+  db.session.add(obj);db.session.commit();provider.put_bytes("b",obj.object_key,buf.getvalue(),"image/heic")
+  with patch("app.media_processing.tasks.process_image_derivatives.delay", return_value=SimpleNamespace(id="test-heic-task")):
+   job=enqueue_media_processing_for_storage_object(obj.id)
+  process_job(job.id)
+  assert job.status=="succeeded"
+  assert all("document-library/derivatives/" in item.object_key for item in StorageDerivative.query.all())
 
 def test_non_media_does_not_enqueue(app):
  with app.app_context():

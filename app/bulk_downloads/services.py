@@ -4,7 +4,7 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from flask import current_app
+from flask import current_app, send_file
 
 from app.extensions import db
 from app.models import BulkDownloadJob, CompanyMediaAlbum, CompanyMediaFile, ProjectDocumentFile, ProjectDocumentFolder, User
@@ -24,7 +24,7 @@ def request_document_download(user, folder, file_ids):
     _validate_selected(files, file_ids, lambda item: can_download_project_document_file(user, item))
     if len(files) == 1:
         return {"kind": "direct", "download": create_file_download_url(user, files[0])}
-    return {"kind": "job", "job": _create_job(user, STORAGE_MODULE_DOCUMENT_LIBRARY, "folder", folder.id, files, "ho-so-tai-lieu")}
+    return {"kind": "zip", "files": files, "filename": f"ho-so-tai-lieu-{_now():%Y%m%d-%H%M}.zip", "module": STORAGE_MODULE_DOCUMENT_LIBRARY}
 
 
 def request_media_download(user, album, file_ids):
@@ -33,8 +33,50 @@ def request_media_download(user, album, file_ids):
     files = _media_files(album, file_ids)
     _validate_selected(files, file_ids, lambda item: download_file(user, item))
     if len(files) == 1:
-        return {"kind": "direct", "download": signed_download(files[0])}
-    return {"kind": "job", "job": _create_job(user, STORAGE_MODULE_COMPANY_MEDIA, "album", album.id, files, f"album-{safe_storage_filename(album.name, 'media')}")}
+        return {"kind": "direct", "download": signed_download(files[0], user)}
+    return {"kind": "zip", "files": files, "filename": f"album-{safe_storage_filename(album.name, 'media')}-{_now():%Y%m%d-%H%M}.zip", "module": STORAGE_MODULE_COMPANY_MEDIA}
+
+
+def stream_zip_download(user, selection):
+    """Create a request-local ZIP; legacy jobs remain the only S3 ZIP producers."""
+    files = selection["files"]
+    provider = get_storage_provider()
+    try:
+        for item in files:
+            storage = item.storage_object
+            provider.head_object(storage.bucket, storage.object_key)
+    except Exception as exc:
+        raise BulkDownloadError("Không tìm thấy một hoặc nhiều tệp trên kho lưu trữ. Vui lòng kiểm tra lại hoặc liên hệ quản trị viên.") from exc
+
+    temp_root = Path(current_app.config["BULK_DOWNLOAD_TEMP_ROOT"])
+    temp_root.mkdir(parents=True, exist_ok=True)
+    temp_dir = Path(tempfile.mkdtemp(prefix="zip-stream-", dir=temp_root))
+    zip_path = temp_dir / "download.zip"
+    total_size = sum(int(item.storage_object.file_size or 0) for item in files)
+    try:
+        names = set()
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
+            for index, item in enumerate(files, start=1):
+                storage = item.storage_object
+                source = temp_dir / f"source-{index}"
+                provider.download_object(storage.bucket, storage.object_key, source)
+                archive.write(source, arcname=_unique_zip_name(item.display_name, names))
+        from app.storage.quota import ensure_bandwidth, record_download
+        try:
+            ensure_bandwidth(user, total_size)
+        except ValueError as exc:
+            raise BulkDownloadError(str(exc))
+        zip_size = zip_path.stat().st_size
+        record_download(user, kind="zip_stream", source_type="zip_stream", module=selection["module"],
+            estimated_bytes=total_size, estimated_storage_egress_bytes=total_size,
+            estimated_client_egress_bytes=zip_size)
+        db.session.commit()
+        response = send_file(zip_path, mimetype="application/zip", as_attachment=True, download_name=selection["filename"])
+        response.call_on_close(lambda: shutil.rmtree(temp_dir, ignore_errors=True))
+        return response
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
 
 
 def serialize_job(user, job):
@@ -122,8 +164,10 @@ def _validate_selected(files, requested_ids, permitted):
     ids = _normal_ids(requested_ids)
     if not ids or len(files) != len(ids):
         raise BulkDownloadError("Tệp đã chọn không thuộc vị trí hiện tại.")
-    if len(files) > int(current_app.config["BULK_DOWNLOAD_MAX_FILES"]) or sum(item.storage_object.file_size for item in files) > int(current_app.config["BULK_DOWNLOAD_MAX_TOTAL_BYTES"]):
-        raise BulkDownloadError("Vượt giới hạn tải xuống hàng loạt. Vui lòng chọn ít tệp hơn.")
+    if len(files) > int(current_app.config["BULK_DOWNLOAD_MAX_FILES"]):
+        raise BulkDownloadError("Bạn chỉ có thể tải xuống tối đa 100 tệp mỗi lần.")
+    if sum(int(item.storage_object.file_size or 0) for item in files) > int(current_app.config["BULK_DOWNLOAD_MAX_TOTAL_BYTES"]):
+        raise BulkDownloadError("Dung lượng tải xuống hàng loạt tối đa là 300 MB mỗi lần.")
     if any(not item.is_active or item.deleted_at or not permitted(item) for item in files):
         raise PermissionError("Không có quyền tải xuống một hoặc nhiều tệp đã chọn")
 

@@ -72,6 +72,23 @@ def test_file_archive_restore_listing_and_preview(app, monkeypatch):
         restore_file(admin, document); assert document in list_folder_files(admin, root, "active")
 
 
+def test_failed_heic_preview_has_safe_message_and_original_remains_downloadable(app):
+    with app.app_context():
+        provider = FakeStorageProvider(); app.extensions["storage_provider"] = provider
+        pm, root = db.session.get(User, 5), _root()
+        storage = StorageObject(bucket="b", object_key="document-library/originals/a.heic", storage_module="document-library",
+            original_filename="a.heic", mime_type="image/heic", file_ext="heic", file_size=2,
+            uploaded_by_id=pm.id, upload_status="active", processing_status="failed")
+        db.session.add(storage); db.session.flush()
+        provider.register_object(storage.bucket, storage.object_key, 2, "image/heic")
+        document = ProjectDocumentFile(project_id=root.project_id, folder_id=root.id, storage_object_id=storage.id,
+            display_name="a.heic", created_by_id=pm.id)
+        db.session.add(document); db.session.commit()
+        preview = create_file_preview_url(pm, document, provider=provider)
+        assert preview["status"] == "unavailable" and preview["message"] == "Không tạo được ảnh xem trước cho tệp này."
+        assert create_file_download_url(pm, document, provider=provider)["url"]
+
+
 def test_upload_routes_enforce_permissions(client, app):
     with app.app_context(): root_id = _root().id
     client.post("/login", data={"username_or_email": "viewer", "password": "password123"})
@@ -228,7 +245,8 @@ def test_bulk_file_routes_apply_acl_and_never_delete_storage(client, app):
     restored = client.post(f"/project-documents/folders/{root_id}/files/bulk-restore", json={"file_ids": ids})
     assert restored.status_code == 200 and restored.get_json()["restored"] == 2
     downloads = client.post(f"/project-documents/folders/{root_id}/files/bulk-signed-download", json={"file_ids": ids})
-    assert downloads.status_code == 200 and downloads.get_json()["kind"] == "job"
+    assert downloads.status_code == 200 and downloads.mimetype == "application/zip"
+    assert downloads.get_json(silent=True) is None
     client.post("/logout", data={})
     client.post("/login", data={"username_or_email": "viewer", "password": "password123"})
     assert client.post(f"/project-documents/folders/{root_id}/files/bulk-archive", json={"file_ids": ids}).status_code == 403

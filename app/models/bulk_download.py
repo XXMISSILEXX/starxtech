@@ -22,6 +22,7 @@ class BulkDownloadJob(TimestampMixin, db.Model):
     completed_file_count = db.Column(db.Integer, nullable=False, default=0, server_default="0")
     total_size_bytes = db.Column(db.BigInteger, nullable=False)
     zip_object_key = db.Column(db.String(1024), nullable=True)
+    zip_size_bytes = db.Column(db.BigInteger, nullable=True)
     zip_filename = db.Column(db.String(255), nullable=False)
     error_message = db.Column(db.Text, nullable=True)
     expires_at = db.Column(db.DateTime, nullable=False)

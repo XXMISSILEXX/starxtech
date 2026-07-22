@@ -14,8 +14,9 @@ from app.project_documents.services import (DocumentValidationError, archive_fol
     remove_folder_permission, rename_folder, restore_folder, set_folder_permission, presign_folder_upload_batch,
     complete_folder_upload_item, create_file_download_url, create_file_preview_url, rename_file, archive_file, restore_file, file_payload,
     bulk_archive_files, bulk_restore_files, bulk_file_download_urls, create_custom_root_folder)
-from app.storage.exceptions import StorageNotFoundError, StorageValidationError
-from app.bulk_downloads.services import BulkDownloadError, request_document_download, serialize_job
+from app.storage.exceptions import StorageNotFoundError, StorageValidationError, StorageAuthorizationError
+from app.storage.services import create_upload_selection_session, finalize_upload_selection_session
+from app.bulk_downloads.services import BulkDownloadError, request_document_download, stream_zip_download, serialize_job
 from app.models import BulkDownloadJob
 
 
@@ -112,9 +113,26 @@ def presign_batch(folder_id):
     folder = _folder_or_404(folder_id)
     if not can_upload_project_document_folder(current_user, folder): abort(403)
     payload = request.get_json(silent=True) or {}
-    try: result = presign_folder_upload_batch(current_user, folder, payload.get("files", []))
+    try: result = presign_folder_upload_batch(current_user, folder, payload.get("files", []), payload.get("selection_session_id"))
+    except StorageAuthorizationError: abort(403)
     except (DocumentValidationError, StorageValidationError) as exc: return jsonify(error=str(exc)), 400
     return jsonify(result)
+
+@bp.post("/folders/<int:folder_id>/files/upload-selection-sessions")
+def create_selection_session(folder_id):
+    folder = _folder_or_404(folder_id)
+    if not can_upload_project_document_folder(current_user, folder): abort(403)
+    payload = request.get_json(silent=True) or {}
+    try: return jsonify(create_upload_selection_session(user=current_user, module_type="project_documents", target_type="folder", target_id=folder.id, declared_files=payload.get("file_count"), declared_size_bytes=payload.get("total_size_bytes")))
+    except StorageValidationError as exc: return jsonify(error=str(exc)), 400
+
+@bp.post("/folders/<int:folder_id>/files/upload-selection-sessions/<int:session_id>/finalize")
+def finalize_selection_session(folder_id, session_id):
+    folder = _folder_or_404(folder_id)
+    if not can_upload_project_document_folder(current_user, folder): abort(403)
+    try: return jsonify(finalize_upload_selection_session(user=current_user, selection_session_id=session_id, module_type="project_documents", target_type="folder", target_id=folder.id))
+    except StorageAuthorizationError: abort(403)
+    except StorageValidationError as exc: return jsonify(error=str(exc)), 400
 
 
 @bp.post("/folders/<int:folder_id>/files/complete-upload")
@@ -213,7 +231,8 @@ def bulk_restore(folder_id):
 def bulk_signed_download(folder_id):
     folder = _bulk_folder_or_403(folder_id)
     try:
-        return jsonify(ok=True, **request_document_download(current_user, folder, _bulk_payload_file_ids()))
+        result = request_document_download(current_user, folder, _bulk_payload_file_ids())
+        return stream_zip_download(current_user, result) if result["kind"] == "zip" else jsonify(ok=True, **result)
     except PermissionError:
         abort(403)
     except (DocumentValidationError, BulkDownloadError) as exc:

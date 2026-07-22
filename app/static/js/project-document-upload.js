@@ -20,7 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     start.disabled = !selectedFiles.some((entry) => entry.status === "Chờ tải lên");
   };
-  const addFiles = (files) => { [...files].forEach((file) => { if (!selectedFiles.some((entry) => keyFor(entry.file) === keyFor(file))) selectedFiles.push({ file, id: `file-${Date.now()}-${selectedFiles.length}`, status: "Chờ tải lên" }); }); render(); };
+  const addFiles = (files) => { [...files].forEach((file) => { if (!selectedFiles.some((entry) => keyFor(entry.file) === keyFor(file))) selectedFiles.push({ file, id: `file-${Date.now()}-${selectedFiles.length}`, status: "Chờ tải lên" }); }); if (selectedFiles.length > 500 || selectedFiles.reduce((sum, entry) => sum + entry.file.size, 0) > 2 * 1024 * 1024 * 1024) { selectedFiles.splice(500); alert("Tối đa 500 tệp và 2 GB cho một lần tải lên."); } render(); };
   const openPicker = () => input.click();
   choose.addEventListener("click", openPicker); dropzone.addEventListener("click", openPicker);
   dropzone.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openPicker(); } });
@@ -32,13 +32,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const pending = selectedFiles.filter((entry) => entry.status === "Chờ tải lên"); if (!pending.length) return;
     start.disabled = true; input.disabled = true; pending.forEach((entry) => entry.status = "Đang chuẩn bị"); render();
     try {
-      const response = await fetch(root.dataset.presignUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": root.dataset.csrfToken }, body: JSON.stringify({ files: pending.map((entry) => ({ client_file_id: entry.id, filename: entry.file.name, mime_type: entry.file.type, size: entry.file.size })) }) });
+      const sessionUrl = root.dataset.presignUrl.replace("/presign-batch", "/upload-selection-sessions");
+      const total = pending.reduce((sum, entry) => sum + entry.file.size, 0);
+      const sessionResponse = await fetch(sessionUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": root.dataset.csrfToken }, body: JSON.stringify({ file_count: pending.length, total_size_bytes: total }) });
+      const session = await sessionResponse.json(); if (!sessionResponse.ok) throw new Error(session.error || "Không thể tạo phiên tải lên.");
+      const batches = []; for (let i = 0; i < pending.length; i += 50) batches.push(pending.slice(i, i + 50));
+      for (const batch of batches) { const response = await fetch(root.dataset.presignUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": root.dataset.csrfToken }, body: JSON.stringify({ selection_session_id: session.selection_session_id, files: batch.map((entry) => ({ client_file_id: entry.id, filename: entry.file.name, mime_type: entry.file.type, size: entry.file.size })) }) });
       const result = await response.json(); if (!response.ok) throw new Error(result.error || "Không thể chuẩn bị tải lên.");
       for (const item of result.items) { const entry = selectedFiles.find((candidate) => candidate.id === item.client_file_id); if (!entry) continue; if (!item.accepted) { entry.status = `Bị từ chối: ${item.error}`; render(); continue; } if (!Number.isInteger(item.upload_batch_item_id)) { entry.status = "Lỗi: Server không trả upload_batch_item_id cho tệp này."; render(); continue; }
         entry.status = "Đang tải lên"; render(); const form = new FormData(); Object.entries(item.fields || {}).forEach(([key, value]) => form.append(key, value)); form.append("file", entry.file);
         const upload = await fetch(item.url, { method: item.method || "POST", body: form }); if (!upload.ok) { entry.status = "Lỗi tải lên S3"; render(); continue; }
         entry.status = "Đang hoàn tất"; render(); const complete = await fetch(root.dataset.completeUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": root.dataset.csrfToken }, body: JSON.stringify({ upload_batch_item_id: item.upload_batch_item_id }) }); const completed = await complete.json(); entry.status = complete.ok ? "Hoàn tất" : `Lỗi: ${completed.error || "không thể hoàn tất"}`; render();
-      }
+      }}
+      await fetch(`${sessionUrl}/${session.selection_session_id}/finalize`, { method: "POST", headers: { "X-CSRFToken": root.dataset.csrfToken } });
     } catch (error) { pending.forEach((entry) => { if (entry.status === "Đang chuẩn bị") entry.status = `Lỗi: ${error.message}`; }); render(); }
     finally { input.disabled = false; render(); if (selectedFiles.some((entry) => entry.status === "Hoàn tất")) window.setTimeout(() => window.location.reload(), 700); }
   });

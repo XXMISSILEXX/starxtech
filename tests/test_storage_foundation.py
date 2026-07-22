@@ -46,6 +46,47 @@ def test_batch_rejects_invalid_item_per_item(app, filename, mime):
         assert StorageObject.query.count() == 0
 
 
+@pytest.mark.parametrize("module_type,target_type,filename,mime,stored_mime", [
+    ("company_media", "album", "a.heic", "image/heic", "image/heic"),
+    ("company_media", "album", "a.heic", "", "image/heic"),
+    ("company_media", "album", "a.heic", "application/octet-stream", "image/heic"),
+    ("company_media", "album", "a.heif", "image/heif", "image/heif"),
+    ("company_media", "album", "a.heif", "", "image/heif"),
+    ("company_media", "album", "a.heif", "application/octet-stream", "image/heif"),
+    ("project_documents", "folder", "a.heic", "image/heic-sequence", "image/heic"),
+    ("project_documents", "folder", "a.heif", "image/heif-sequence", "image/heif"),
+])
+def test_heif_browser_mime_fallback_is_extension_scoped(app, module_type, target_type, filename, mime, stored_mime):
+    with app.app_context():
+        result = create_upload_batch_presign(
+            user=db.session.get(User, 3), module_type=module_type, target_type=target_type, target_id=1,
+            files=[{"client_file_id": "heif", "filename": filename, "mime_type": mime, "size": 10}], provider=FakeStorageProvider(),
+        )
+        assert result["items"][0]["accepted"] is True, result
+        storage = db.session.get(StorageObject, result["items"][0]["storage_object_id"])
+        assert storage.mime_type == stored_mime
+
+
+@pytest.mark.parametrize("filename,mime", [("run.exe", "application/octet-stream"), ("script.js", ""), ("vector.svg", "image/svg+xml")])
+def test_browser_mime_fallback_does_not_allow_unsafe_extensions(app, filename, mime):
+    with app.app_context():
+        result = create_upload_batch_presign(
+            user=db.session.get(User, 3), module_type="company_media", target_type="album", target_id=1,
+            files=[{"client_file_id": "unsafe", "filename": filename, "mime_type": mime, "size": 10}], provider=FakeStorageProvider(),
+        )
+        assert result["items"][0]["accepted"] is False
+        assert StorageObject.query.count() == 0
+
+
+def test_heic_presign_keeps_single_file_limit(app):
+    with app.app_context():
+        with pytest.raises(StorageValidationError, match="300 MB"):
+            create_upload_batch_presign(
+                user=db.session.get(User, 3), module_type="company_media", target_type="album", target_id=1,
+                files=[{"client_file_id": "large", "filename": "large.heic", "mime_type": "", "size": 300 * 1024 * 1024 + 1}], provider=FakeStorageProvider(),
+            )
+
+
 def test_batch_rejects_duplicate_ids_and_total_limit(app):
     with app.app_context():
         user = db.session.get(User, 3)
@@ -71,7 +112,8 @@ def test_complete_and_download_are_idempotent_and_safe(app):
 def test_complete_head_failure_never_activates(app):
     with app.app_context():
         provider, user = FakeStorageProvider(), db.session.get(User, 3)
-        result = create_upload_batch_presign(user=user, module_type="company_media", target_type="album", target_id=1, files=[{"client_file_id": "a", "filename": "a.mp3", "mime_type": "audio/mpeg", "size": 10}], provider=provider)
+        result = create_upload_batch_presign(user=user, module_type="company_media", target_type="album", target_id=1, files=[{"client_file_id": "a", "filename": "a.jpg", "mime_type": "image/jpeg", "size": 10}], provider=provider)
+        assert result["items"][0]["accepted"] is True, result
         item = db.session.get(UploadBatchItem, result["items"][0]["upload_batch_item_id"])
         with pytest.raises(StorageNotFoundError):
             complete_upload_item(user=user, upload_batch_item_id=item.id, provider=provider)

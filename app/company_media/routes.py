@@ -5,7 +5,9 @@ from app.company_media import permissions as p
 from app.company_media import services as s
 from app.models import CompanyMediaAlbum, CompanyMediaAlbumPermission, CompanyMediaFile, Role, User
 from app.models import BulkDownloadJob
-from app.bulk_downloads.services import BulkDownloadError, request_media_download, serialize_job
+from app.bulk_downloads.services import BulkDownloadError, request_media_download, stream_zip_download, serialize_job
+from app.storage.services import create_upload_selection_session, finalize_upload_selection_session
+from app.storage.exceptions import StorageAuthorizationError, StorageValidationError
 
 def _ctx():
     status=request.values.get("media_status","active").lower(); return {"q":request.values.get("q","").strip(),"media_status":status if status in {"active","archived","all"} else "active"}
@@ -66,8 +68,24 @@ def clear_cover(album_id):
 def presign(album_id):
     a=CompanyMediaAlbum.query.get_or_404(album_id)
     if not p.upload_album(current_user,a):abort(403)
-    try:return jsonify(s.presign(current_user,a,(request.get_json() or {}).get("files",[])))
+    try:
+        data=request.get_json() or {}; return jsonify(s.presign(current_user,a,data.get("files",[]),data.get("selection_session_id")))
+    except StorageAuthorizationError: abort(403)
     except Exception as e:return jsonify(error=str(e)),400
+@bp.post("/albums/<int:album_id>/files/upload-selection-sessions")
+def selection(album_id):
+    a=CompanyMediaAlbum.query.get_or_404(album_id)
+    if not p.upload_album(current_user,a): abort(403)
+    data=request.get_json() or {}
+    try:return jsonify(create_upload_selection_session(user=current_user,module_type="company_media",target_type="album",target_id=a.id,declared_files=data.get("file_count"),declared_size_bytes=data.get("total_size_bytes")))
+    except StorageValidationError as e:return jsonify(error=str(e)),400
+@bp.post("/albums/<int:album_id>/files/upload-selection-sessions/<int:session_id>/finalize")
+def selection_finalize(album_id,session_id):
+    a=CompanyMediaAlbum.query.get_or_404(album_id)
+    if not p.upload_album(current_user,a): abort(403)
+    try:return jsonify(finalize_upload_selection_session(user=current_user,selection_session_id=session_id,module_type="company_media",target_type="album",target_id=a.id))
+    except StorageAuthorizationError: abort(403)
+    except StorageValidationError as e:return jsonify(error=str(e)),400
 @bp.post("/albums/<int:album_id>/files/complete-upload")
 def complete(album_id):
     a=CompanyMediaAlbum.query.get_or_404(album_id)
@@ -77,12 +95,13 @@ def complete(album_id):
 def preview(file_id):
     f=CompanyMediaFile.query.get_or_404(file_id)
     if not p.view_file(current_user,f):abort(403)
-    return jsonify(s.signed_preview(f,(request.get_json() or {}).get("variant")))
+    return jsonify(s.signed_preview(f,(request.get_json() or {}).get("variant"),current_user))
 @bp.post("/files/<int:file_id>/signed-download")
 def download(file_id):
     f=CompanyMediaFile.query.get_or_404(file_id)
     if not p.download_file(current_user,f):abort(403)
-    return jsonify(s.signed_download(f))
+    try:return jsonify(s.signed_download(f,current_user))
+    except s.CompanyMediaError as e:return jsonify(error=str(e)),400
 @bp.post("/files/<int:file_id>/rename")
 def file_rename(file_id):
     f=CompanyMediaFile.query.get_or_404(file_id)
@@ -121,7 +140,8 @@ def bulk_download(album_id):
     a=CompanyMediaAlbum.query.get_or_404(album_id)
     if not p.view_album(current_user,a): abort(403)
     try:
-        return jsonify(ok=True, **request_media_download(current_user, a, (request.get_json() or {}).get("file_ids", [])))
+        result = request_media_download(current_user, a, (request.get_json() or {}).get("file_ids", []))
+        return stream_zip_download(current_user, result) if result["kind"] == "zip" else jsonify(ok=True, **result)
     except PermissionError:
         abort(403)
     except BulkDownloadError as exc:

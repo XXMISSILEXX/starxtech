@@ -53,6 +53,7 @@ class UploadBatch(CreatedAtMixin, db.Model):
     target_type = db.Column(db.String(20), nullable=False)
     target_id = db.Column(db.BigInteger, nullable=False)
     created_by_id = db.Column(STORAGE_ID, db.ForeignKey("users.id"), nullable=False, index=True)
+    selection_session_id = db.Column(STORAGE_ID, db.ForeignKey("upload_selection_sessions.id"), nullable=True, index=True)
     total_files = db.Column(db.Integer, nullable=False, default=0, server_default="0")
     accepted_files = db.Column(db.Integer, nullable=False, default=0, server_default="0")
     completed_files = db.Column(db.Integer, nullable=False, default=0, server_default="0")
@@ -62,6 +63,36 @@ class UploadBatch(CreatedAtMixin, db.Model):
 
     created_by = db.relationship("User", foreign_keys=[created_by_id])
     items = db.relationship("UploadBatchItem", back_populates="upload_batch", cascade="all, delete-orphan")
+
+
+class UploadSelectionSession(TimestampMixin, db.Model):
+    __tablename__ = "upload_selection_sessions"
+    __table_args__ = (db.CheckConstraint("module_type IN ('project_documents', 'company_media')", name="ck_upload_selection_module"),
+                      db.CheckConstraint("target_type IN ('folder', 'album')", name="ck_upload_selection_target"),
+                      db.CheckConstraint("status IN ('pending', 'completed', 'expired')", name="ck_upload_selection_status"),
+                      db.Index("idx_upload_selection_owner_expiry", "created_by_id", "expires_at"))
+    id = db.Column(STORAGE_ID, primary_key=True)
+    module_type = db.Column(db.String(40), nullable=False); target_type = db.Column(db.String(20), nullable=False)
+    target_id = db.Column(db.BigInteger, nullable=False); created_by_id = db.Column(STORAGE_ID, db.ForeignKey("users.id"), nullable=False)
+    declared_files = db.Column(db.Integer, nullable=False); declared_size_bytes = db.Column(db.BigInteger, nullable=False)
+    presigned_files = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    presigned_size_bytes = db.Column(db.BigInteger, nullable=False, default=0, server_default="0")
+    status = db.Column(db.String(20), nullable=False, default="pending", server_default="pending")
+    expires_at = db.Column(db.DateTime, nullable=False); completed_at = db.Column(db.DateTime)
+    created_by = db.relationship("User", foreign_keys=[created_by_id])
+    batches = db.relationship("UploadBatch", foreign_keys=[UploadBatch.selection_session_id])
+
+
+class DownloadEvent(CreatedAtMixin, db.Model):
+    __tablename__ = "download_events"
+    __table_args__ = (db.Index("idx_download_events_user_created", "user_id", "created_at"),)
+    id = db.Column(STORAGE_ID, primary_key=True); user_id = db.Column(STORAGE_ID, db.ForeignKey("users.id"), nullable=False)
+    storage_object_id = db.Column(STORAGE_ID, db.ForeignKey("storage_objects.id")); derivative_id = db.Column(STORAGE_ID, db.ForeignKey("storage_derivatives.id"))
+    kind = db.Column(db.String(30), nullable=False); source_type = db.Column(db.String(30), nullable=True)
+    module = db.Column(db.String(40), nullable=True)
+    estimated_bytes = db.Column(db.BigInteger, nullable=False)
+    estimated_storage_egress_bytes = db.Column(db.BigInteger, nullable=True)
+    estimated_client_egress_bytes = db.Column(db.BigInteger, nullable=True)
 
 
 class UploadBatchItem(TimestampMixin, db.Model):

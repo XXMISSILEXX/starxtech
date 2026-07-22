@@ -86,31 +86,29 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   downloadButton?.addEventListener("click", async () => {
     try {
-      const result = await postBulk(root.dataset.bulkDownloadUrl);
-      if (result.kind === "direct") {
-        window.location.assign(result.download.url);
-        return;
-      }
-      if (result.kind !== "job" || !result.job?.id) throw new Error("Không thể tạo file ZIP, vui lòng thử lại");
       downloadButton.disabled = true;
       const originalText = downloadButton.textContent;
-      downloadButton.textContent = "Đang chuẩn bị file ZIP...";
-      const statusUrl = `${window.location.pathname.startsWith("/company-media") ? "/company-media" : "/project-documents"}/bulk-download-jobs/${result.job.id}`;
-      const poll = async () => {
-        const response = await fetch(statusUrl, { headers: { "X-CSRFToken": csrfToken } });
-        const job = await response.json();
-        if (!response.ok) throw new Error(job.error || "Không thể tạo file ZIP, vui lòng thử lại");
-        if (job.status === "succeeded" && job.download?.url) {
-          window.location.assign(job.download.url);
-          return;
-        }
-        if (job.status === "failed" || job.status === "expired") throw new Error(job.error || "Không thể tạo file ZIP, vui lòng thử lại");
-        downloadButton.textContent = job.file_count ? `Đang nén ${job.completed_file_count || 0}/${job.file_count} tệp...` : "Đang chuẩn bị file ZIP...";
-        window.setTimeout(() => poll().catch(fail), 1000);
-      };
-      const fail = (error) => { window.alert(error.message || "Không thể tạo file ZIP, vui lòng thử lại"); downloadButton.disabled = false; downloadButton.textContent = originalText; };
-      poll().catch(fail);
+      downloadButton.textContent = "Đang chuẩn bị tải xuống...";
+      const fileIds = selected().map((checkbox) => Number(checkbox.value));
+      const response = await fetch(root.dataset.bulkDownloadUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken }, body: JSON.stringify({ file_ids: fileIds }) });
+      const contentType = response.headers.get("Content-Type") || "";
+      if (!response.ok) {
+        const result = contentType.includes("application/json") ? await response.json() : {};
+        throw new Error(result.error || "Không thể tải xuống các tệp đã chọn.");
+      }
+      if (contentType.includes("application/json")) {
+        const result = await response.json();
+        if (result.kind === "direct" && result.download?.url) { window.location.assign(result.download.url); return; }
+        throw new Error(result.error || "Không thể tải xuống các tệp đã chọn.");
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const filename = (disposition.match(/filename="?([^";]+)"?/) || [])[1] || "download.zip";
+      const objectUrl = URL.createObjectURL(blob); const link = document.createElement("a");
+      link.href = objectUrl; link.download = filename; document.body.append(link); link.click(); link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
     } catch (error) { window.alert(error.message); }
+    finally { downloadButton.disabled = false; downloadButton.textContent = "Tải xuống"; }
   });
 
   const renameModalElement = document.getElementById("projectDocumentRenameModal");

@@ -1,7 +1,13 @@
-from app.bulk_downloads.services import cleanup_expired_jobs, request_document_download, request_media_download, run_job
+from io import BytesIO
+import zipfile
+
+import pytest
+
+from app.bulk_downloads.services import (BulkDownloadError, cleanup_expired_jobs, request_document_download,
+                                         request_media_download, run_job, stream_zip_download)
 from app.extensions import db
 from app.models import (BulkDownloadJob, CompanyMediaAlbum, CompanyMediaFile, Project, ProjectDocumentFile,
-                        StorageObject, User)
+                        DownloadEvent, StorageObject, User)
 from app.project_documents.services import get_or_create_project_root_folder
 from app.company_media.services import presign
 from app.storage.keys import build_bulk_zip_key, build_derivative_key, build_original_key, safe_storage_filename
@@ -24,7 +30,7 @@ def _storage(user, key, name, data=b"x"):
     db.session.add(item); db.session.flush(); return item
 
 
-def test_document_bulk_zip_job_uses_existing_object_keys_and_cleans_up(app):
+def test_document_bulk_zip_stream_uses_existing_object_keys_without_s3_zip(app):
     with app.app_context():
         provider = FakeStorageProvider(); app.extensions["storage_provider"] = provider
         admin = db.session.get(User, 6)
@@ -35,15 +41,16 @@ def test_document_bulk_zip_job_uses_existing_object_keys_and_cleans_up(app):
         files = [ProjectDocumentFile(project_id=root.project_id, folder_id=root.id, storage_object_id=item.id, display_name="same.pdf", created_by_id=admin.id) for item in (first, second)]
         db.session.add_all(files); db.session.commit()
         result = request_document_download(admin, root, [item.id for item in files])
-        job = db.session.get(BulkDownloadJob, result["job"]["id"])
-        assert result["kind"] == "job" and job.status == "pending"
-        run_job(job.id)
-        assert job.status == "succeeded"
-        assert job.zip_object_key.startswith("document-library/bulk-downloads/")
-        assert (app.config["STORAGE_BUCKET"], job.zip_object_key) in provider.objects
-        job.expires_at = __import__("datetime").datetime.utcnow(); db.session.commit()
-        cleanup_expired_jobs()
-        assert job.status == "expired" and (app.config["STORAGE_BUCKET"], job.zip_object_key) in provider.deleted
+        assert result["kind"] == "zip" and BulkDownloadJob.query.count() == 0
+        with app.test_request_context():
+            response = stream_zip_download(admin, result)
+            assert response.mimetype == "application/zip"
+            response.direct_passthrough = False
+            with zipfile.ZipFile(BytesIO(response.get_data())) as archive:
+                assert archive.namelist() == ["same.pdf", "same (2).pdf"]
+            response.close()
+        assert not any("bulk-downloads/" in key for _, key in provider.objects)
+        assert DownloadEvent.query.one().source_type == "zip_stream"
 
 
 def test_media_bulk_download_requires_album_download_acl_and_single_is_direct(app):
@@ -57,6 +64,42 @@ def test_media_bulk_download_requires_album_download_acl_and_single_is_direct(ap
         db.session.add(media); db.session.commit()
         result = request_media_download(admin, album, [media.id])
         assert result["kind"] == "direct" and result["download"]["url"]
+
+
+def test_media_bulk_zip_stream_does_not_create_s3_zip_or_job(app):
+    with app.app_context():
+        provider = FakeStorageProvider(); app.extensions["storage_provider"] = provider
+        admin = db.session.get(User, 6); album = CompanyMediaAlbum(name="Bulk", created_by_id=admin.id)
+        db.session.add(album); db.session.flush()
+        objects = [_storage(admin, f"company-media/originals/{index}.jpg", "same.jpg", bytes([index])) for index in range(2)]
+        for item in objects: provider.put_bytes("b", item.object_key, b"image", "image/jpeg")
+        files = [CompanyMediaFile(album_id=album.id, storage_object_id=item.id, display_name="same.jpg", media_type="image", created_by_id=admin.id) for item in objects]
+        db.session.add_all(files); db.session.commit()
+        result = request_media_download(admin, album, [item.id for item in files])
+        assert result["kind"] == "zip" and BulkDownloadJob.query.count() == 0
+        with app.test_request_context():
+            response = stream_zip_download(admin, result); response.direct_passthrough = False
+            assert response.mimetype == "application/zip"
+            with zipfile.ZipFile(BytesIO(response.get_data())) as archive:
+                assert archive.namelist() == ["same.jpg", "same (2).jpg"]
+            response.close()
+        assert not any("bulk-downloads/" in key for _, key in provider.objects)
+
+
+def test_zip_stream_rejects_limit_and_missing_source_before_response(app):
+    with app.app_context():
+        provider = FakeStorageProvider(); app.extensions["storage_provider"] = provider
+        admin = db.session.get(User, 6); root = get_or_create_project_root_folder(db.session.get(Project, 1), admin)
+        objects = [_storage(admin, f"originals/{index}.pdf", f"{index}.pdf") for index in range(2)]
+        files = [ProjectDocumentFile(project_id=root.project_id, folder_id=root.id, storage_object_id=item.id, display_name=item.original_filename, created_by_id=admin.id) for item in objects]
+        db.session.add_all(files); db.session.commit()
+        app.config["BULK_DOWNLOAD_MAX_FILES"] = 1
+        with pytest.raises(BulkDownloadError, match="tối đa 100"):
+            request_document_download(admin, root, [item.id for item in files])
+        app.config["BULK_DOWNLOAD_MAX_FILES"] = 100
+        selection = request_document_download(admin, root, [item.id for item in files])
+        with app.test_request_context(), pytest.raises(BulkDownloadError, match="Không tìm thấy"):
+            stream_zip_download(admin, selection)
 
 
 def test_company_media_upload_uses_company_media_namespace(app):
