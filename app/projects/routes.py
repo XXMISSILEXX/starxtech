@@ -10,6 +10,7 @@ from app.auth.permissions import (
     can_edit_persistent_issue,
     can_create_report,
     can_read_project,
+    can_access_reports_module,
     can_view_issue,
 )
 from app.dashboard.services import project_dashboard_context
@@ -37,7 +38,7 @@ from app.reports.services import (
 @bp.get("/")
 @bp.get("")
 def index():
-    if not current_user.can("projects.view"):
+    if not can_access_reports_module(current_user):
         abort(403)
     projects = accessible_projects_query().all()
     create_report_mode = request.args.get("create_report") == "1"
@@ -54,7 +55,7 @@ def index():
 @bp.get("/<int:project_id>/dashboard")
 def dashboard(project_id):
     project = _project_or_404(project_id)
-    if not can_read_project(project.id) or not current_user.can("reports.view"):
+    if not can_read_project(project.id):
         abort(403)
     return render_template(
         "dashboard/project.html",
@@ -66,7 +67,7 @@ def dashboard(project_id):
 @bp.get("/<int:project_id>/reports")
 def reports(project_id):
     project = _project_or_404(project_id)
-    if not can_read_project(project.id) or not current_user.can("reports.view"):
+    if not can_read_project(project.id):
         abort(403)
 
     query = reports_query().filter(DailyReport.project_id == project.id)
@@ -102,7 +103,7 @@ def reports(project_id):
 @bp.route("/<int:project_id>/reports/create", methods=["GET", "POST"])
 def reports_create(project_id):
     project = _project_or_404(project_id)
-    if not can_read_project(project.id) or not current_user.can("reports.view"):
+    if not can_read_project(project.id):
         abort(403)
 
     report = DailyReport(project_id=project.id)
@@ -135,7 +136,7 @@ def reports_create(project_id):
 @bp.get("/<int:project_id>/issues")
 def issues(project_id):
     project = _project_or_404(project_id)
-    if not can_read_project(project.id) or not current_user.can("issues.view"):
+    if not can_read_project(project.id) or not can_view_issue(current_user, PersistentIssue(project_id=project.id)):
         abort(403)
     issues = _apply_issue_filters(project_issues_query(project.id)).all()
     can_create = can_create_persistent_issue(project.id)
@@ -156,7 +157,7 @@ def issues(project_id):
 @bp.route("/<int:project_id>/issues/create", methods=["GET", "POST"])
 def issues_create(project_id):
     project = _project_or_404(project_id)
-    if not can_read_project(project.id) or not current_user.can("issues.view"):
+    if not can_read_project(project.id) or not can_view_issue(current_user, PersistentIssue(project_id=project.id)):
         abort(403)
 
     issue = PersistentIssue(project_id=project.id)

@@ -70,7 +70,7 @@ def change_password():
         current_user.password_hash = generate_password_hash(form.new_password.data)
         db.session.commit()
         flash("Đã đổi mật khẩu thành công.", "success")
-        return redirect(url_for("dashboard.index"))
+        return redirect(url_for("modules.index"))
 
     return render_template("auth/change_password.html", form=form)
 
@@ -88,22 +88,5 @@ def _safe_next_url():
 
 
 def _post_login_redirect(user=None):
-    user = user or current_user
-    modules = permitted_modules(user)
-    if len(modules) > 1:
-        session.pop("active_module", None)
-        return url_for("modules.index")
-    if modules == ["partners"]:
-        session["active_module"] = "partners"
-        return url_for("partners.dashboard")
-    if modules == ["company_media"]:
-        session["active_module"] = "company_media"
-        return url_for("company_media.index")
-    if modules == ["project_documents"]:
-        session["active_module"] = "project_documents"
-        return url_for("project_documents.index")
-    if not modules:
-        session.pop("active_module", None)
-        return url_for("modules.index")
-    session["active_module"] = "reports"
-    return url_for("dashboard.index")
+    session.pop("active_module", None)
+    return url_for("modules.index")

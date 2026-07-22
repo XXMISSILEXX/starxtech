@@ -53,7 +53,7 @@ class Project(TimestampMixin, SoftDeleteMixin, db.Model):
     )
 
 
-class ProjectUser(CreatedAtMixin, db.Model):
+class ProjectUser(TimestampMixin, db.Model):
     __tablename__ = "project_users"
     __table_args__ = (
         db.UniqueConstraint("project_id", "user_id", name="uq_project_users_project_user"),
@@ -72,12 +72,35 @@ class ProjectUser(CreatedAtMixin, db.Model):
         nullable=False,
         index=True,
     )
-    role_in_project = db.Column(
+    # A preset selected by administrators.  The capability flags below are the
+    # authorization source of truth; this value is intentionally not checked by
+    # request policies.
+    project_role_code = db.Column(
         db.String(50),
         nullable=False,
-        default="REPORTER",
-        server_default="REPORTER",
+        default="PROJECT_VIEWER",
+        server_default="PROJECT_VIEWER",
     )
+    # Backwards-compatible ORM spelling for callers not yet migrated.
+    role_in_project = db.synonym("project_role_code")
+    is_active = db.Column(db.Boolean, nullable=False, default=True, server_default="true")
+    can_view_project = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_view_reports = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_create_reports = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_edit_own_reports = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_edit_all_reports = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_archive_reports = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_view_issues = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_create_issues = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_edit_issues = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_close_reopen_issues = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_manage_report_categories = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_view_documents = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_upload_documents = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_edit_documents = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_share_documents = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_archive_documents = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_restore_documents = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
 
     project = db.relationship("Project", back_populates="user_assignments")
     user = db.relationship("User", back_populates="project_assignments")

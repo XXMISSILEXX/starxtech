@@ -5,6 +5,7 @@ class UserRole(str, Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
     ADMIN = "ADMIN"
     VIEWER_ADMIN = "VIEWER_ADMIN"
+    # Legacy values retained only for migrations and compatibility fixtures.
     PROJECT_MANAGER = "PROJECT_MANAGER"
     REPORTER = "REPORTER"
 

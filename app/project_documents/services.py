@@ -29,10 +29,12 @@ def get_or_create_project_root_folder(project, user):
 
 
 def list_accessible_projects(user):
-    from app.models import Project, ProjectUser
+    from app.models import Project
+    from app.project_memberships import accessible_project_ids
     query = Project.query.filter(Project.deleted_at.is_(None))
-    if user.role_code not in {"SUPER_ADMIN", "ADMIN", "VIEWER_ADMIN"}:
-        query = query.join(ProjectUser).filter(ProjectUser.user_id == user.id)
+    ids = accessible_project_ids(user, ("can_view_documents",))
+    if ids is not None:
+        query = query.filter(Project.id.in_(ids or [0]))
     return query.order_by(Project.name).all()
 
 

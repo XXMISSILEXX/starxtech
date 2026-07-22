@@ -7,12 +7,9 @@ from app.models.mixins import SoftDeleteMixin, TimestampMixin
 
 class User(UserMixin, TimestampMixin, SoftDeleteMixin, db.Model):
     __tablename__ = "users"
-    __table_args__ = (
-        db.CheckConstraint(
-            "role IN ('SUPER_ADMIN', 'ADMIN', 'VIEWER_ADMIN', 'PROJECT_MANAGER', 'REPORTER')",
-            name="ck_users_role",
-        ),
-    )
+    # `role_id` is canonical.  The old column remains a compatibility mirror
+    # until external consumers have migrated, and is never authorization input.
+    __table_args__ = ()
 
     id = db.Column(db.BigInteger, primary_key=True)
     full_name = db.Column(db.String(255), nullable=False)
@@ -20,7 +17,7 @@ class User(UserMixin, TimestampMixin, SoftDeleteMixin, db.Model):
     email = db.Column(db.String(255), nullable=True, unique=True, index=True)
     password_hash = db.Column(db.Text, nullable=False)
     # Retained for one release only so existing databases can be migrated safely.
-    legacy_role = db.Column("role", db.String(50), nullable=False)
+    legacy_role = db.Column("role", db.String(50), nullable=True)
     role_id = db.Column(db.BigInteger().with_variant(db.Integer(), "sqlite"), db.ForeignKey("roles.id"), nullable=False, index=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True, server_default="true")
     last_login_at = db.Column(db.DateTime, nullable=True)

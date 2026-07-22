@@ -22,12 +22,13 @@ from app.issues.services import (
 )
 from app.models import IssueSeverity, IssueStatus, PersistentIssue
 from app.reports.services import accessible_projects_query
+from app.project_memberships import has_any_project_capability
 
 
 @bp.get("")
 @bp.get("/")
 def index():
-    if not current_user.can("issues.view"):
+    if not has_any_project_capability(current_user, ("can_view_issues",)):
         abort(403)
     projects = accessible_projects_query().all()
     project_ids = [project.id for project in projects]
@@ -59,7 +60,7 @@ def index():
 
 @bp.route("/new", methods=["GET", "POST"])
 def new():
-    if not current_user.can("issues.view"):
+    if not has_any_project_capability(current_user, ("can_view_issues",)):
         abort(403)
     projects = [
         project

@@ -9,12 +9,13 @@ from app.dashboard.services import (
     report_count_chart_data,
     status_chart_data,
 )
+from app.auth.permissions import can_access_reports_module
 
 
 @bp.get("")
 @bp.get("/")
 def index():
-    if not current_user.can("reports.view"):
+    if not can_access_reports_module(current_user):
         abort(403)
     try:
         filters = parse_filters(request.args)
@@ -26,7 +27,7 @@ def index():
 
 @api_bp.get("/status-chart")
 def status_chart():
-    if not current_user.can("reports.view"):
+    if not can_access_reports_module(current_user):
         abort(403)
     filters = _filters_or_400()
     return jsonify(status_chart_data(filters))
@@ -34,7 +35,7 @@ def status_chart():
 
 @api_bp.get("/report-count-chart")
 def report_count_chart():
-    if not current_user.can("reports.view"):
+    if not can_access_reports_module(current_user):
         abort(403)
     filters = _filters_or_400()
     return jsonify(report_count_chart_data(filters))

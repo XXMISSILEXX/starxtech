@@ -813,3 +813,33 @@ function initPartnerOrgChartModal() {
       });
   });
 }
+document.addEventListener("DOMContentLoaded", () => {
+  const presetData = document.getElementById("project-membership-presets");
+  if (!presetData) return;
+  const presets = JSON.parse(presetData.dataset.presets || "{}");
+  document.querySelectorAll(".membership-form").forEach((form) => {
+    const select = form.querySelector(".membership-preset");
+    if (!select) return;
+    select.addEventListener("change", () => form.querySelectorAll(".membership-capability").forEach((box) => {
+      box.checked = (presets[select.value] || []).includes(box.name);
+    }));
+    if (!form.querySelector(".membership-capability:checked")) {
+      select.dispatchEvent(new Event("change"));
+    }
+  });
+  const users = JSON.parse(presetData.dataset.users || "[]");
+  document.querySelectorAll("[data-user-search]").forEach((input) => input.addEventListener("input", () => {
+    const form = input.closest("form"), results = form.querySelector("[data-user-results]");
+    const query = input.value.toLowerCase().trim();
+    const matches = users.filter((user) => `${user.name} ${user.username} ${user.email}`.toLowerCase().includes(query));
+    results.innerHTML = query ? (matches.length ? matches.map((user) => `<button type="button" class="list-group-item list-group-item-action" data-picker-id="${user.id}"><strong>${escapeHtml(user.name)}</strong><small class="d-block text-muted">${escapeHtml(user.username)} · ${escapeHtml(user.email)} · ${escapeHtml(user.role)}</small></button>`).join("") : '<div class="list-group-item text-muted">Không tìm thấy người dùng phù hợp.</div>') : "";
+  }));
+  document.addEventListener("click", (event) => {
+    const choice = event.target.closest("[data-picker-id]"); if (!choice) return;
+    const form = choice.closest("form"), user = users.find((item) => String(item.id) === choice.dataset.pickerId);
+    form.querySelector("[data-selected-user-id]").value = user.id;
+    form.querySelector("[data-selected-user]").innerHTML = `<span class="badge text-bg-primary">${escapeHtml(user.name)} · ${escapeHtml(user.username)}</span> <button type="button" class="btn btn-link btn-sm p-0" data-clear-user>Đổi</button>`;
+    form.querySelector("[data-user-results]").innerHTML = "";
+  });
+  document.addEventListener("click", (event) => { if (event.target.matches("[data-clear-user]")) { const form = event.target.closest("form"); form.querySelector("[data-selected-user-id]").value = ""; form.querySelector("[data-selected-user]").innerHTML = ""; } });
+});

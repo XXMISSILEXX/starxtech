@@ -1,5 +1,9 @@
 # 01. Hiện trạng RBAC và ACL
 
+## Phase 6.2 update
+
+`role_id` is the sole global-role source of truth. Active project membership capability flags now authorize project scope; folder and album ACL remain resource-specific restrictions.
+
 ## Kết luận ngắn
 
 StarX hiện dùng **RBAC một vai trò trên mỗi user** làm quyền nền, sau đó áp dụng scope theo dự án và ACL allow-only cho Folder/Album. Đây là nền tảng hợp lý cho MVP: quyền route không chỉ dựa vào UI và tài nguyên private vẫn được kiểm tra ở backend.
@@ -91,4 +95,3 @@ Các code `modules.reports.access`, `modules.partners.access`, `modules.project_
 | VIEWER_ADMIN | Quy tắc global read khác giữa module cần được ghi rõ; Company Media đã chốt read/download restricted, Documents read restricted. |
 | Single role | Một người kiêm nhiều nhiệm vụ phải chọn một role hoặc dùng scoped ACL; đây là tín hiệu để cân nhắc multi-role sau này. |
 | Delete naming | Nhiều code dùng `delete` trong khi UI soft-delete ghi “Lưu trữ”; dễ hiểu sai mức độ phá hủy. |
-

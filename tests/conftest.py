@@ -5,6 +5,7 @@ from app import create_app
 from app.auth.permissions import project_read_required, project_write_required
 from app.extensions import db
 from app.models import Project, ProjectUser, ReportCategory, Role, User, UserRole
+from app.project_memberships import preset_flags
 
 
 class TestConfig:
@@ -71,8 +72,8 @@ def seed_test_data():
         Project(id=2, code="P002", name="Other Project"),
     ]
     assignments = [
-        ProjectUser(id=1, project_id=1, user_id=3),
-        ProjectUser(id=2, project_id=1, user_id=5),
+        ProjectUser(id=1, project_id=1, user_id=3, project_role_code="PROJECT_REPORTER", **preset_flags("PROJECT_REPORTER")),
+        ProjectUser(id=2, project_id=1, user_id=5, project_role_code="PROJECT_OWNER", **preset_flags("PROJECT_OWNER")),
     ]
     categories = [
         ReportCategory(id=1, project_id=1, name="Progress", icon="tools", sort_order=1, is_active=True),

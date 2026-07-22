@@ -1,6 +1,6 @@
 # 07. Roadmap implement sau audit
 
-Phase 6.1A chỉ là audit/docs. Không đổi DB, role defaults, ACL/runtime hoặc sidebar trong phase này.
+Phase 6.2 completes the three-layer boundary: canonical Global RBAC, capability-flag memberships, and inherited folder/album ACL. Phase 6.1A was audit-only.
 
 ## Phase 6.1B — Module switch và accessible modules
 

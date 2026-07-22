@@ -166,19 +166,22 @@ def test_super_admin_creates_and_archives_project(client, app):
 def test_super_admin_assigns_and_removes_project_reporters(client, app):
     login(client, "super")
 
-    assigned = client.post("/admin/projects/2/reporters", data={"reporter_ids": ["3"]})
+    assigned = client.post("/admin/projects/2/memberships", data={"user_id": "3", "project_role_code": "PROJECT_VIEWER", "can_view_project": "1"})
 
     assert assigned.status_code == 302
     with app.app_context():
         assert ProjectUser.query.filter_by(project_id=2, user_id=3).count() == 1
-        assert AuditLog.query.filter_by(action="project_user.assign").count() == 1
+        assert AuditLog.query.filter_by(action="project_membership.assign").count() == 1
 
-    removed = client.post("/admin/projects/2/reporters", data={})
+    with app.app_context():
+        membership_id = ProjectUser.query.filter_by(project_id=2, user_id=3).one().id
+    removed = client.post(f"/admin/projects/2/memberships/{membership_id}/deactivate")
 
     assert removed.status_code == 302
     with app.app_context():
-        assert ProjectUser.query.filter_by(project_id=2, user_id=3).count() == 0
-        assert AuditLog.query.filter_by(action="project_user.remove").count() == 1
+        membership = ProjectUser.query.filter_by(project_id=2, user_id=3).one()
+        assert membership.is_active is False
+        assert AuditLog.query.filter_by(action="project_membership.deactivate").count() == 1
 
 
 def test_super_admin_creates_category_duplicate_fails_and_deactivate_toggles(client, app):

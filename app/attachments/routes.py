@@ -14,7 +14,7 @@ from app.reports.services import delete_attachment
 def view(attachment_id):
     attachment = _attachment_or_404(attachment_id)
     report = attachment.section.daily_report
-    if not current_user.can("report_attachments.view") or not can_view_report(current_user, report):
+    if not can_view_report(current_user, report):
         abort(403)
 
     path = _resolve_attachment_path(attachment.file_path)
@@ -27,7 +27,7 @@ def view(attachment_id):
 def delete(attachment_id):
     attachment = _attachment_or_404(attachment_id)
     report = attachment.section.daily_report
-    if not current_user.can("report_attachments.delete") or not can_edit_report(current_user, report):
+    if not can_edit_report(current_user, report):
         abort(403)
     delete_attachment(attachment)
     flash("Đã xóa ảnh đính kèm.", "success")

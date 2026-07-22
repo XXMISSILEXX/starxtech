@@ -1,6 +1,6 @@
 # 03. Role matrix đề xuất
 
-Các role dưới đây là proposal vận hành, chưa phải thay đổi DB/default grant.
+Phase 6.2 replaces PROJECT_MANAGER/REPORTER operating logic with membership presets PROJECT_VIEWER, PROJECT_REPORTER, PROJECT_EDITOR, PROJECT_DOCUMENT_CONTROLLER, PROJECT_ISSUE_COORDINATOR, and PROJECT_OWNER. Flags—not these labels—authorize actions.
 
 | Role | Mục đích / ai dùng | Daily Reports | Project Documents | Company Media | Partner Management | Projects | Users/Roles Admin | Can Share | Can Archive/Delete | Ghi chú |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -28,4 +28,3 @@ Văn thư hoặc điều phối hồ sơ; quyền nền documents cần được
 ### PARTNER_MANAGER / Quản lý đối tác
 
 Nhóm procurement/BD quản lý đối tác, công ty, quan hệ và các field cần thiết. Không cần quyền report/project admin hay users/roles. Archive/delete chỉ cấp cho owner nghiệp vụ sau khi có quy trình review.
-

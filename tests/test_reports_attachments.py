@@ -4,7 +4,7 @@ from PIL import Image
 from werkzeug.datastructures import MultiDict
 
 from app.extensions import db
-from app.models import AuditLog, DailyReport, Permission, ReportAttachment, RolePermission, User
+from app.models import AuditLog, DailyReport, ReportAttachment, User
 
 
 def login(client, username_or_email, password="password123"):
@@ -239,11 +239,11 @@ def test_viewer_admin_cannot_delete_report_attachment(client, app):
     assert client.post(f"/attachments/{attachment_id}/delete").status_code == 403
 
 
-def test_attachment_delete_requires_explicit_permission(client, app):
+def test_attachment_delete_requires_report_edit_capability(client, app):
     with app.app_context():
         reporter = User.query.filter_by(username="reporter").one()
-        permission = Permission.query.filter_by(code="report_attachments.delete").one()
-        RolePermission.query.filter_by(role_id=reporter.role_id, permission_id=permission.id).delete()
+        membership = reporter.project_assignments[0]
+        membership.can_edit_own_reports = False
         db.session.commit()
 
     login(client, "reporter")

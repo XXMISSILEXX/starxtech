@@ -9,7 +9,7 @@ from app.admin.services import (
     form_bool,
     optional_text,
     parse_date,
-    replace_project_reporters,
+    save_project_memberships,
     temporary_password,
     validate_unique_category_name,
     validate_unique_project_code,
@@ -20,8 +20,12 @@ from app.auth.permissions import (
 )
 from app.permissions.services import permission_required
 from app.extensions import db
-from app.models import Permission, Project, ProjectStatus, ReportCategory, Role, RolePermission, User, UserRole
+from app.models import Permission, Project, ProjectStatus, ProjectUser, ReportCategory, Role, RolePermission, User, UserRole
+from app.project_memberships import (CAPABILITY_FIELDS, CAPABILITY_LABELS, PROJECT_ROLE_LABELS,
+    PROJECT_ROLE_PRESETS, membership_capability_labels, membership_summary)
 from app.security import password_policy_errors
+
+DEPRECATED_GLOBAL_ROLE_CODES = ("PROJECT_MANAGER", "REPORTER")
 
 
 @bp.get("/")
@@ -47,7 +51,7 @@ def users_new():
     return render_template(
         "admin/users/form.html",
         user=None,
-        roles=Role.query.filter_by(is_system=True).order_by(Role.id).all(),
+        roles=Role.query.filter(~Role.code.in_(DEPRECATED_GLOBAL_ROLE_CODES)).order_by(Role.is_system.desc(), Role.name).all(),
     )
 
 
@@ -62,7 +66,7 @@ def users_edit(user_id):
     return render_template(
         "admin/users/form.html",
         user=user,
-        roles=Role.query.filter_by(is_system=True).order_by(Role.id).all(),
+        roles=Role.query.filter(~Role.code.in_(DEPRECATED_GLOBAL_ROLE_CODES)).order_by(Role.is_system.desc(), Role.name).all(),
     )
 
 
@@ -94,7 +98,45 @@ def users_activate(user_id):
 @bp.get("/roles")
 @permission_required("roles.view")
 def roles_index():
-    return render_template("admin/roles/index.html", roles=Role.query.order_by(Role.id).all())
+    return render_template("admin/roles/index.html", roles=Role.query.filter(~Role.code.in_(DEPRECATED_GLOBAL_ROLE_CODES)).order_by(Role.id).all())
+
+
+@bp.route("/roles/new", methods=["GET", "POST"])
+@permission_required("roles.manage")
+def roles_new():
+    if request.method == "POST":
+        code = request.form.get("code", "").strip().upper()
+        name = request.form.get("name", "").strip()
+        if not code or not code.replace("_", "").isalnum() or Role.query.filter_by(code=code).first():
+            flash("Mã vai trò phải duy nhất, chỉ gồm chữ, số và dấu gạch dưới.", "danger")
+        elif not name:
+            flash("Tên vai trò là bắt buộc.", "danger")
+        else:
+            role = Role(code=code, name=name, description=optional_text("description"), is_system=False)
+            add_with_sqlite_id(role); db.session.flush()
+            audit("role.create", "Role", role.id, new_values={"code": role.code, "name": role.name})
+            db.session.commit(); flash("Đã tạo vai trò tùy chỉnh.", "success")
+            return redirect(url_for("admin.role_permissions", role_id=role.id))
+    return render_template("admin/roles/form.html", role=None)
+
+
+@bp.route("/roles/<int:role_id>/edit", methods=["GET", "POST"])
+@permission_required("roles.manage")
+def roles_edit(role_id):
+    role = Role.query.get_or_404(role_id)
+    if role.is_system:
+        abort(403)
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        if not name:
+            flash("Tên vai trò là bắt buộc.", "danger")
+        else:
+            old = {"name": role.name, "description": role.description}
+            role.name, role.description = name, optional_text("description")
+            audit("role.update", "Role", role.id, old, {"name": role.name, "description": role.description})
+            db.session.commit(); flash("Đã cập nhật vai trò.", "success")
+            return redirect(url_for("admin.roles_index"))
+    return render_template("admin/roles/form.html", role=role)
 
 
 @bp.route("/roles/<int:role_id>/permissions", methods=["GET", "POST"])
@@ -113,9 +155,18 @@ def role_permissions(role_id):
         audit("role.permissions.update", "Role", role.id, {"permission_ids": sorted(old)}, {"permission_ids": sorted(selected)})
         db.session.commit(); flash("Đã cập nhật phân quyền.", "success")
         return redirect(url_for("admin.role_permissions", role_id=role.id))
+    group_labels = {
+        "modules": "Phân hệ", "users": "Người dùng/Vai trò", "roles": "Người dùng/Vai trò",
+        "security": "Quản trị hệ thống", "system": "Quản trị hệ thống", "project_assignments": "Quản lý dự án / cấu hình dự án",
+        "projects": "Quản lý dự án / cấu hình dự án", "categories": "Quản lý dự án / cấu hình dự án",
+        "reports": "Báo cáo hàng ngày", "attachments": "Báo cáo hàng ngày", "report_attachments": "Báo cáo hàng ngày", "issues": "Báo cáo hàng ngày",
+        "project_documents": "Hồ sơ dự án", "project_document_folders": "Hồ sơ dự án", "project_document_files": "Hồ sơ dự án",
+        "company_media": "Thư viện ảnh/video công ty", "company_media_albums": "Thư viện ảnh/video công ty", "company_media_files": "Thư viện ảnh/video công ty",
+        "partners": "Quản lý đối tác", "partner_companies": "Quản lý đối tác", "partner_fields": "Quản lý đối tác", "partner_field_collections": "Quản lý đối tác", "partner_relations": "Quản lý đối tác",
+    }
     grouped = {}
     for permission in Permission.query.order_by(Permission.module, Permission.sort_order, Permission.code).all():
-        grouped.setdefault(permission.group_name, []).append(permission)
+        grouped.setdefault(group_labels.get(permission.module, permission.group_name), []).append(permission)
     return render_template("admin/roles/permissions.html", role=role, grouped=grouped,
                            selected_ids={item.permission_id for item in role.role_permissions}, can_manage=current_user.can("roles.manage"))
 
@@ -195,45 +246,86 @@ def projects_archive(project_id):
     return redirect(url_for("admin.projects_index"))
 
 
-@bp.route("/projects/<int:project_id>/reporters", methods=["GET", "POST"])
+@bp.get("/projects/<int:project_id>/reporters")
+@bp.get("/projects/<int:project_id>/memberships")
 def projects_reporters(project_id):
-    if request.method == "POST":
-        if not current_user.can("project_assignments.manage"):
-            abort(403)
-    elif not current_user.can("projects.view"):
+    if not current_user.can("projects.view"):
         abort(403)
     project = Project.query.get_or_404(project_id)
-    reporters = (
-        User.query.filter(
-            User.role.has(Role.code.in_([UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value])),
-            User.is_active.is_(True),
-        )
-        .order_by(User.full_name.asc())
-        .all()
-    )
+    memberships = (ProjectUser.query.join(User).filter(ProjectUser.project_id == project.id,
+        ProjectUser.is_active.is_(True)).order_by(User.full_name.asc()).all())
+    assigned_ids = {item.user_id for item in memberships}
+    available_users = User.query.filter(User.is_active.is_(True), User.deleted_at.is_(None), ~User.id.in_(assigned_ids or [0])).order_by(User.full_name.asc()).all()
 
-    if request.method == "POST":
-        allowed_ids = {reporter.id for reporter in reporters}
-        reporter_ids = {
-            int(user_id)
-            for user_id in request.form.getlist("reporter_ids")
-            if user_id.isdigit() and int(user_id) in allowed_ids
-        }
-        added_ids, removed_ids = replace_project_reporters(project, reporter_ids)
-        db.session.commit()
-        flash(
-            f"Đã cập nhật phân quyền dự án. Thêm {len(added_ids)}, gỡ {len(removed_ids)}.",
-            "success",
-        )
-        return redirect(url_for("admin.projects_reporters", project_id=project.id))
-
-    assigned_ids = {assignment.user_id for assignment in project.user_assignments}
     return render_template(
         "admin/projects/reporters.html",
         project=project,
-        reporters=reporters,
-        assigned_ids=assigned_ids,
+        memberships=memberships,
+        available_users=available_users,
+        available_user_payload=[{"id": user.id, "name": user.full_name, "username": user.username,
+                                 "email": user.email or "", "role": user.role.name} for user in available_users],
+        presets={code: sorted(flags) for code, flags in PROJECT_ROLE_PRESETS.items()},
+        capability_fields=CAPABILITY_FIELDS,
+        capability_labels=CAPABILITY_LABELS,
+        project_role_labels=PROJECT_ROLE_LABELS,
+        membership_capability_labels=membership_capability_labels,
+        membership_summary=membership_summary,
     )
+
+
+@bp.post("/projects/<int:project_id>/memberships")
+@permission_required("project_assignments.manage")
+def memberships_create(project_id):
+    project = Project.query.get_or_404(project_id)
+    user_id = request.form.get("user_id", type=int)
+    user = db.session.get(User, user_id)
+    if not user or not user.is_active or user.deleted_at is not None:
+        abort(400)
+    membership = ProjectUser.query.filter_by(project_id=project.id, user_id=user.id).first()
+    if membership and membership.is_active:
+        flash("Người dùng đã có trong dự án.", "warning")
+        return redirect(url_for("admin.projects_reporters", project_id=project.id))
+    membership = membership or ProjectUser(project_id=project.id, user_id=user.id)
+    if membership.id is None:
+        add_with_sqlite_id(membership); db.session.flush()
+    _apply_membership_form(membership)
+    membership.is_active = True
+    audit("project_membership.assign", "ProjectUser", membership.id, new_values={"project_id": project.id, "user_id": user.id})
+    db.session.commit(); flash("Đã thêm thành viên dự án.", "success")
+    return redirect(url_for("admin.projects_reporters", project_id=project.id))
+
+
+@bp.post("/projects/<int:project_id>/memberships/<int:membership_id>")
+@permission_required("project_assignments.manage")
+def memberships_update(project_id, membership_id):
+    membership = ProjectUser.query.filter_by(id=membership_id, project_id=project_id, is_active=True).first_or_404()
+    _apply_membership_form(membership)
+    audit("project_membership.update", "ProjectUser", membership.id)
+    db.session.commit(); flash("Đã lưu thay đổi.", "success")
+    return redirect(url_for("admin.projects_reporters", project_id=project_id))
+
+
+@bp.post("/projects/<int:project_id>/memberships/<int:membership_id>/deactivate")
+@permission_required("project_assignments.manage")
+def memberships_deactivate(project_id, membership_id):
+    membership = ProjectUser.query.filter_by(id=membership_id, project_id=project_id, is_active=True).first_or_404()
+    membership.is_active = False
+    audit("project_membership.deactivate", "ProjectUser", membership.id, new_values={"is_active": False})
+    db.session.commit(); flash("Đã ngừng phân quyền thành viên.", "success")
+    return redirect(url_for("admin.projects_reporters", project_id=project_id))
+
+
+def _apply_membership_form(membership):
+    code = request.form.get("project_role_code", "PROJECT_VIEWER")
+    if code not in PROJECT_ROLE_PRESETS:
+        code = "PROJECT_VIEWER"
+    enabled = {field for field in CAPABILITY_FIELDS if request.form.get(field) == "1"}
+    if not enabled:
+        flash("Vui lòng chọn ít nhất một quyền hoặc dùng nút Bỏ khỏi dự án.", "danger")
+        abort(400)
+    membership.project_role_code = code
+    for field in CAPABILITY_FIELDS:
+        setattr(membership, field, field in enabled)
 
 
 @bp.route("/projects/<int:project_id>/categories", methods=["GET", "POST"])
@@ -364,8 +456,6 @@ def _save_user(user=None):
             errors.append("Vai trò được chọn chưa tồn tại trong hệ thống.")
     if role is None and not errors:
         errors.append("Vui lòng chọn vai trò hợp lệ.")
-    elif role is not None and not role.is_system:
-        errors.append("Vai trò không hợp lệ.")
     if is_new:
         errors.extend(password_policy_errors(password))
     errors.extend(validate_unique_user(username, email, user.id if user else None))
@@ -376,7 +466,7 @@ def _save_user(user=None):
         return render_template(
             "admin/users/form.html",
             user=user,
-            roles=Role.query.filter_by(is_system=True).order_by(Role.id).all(),
+            roles=Role.query.filter(~Role.code.in_(DEPRECATED_GLOBAL_ROLE_CODES)).order_by(Role.is_system.desc(), Role.name).all(),
         ), 400
 
     old_values = _user_snapshot(user) if user else None

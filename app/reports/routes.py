@@ -1,7 +1,7 @@
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 
-from app.auth.permissions import can_create_report, can_delete_report, can_edit_report, can_view_report
+from app.auth.permissions import can_access_reports_module, can_create_report, can_delete_report, can_edit_report, can_view_report
 from app.extensions import db
 from app.models import DailyReport, DailyReportStatus, Project, SectionStatus
 from app.reports import bp
@@ -19,7 +19,7 @@ from app.reports.services import (
 @bp.get("")
 @bp.get("/")
 def index():
-    if not current_user.can("reports.view"):
+    if not can_access_reports_module(current_user):
         abort(403)
     query = reports_query()
     projects = accessible_projects_query().all()

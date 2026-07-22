@@ -19,8 +19,8 @@ from app.models import (
     ReportAttachment,
     ReportCategory,
     SectionStatus,
-    UserRole,
 )
+from app.project_memberships import accessible_project_ids
 
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 IMAGE_FORMATS = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}
@@ -35,15 +35,17 @@ class ReportValidationError(ValueError):
 
 def accessible_projects_query():
     query = Project.query.filter(Project.deleted_at.is_(None))
-    if current_user.role_code in {UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value}:
-        query = query.join(Project.user_assignments).filter_by(user_id=current_user.id)
+    ids = accessible_project_ids(current_user, ("can_view_project",))
+    if ids is not None:
+        query = query.filter(Project.id.in_(ids or [0]))
     return query.order_by(Project.code.asc(), Project.name.asc())
 
 
 def reports_query():
     query = DailyReport.query.filter(DailyReport.deleted_at.is_(None)).join(DailyReport.project)
-    if current_user.role_code in {UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value}:
-        query = query.join(Project.user_assignments).filter_by(user_id=current_user.id)
+    ids = accessible_project_ids(current_user, ("can_view_reports",))
+    if ids is not None:
+        query = query.filter(DailyReport.project_id.in_(ids or [0]))
     return query
 
 

@@ -8,6 +8,7 @@ from sqlalchemy import func
 from app.audit import log_audit
 from app.extensions import db
 from app.models import ProjectUser, ReportCategory, User
+from app.project_memberships import CAPABILITY_FIELDS, PROJECT_ROLE_PRESETS, preset_flags
 
 
 def form_bool(name):
@@ -81,41 +82,40 @@ def temporary_password(length=14):
 audit = log_audit
 
 
-def replace_project_reporters(project, reporter_ids):
+def save_project_memberships(project, form, allowed_user_ids):
+    """Update memberships without deleting history; inactive rows can be reactivated."""
     current_assignments = {
         assignment.user_id: assignment for assignment in project.user_assignments
     }
-    wanted_ids = set(reporter_ids)
-    current_ids = set(current_assignments)
-
-    added_ids = sorted(wanted_ids - current_ids)
-    removed_ids = sorted(current_ids - wanted_ids)
-
-    for user_id in added_ids:
-        assignment = ProjectUser(
-            project_id=project.id,
-            user_id=user_id,
-            role_in_project="MEMBER",
-        )
-        add_with_sqlite_id(assignment)
-        audit(
-            "project_user.assign",
-            "ProjectUser",
-            None,
-            new_values={"project_id": project.id, "user_id": user_id},
-        )
-
-    for user_id in removed_ids:
-        assignment = current_assignments[user_id]
-        audit(
-            "project_user.remove",
-            "ProjectUser",
-            assignment.id,
-            old_values={"project_id": project.id, "user_id": user_id},
-        )
-        db.session.delete(assignment)
-
-    return added_ids, removed_ids
+    submitted_ids = form.getlist("member_ids") or form.getlist("reporter_ids")
+    wanted_ids = {int(value) for value in submitted_ids if value.isdigit() and int(value) in allowed_user_ids}
+    added_ids, removed_ids = [], []
+    for user_id in wanted_ids:
+        assignment = current_assignments.get(user_id)
+        code = form.get(f"membership-{user_id}-project_role_code", "PROJECT_REPORTER")
+        if code not in PROJECT_ROLE_PRESETS:
+            code = "PROJECT_VIEWER"
+        has_explicit_flags = any(f"membership-{user_id}-{field}" in form for field in CAPABILITY_FIELDS)
+        flags = ({field: form.get(f"membership-{user_id}-{field}") == "1" for field in CAPABILITY_FIELDS}
+                 if has_explicit_flags else preset_flags(code))
+        if assignment is None:
+            assignment = ProjectUser(project_id=project.id, user_id=user_id)
+            add_with_sqlite_id(assignment); added_ids.append(user_id)
+        else:
+            assignment.is_active = True
+        assignment.project_role_code = code
+        for field, value in flags.items():
+            setattr(assignment, field, value)
+        audit("project_membership.assign" if user_id in added_ids else "project_membership.update", "ProjectUser", assignment.id,
+              new_values={"project_id": project.id, "user_id": user_id, "project_role_code": code, **flags})
+        if user_id in added_ids:
+            audit("project_user.assign", "ProjectUser", assignment.id, new_values={"project_id": project.id, "user_id": user_id})
+    for user_id, assignment in current_assignments.items():
+        if user_id not in wanted_ids and assignment.is_active:
+            assignment.is_active = False; removed_ids.append(user_id)
+            audit("project_membership.deactivate", "ProjectUser", assignment.id, old_values={"is_active": True}, new_values={"is_active": False})
+            audit("project_user.remove", "ProjectUser", assignment.id, old_values={"project_id": project.id, "user_id": user_id})
+    return sorted(added_ids), sorted(removed_ids)
 
 
 def parse_date(value):

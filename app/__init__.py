@@ -111,7 +111,7 @@ def register_health_route(app):
 
     @app.get("/")
     def index():
-        return redirect(url_for("dashboard.index"))
+        return redirect(url_for("modules.index") if current_user.is_authenticated else url_for("auth.login"))
 
 
 def register_auth_guard(app):
@@ -140,7 +140,7 @@ def register_auth_guard(app):
         report_endpoints = ("dashboard.", "dashboard_api.", "projects.", "reports.", "issues.", "attachments.")
         is_report_admin = endpoint in {
             "admin.projects_index", "admin.projects_new", "admin.projects_edit",
-            "admin.projects_archive", "admin.projects_reporters", "admin.categories_index",
+            "admin.projects_archive", "admin.projects_reporters", "admin.projects_memberships", "admin.categories_index",
             "admin.categories_edit", "admin.categories_activate", "admin.categories_deactivate",
             "admin.categories_delete",
         }

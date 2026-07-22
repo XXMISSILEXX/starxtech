@@ -1,5 +1,9 @@
 # 06. Phân tích per-user permission
 
+## Phase 6.2 update
+
+No direct per-user global permission was added. Per-user project differences belong to memberships; resource exceptions belong to ACL.
+
 ## Có nên xây full permission cho từng user ngay không?
 
 **Không.** Direct per-user global permission không nên là mặc định hiện tại.
@@ -19,4 +23,3 @@ Per-user permission có lợi ích linh hoạt và xử lý tình huống gấp,
 2. Dùng ProjectUser/folder ACL/album ACL cho phạm vi cụ thể.
 3. Nếu nhiều người kiêm vai trò lâu dài, thiết kế multi-role per user với union allow, audit và UX giải thích nguồn quyền.
 4. Chỉ sau đó mới cân nhắc `UserPermissionOverride`: allow/deny explicit, reason bắt buộc, creator, `expires_at`, audit, review và màn “effective permissions”.
-

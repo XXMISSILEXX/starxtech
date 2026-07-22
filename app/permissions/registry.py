@@ -9,8 +9,6 @@ SYSTEM_ROLES = {
     UserRole.SUPER_ADMIN.value: "Quản trị tổng",
     UserRole.ADMIN.value: "Quản trị viên",
     UserRole.VIEWER_ADMIN.value: "Quản trị viên chỉ xem",
-    UserRole.PROJECT_MANAGER.value: "Quản lý dự án",
-    UserRole.REPORTER.value: "Người báo cáo",
 }
 
 _RESOURCES = {
@@ -71,18 +69,6 @@ DEFAULTS = {
         "modules.partners.access",
         "modules.project_documents.access", "project_document_folders.view", "project_document_files.view", "project_document_files.download",
         "modules.company_media.access", "company_media_albums.view", "company_media_files.view", "company_media_files.download",
-    },
-    UserRole.PROJECT_MANAGER.value: {
-        "modules.reports.access", "reports.view", "reports.create", "reports.edit",
-        "issues.view", "issues.create", "issues.edit", "issues.close",
-        "projects.view", "categories.view", "report_attachments.view", "report_attachments.delete",
-        "modules.project_documents.access", "project_document_folders.view", "project_document_folders.create", "project_document_folders.edit",
-        "project_document_files.view", "project_document_files.upload", "project_document_files.edit", "project_document_files.download",
-    },
-    UserRole.REPORTER.value: {
-        "modules.reports.access", "reports.view", "reports.create", "reports.edit",
-        "issues.view", "projects.view", "categories.view", "report_attachments.view", "report_attachments.delete",
-        "modules.project_documents.access", "project_document_folders.view", "project_document_files.view", "project_document_files.upload", "project_document_files.download",
     },
     UserRole.SUPER_ADMIN.value: set(),  # bypass; grants intentionally meaningless
 }

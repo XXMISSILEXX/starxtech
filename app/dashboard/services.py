@@ -10,15 +10,12 @@ from app.models import (
     PersistentIssue,
     Project,
     ProjectUser,
-    Role,
     User,
-    UserRole,
 )
 from app.reports.services import accessible_projects_query
 
 
 OPEN_ISSUE_STATUSES = [IssueStatus.OPEN.value, IssueStatus.PROCESSING.value]
-ASSIGNED_PROJECT_ROLES = {UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value}
 
 
 class DashboardFilterError(ValueError):
@@ -44,7 +41,8 @@ def dashboard_context(filters):
     reports = filtered_reports_query(filters)
     # A report dashboard may be visible without the separately granted issue
     # resource.  Do not leak issue counters or rows in that case.
-    issues = filtered_issues_query(filters) if current_user.can("issues.view") else None
+    from app.project_memberships import has_any_project_capability
+    issues = filtered_issues_query(filters) if has_any_project_capability(current_user, ("can_view_issues",)) else None
     open_issues = issues.filter(PersistentIssue.status.in_(OPEN_ISSUE_STATUSES)) if issues is not None else None
     critical_issues = issues.filter(PersistentIssue.severity == "CRITICAL") if issues is not None else None
     status_counts = _status_counts(reports)
@@ -180,14 +178,12 @@ def filtered_issues_query(filters):
 def accessible_reporters():
     query = User.query.filter(
         User.is_active.is_(True),
-        User.role.has(Role.code.in_([UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value])),
         User.deleted_at.is_(None),
     )
-    if current_user.role_code in ASSIGNED_PROJECT_ROLES:
-        project_ids = [project.id for project in accessible_projects_query().all()]
-        query = query.join(ProjectUser, ProjectUser.user_id == User.id).filter(
-            ProjectUser.project_id.in_(project_ids or [0])
-        )
+    project_ids = [project.id for project in accessible_projects_query().all()]
+    query = query.join(ProjectUser, ProjectUser.user_id == User.id).filter(
+        ProjectUser.project_id.in_(project_ids or [0]), ProjectUser.is_active.is_(True)
+    )
     return query.order_by(User.full_name.asc()).all()
 
 
@@ -202,10 +198,10 @@ def _status_counts(query):
 
 def _apply_project_scope(query):
     query = query.filter(Project.deleted_at.is_(None))
-    if current_user.role_code in ASSIGNED_PROJECT_ROLES:
-        query = query.join(ProjectUser, ProjectUser.project_id == Project.id).filter(
-            ProjectUser.user_id == current_user.id
-        )
+    from app.project_memberships import accessible_project_ids
+    ids = accessible_project_ids(current_user, ("can_view_project",))
+    if ids is not None:
+        query = query.filter(Project.id.in_(ids or [0]))
     return query
 
 

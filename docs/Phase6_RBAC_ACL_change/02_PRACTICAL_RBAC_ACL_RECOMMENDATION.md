@@ -1,5 +1,9 @@
 # 02. Khuyến nghị RBAC + ACL thực tế
 
+## Phase 6.2 update
+
+Adopt preset-plus-flags project memberships: presets speed assignment, while flags authorize routes and support mixed responsibilities without global-role collisions.
+
 ## Quyết định đề xuất
 
 StarX nên tiếp tục dùng **RBAC + scoped ACL hybrid**:
@@ -41,4 +45,3 @@ Role mới trước mắt là **đề xuất**, không được seed trong phase
 - ACL có thể mở quyền vào resource đã share, nhưng không bypass action RBAC.
 - Thu hồi ACL khi kết thúc dự án/cộng tác; review role định kỳ khi thay đổi vị trí.
 - Không dùng SUPER_ADMIN cho công việc thường ngày.
-

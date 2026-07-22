@@ -5,7 +5,7 @@ from flask_login import current_user
 
 from app.admin.services import add_with_sqlite_id, audit
 from app.extensions import db
-from app.models import IssueSeverity, IssueStatus, PersistentIssue, ProjectUser, Role, User, UserRole
+from app.models import IssueSeverity, IssueStatus, PersistentIssue, ProjectUser, User
 
 
 class IssueValidationError(ValueError):
@@ -26,7 +26,7 @@ def owner_choices(project_id):
         User.query.join(ProjectUser, ProjectUser.user_id == User.id)
         .filter(
             ProjectUser.project_id == project_id,
-            User.role.has(Role.code.in_([UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value])),
+            ProjectUser.is_active.is_(True),
             User.is_active.is_(True),
             User.deleted_at.is_(None),
         )
@@ -153,7 +153,7 @@ def _parse_owner(value, project_id):
         .filter(
             ProjectUser.project_id == project_id,
             ProjectUser.user_id == owner_user_id,
-            User.role.has(Role.code.in_([UserRole.REPORTER.value, UserRole.PROJECT_MANAGER.value])),
+            ProjectUser.is_active.is_(True),
             User.is_active.is_(True),
             User.deleted_at.is_(None),
         )

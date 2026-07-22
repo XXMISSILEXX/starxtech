@@ -1,5 +1,9 @@
 # 05. Module switch và access policy
 
+## Phase 6.2 update
+
+Reports and Project Documents are visible for relevant active membership capabilities; Partner remains Global RBAC; Company Media remains Global RBAC plus album ACL.
+
 ## Policy đề xuất
 
 - Màn **Đổi phân hệ** luôn hiện với user đã authenticated.
