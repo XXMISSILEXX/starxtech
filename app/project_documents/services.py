@@ -20,12 +20,24 @@ def get_or_create_project_root_folder(project, user):
     root = ProjectDocumentFolder.query.filter_by(project_id=project.id, is_root=True).filter(ProjectDocumentFolder.deleted_at.is_(None)).first()
     if root:
         return root
-    root = ProjectDocumentFolder(project_id=project.id, name="__ROOT__", is_root=True, created_by_id=user.id)
+    root = ProjectDocumentFolder(project_id=project.id, name="__ROOT__", is_root=True, root_type="project", created_by_id=user.id)
     db.session.add(root)
     db.session.flush()
     audit("document.folder.create", "ProjectDocumentFolder", root.id, new_values={"root": True, "project_id": project.id})
     db.session.commit()
     return root
+
+
+def create_custom_root_folder(user, name, description=None, is_restricted=False):
+    name = (name or "").strip()
+    if not name:
+        raise DocumentValidationError("Tên mục hồ sơ là bắt buộc.")
+    if ProjectDocumentFolder.query.filter_by(project_id=None, is_root=True, name=name).filter(ProjectDocumentFolder.deleted_at.is_(None)).first():
+        raise DocumentValidationError("Đã có mục hồ sơ cùng tên.")
+    root = ProjectDocumentFolder(project_id=None, name=name, description=(description or "").strip() or None,
+        is_root=True, root_type="custom", is_restricted=is_restricted, created_by_id=user.id)
+    db.session.add(root); db.session.flush(); audit("document.custom_root.create", "ProjectDocumentFolder", root.id, new_values={"name": name})
+    db.session.commit(); return root
 
 
 def list_accessible_projects(user):

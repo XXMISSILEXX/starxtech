@@ -2,7 +2,20 @@ from app.project_memberships import is_project_admin, is_viewer_admin, user_has_
 
 
 def _base(user, capability, project_id):
+    if project_id is None:
+        codes = {
+            "can_view_documents": "project_document_folders.view", "can_upload_documents": "project_document_files.upload",
+            "can_edit_documents": "project_document_folders.edit", "can_archive_documents": "project_document_files.delete",
+            "can_restore_documents": "project_document_files.restore", "can_share_documents": "project_document_folders.share",
+        }
+        return bool(user and user.is_authenticated and user.is_active and (is_project_admin(user) or
+            (is_viewer_admin(user) and capability == "can_view_documents") or
+            (user.can("modules.project_documents.access") and user.can(codes.get(capability, "")))))
     return user_has_project_capability(user, project_id, capability)
+
+
+def can_create_custom_root(user):
+    return bool(user and user.is_authenticated and user.is_active and (is_project_admin(user) or user.can("project_documents.custom_roots.create")))
 
 
 def can_access_project_documents(user):

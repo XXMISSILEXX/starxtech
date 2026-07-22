@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Hồ sơ dự án{% endblock %}
-{% block page_title %}Hồ sơ dự án{% endblock %}
+{% block title %}Hồ sơ tài liệu{% endblock %}
+{% block page_title %}Hồ sơ tài liệu{% endblock %}
 {% block content %}
-<nav aria-label="breadcrumb"><ol class="breadcrumb">{% for item in breadcrumb %}<li class="breadcrumb-item {% if loop.last %}active{% endif %}">{% if not loop.last %}<a href="{{ url_for('project_documents.folder', folder_id=item.id, q=q, folder_status=folder_status, file_status=file_status) }}">{{ 'Hồ sơ dự án' if item.is_root else item.name }}</a>{% else %}{{ 'Hồ sơ dự án' if item.is_root else item.name }}{% endif %}</li>{% endfor %}</ol></nav>
+<nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="{{ url_for('project_documents.index') }}">Hồ sơ tài liệu</a></li>{% for item in breadcrumb %}<li class="breadcrumb-item {% if loop.last %}active{% endif %}">{% if not loop.last %}<a href="{{ url_for('project_documents.folder', folder_id=item.id, q=q, folder_status=folder_status, file_status=file_status) }}">{{ item.name if item.is_root and item.root_type == 'custom' else ('Hồ sơ theo dự án' if item.is_root else item.name) }}</a>{% else %}{{ item.name if item.is_root and item.root_type == 'custom' else ('Hồ sơ theo dự án' if item.is_root else item.name) }}{% endif %}</li>{% endfor %}</ol></nav>
 
 <div class="document-toolbar mb-3">
   <form class="document-filter-form" method="get">

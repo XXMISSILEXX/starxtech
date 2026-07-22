@@ -16,6 +16,21 @@ document.addEventListener("DOMContentLoaded", () => {
   initPartnerOrgChartModal();
 });
 
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("[data-permission-group]").forEach((group) => {
+    const boxes = () => [...group.querySelectorAll("[data-group-permission]:not(:disabled)")];
+    const counter = group.querySelector("[data-group-counter]");
+    const sync = () => { const enabled = boxes(); counter.textContent = `Đã chọn ${enabled.filter((box) => box.checked).length}/${enabled.length} quyền`; };
+    group.querySelectorAll("[data-group-permission]").forEach((box) => box.addEventListener("change", sync));
+    group.querySelector("[data-group-select-all]")?.addEventListener("click", () => {
+      if (group.querySelector(".text-bg-warning") && !window.confirm("Nhóm này có quyền nguy hiểm như xóa/lưu trữ/chia sẻ/quản trị. Bạn có chắc muốn chọn tất cả?")) return;
+      boxes().forEach((box) => { box.checked = true; }); sync();
+    });
+    group.querySelector("[data-group-clear]")?.addEventListener("click", () => { boxes().forEach((box) => { box.checked = false; }); sync(); });
+    sync();
+  });
+});
+
 function initReportSections() {
   const container = document.querySelector("[data-sections]");
   if (!container || container.dataset.canWrite !== "1") {

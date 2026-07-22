@@ -5,8 +5,8 @@
 <div class="document-permissions-page" data-folder-permissions>
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
     <div>
-      <div class="page-eyebrow">Hồ sơ dự án</div>
-      <h1 class="h3 mb-1">Chia sẻ thư mục: {{ 'Hồ sơ dự án' if folder.is_root else folder.name }}</h1>
+      <div class="page-eyebrow">Hồ sơ tài liệu</div>
+      <h1 class="h3 mb-1">Chia sẻ thư mục: {{ folder.name if folder.is_root and folder.root_type == 'custom' else ('Hồ sơ theo dự án' if folder.is_root else folder.name) }}</h1>
       <p class="text-muted mb-0">Cấp quyền trực tiếp cho người dùng hoặc vai trò trong thư mục này.</p>
     </div>
     <a class="btn btn-outline-secondary" href="{{ url_for('project_documents.folder', folder_id=folder.id) }}"><i class="bi bi-arrow-left me-1"></i>Quay lại thư mục</a>

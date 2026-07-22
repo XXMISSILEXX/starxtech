@@ -19,11 +19,12 @@ class ProjectDocumentFolder(TimestampMixin, db.Model):
                  sqlite_where=db.text("is_root = 1 AND deleted_at IS NULL")),
     )
     id = db.Column(DOCUMENT_ID, primary_key=True)
-    project_id = db.Column(DOCUMENT_ID, db.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    project_id = db.Column(DOCUMENT_ID, db.ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
     parent_id = db.Column(DOCUMENT_ID, db.ForeignKey("project_document_folders.id", ondelete="RESTRICT"), nullable=True)
     name = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
     is_root = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    root_type = db.Column(db.String(20), nullable=False, default="project", server_default="project")
     is_restricted = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
     created_by_id = db.Column(DOCUMENT_ID, db.ForeignKey("users.id"), nullable=False)
     updated_by_id = db.Column(DOCUMENT_ID, db.ForeignKey("users.id"), nullable=True)
@@ -45,7 +46,7 @@ class ProjectDocumentFile(TimestampMixin, db.Model):
         db.UniqueConstraint("storage_object_id", name="uq_project_document_files_storage_object"),
     )
     id = db.Column(DOCUMENT_ID, primary_key=True)
-    project_id = db.Column(DOCUMENT_ID, db.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    project_id = db.Column(DOCUMENT_ID, db.ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
     folder_id = db.Column(DOCUMENT_ID, db.ForeignKey("project_document_folders.id", ondelete="RESTRICT"), nullable=False)
     storage_object_id = db.Column(DOCUMENT_ID, db.ForeignKey("storage_objects.id"), nullable=False)
     display_name = db.Column(db.String(255), nullable=False)

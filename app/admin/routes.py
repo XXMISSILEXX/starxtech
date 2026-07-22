@@ -20,7 +20,7 @@ from app.auth.permissions import (
 )
 from app.permissions.services import permission_required
 from app.extensions import db
-from app.models import Permission, Project, ProjectStatus, ProjectUser, ReportCategory, Role, RolePermission, User, UserRole
+from app.models import Permission, Project, ProjectDocumentFolder, ProjectStatus, ProjectUser, ReportCategory, Role, RolePermission, User, UserRole
 from app.project_memberships import (CAPABILITY_FIELDS, CAPABILITY_LABELS, PROJECT_ROLE_LABELS,
     PROJECT_ROLE_PRESETS, membership_capability_labels, membership_summary)
 from app.security import password_policy_errors
@@ -541,6 +541,11 @@ def _save_project(project=None):
     project.expected_end_date = expected_end_date
 
     db.session.flush()
+    if is_new:
+        root = ProjectDocumentFolder(project_id=project.id, name="__ROOT__", is_root=True, root_type="project", created_by_id=current_user.id)
+        add_with_sqlite_id(root)
+        db.session.flush()
+        audit("document.folder.create", "ProjectDocumentFolder", root.id, new_values={"root": True, "project_id": project.id})
     audit(
         "project.create" if is_new else "project.update",
         "Project",

@@ -16,7 +16,7 @@ ROLE_LABELS = {
 MODULE_LABELS = {
     "reports": "Báo cáo hàng ngày",
     "partners": "Quản lý đối tác",
-    "project_documents": "Hồ sơ dự án",
+    "project_documents": "Hồ sơ tài liệu",
     "company_media": "Thư viện ảnh/video công ty",
 }
 

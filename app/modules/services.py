@@ -8,7 +8,7 @@ from app.company_media import permissions as company_media_permissions
 MODULES = (
     ("reports", "Báo cáo hàng ngày", "Theo dõi dự án, báo cáo ngày và vấn đề tồn đọng.", "bi-journal-text"),
     ("partners", "Quản lý đối tác", "Quản lý đối tác, công ty và thông tin mở rộng.", "bi-person-vcard"),
-    ("project_documents", "Hồ sơ dự án", "Quản lý thư mục và hồ sơ tài liệu theo dự án.", "bi-folder2-open"),
+    ("project_documents", "Hồ sơ tài liệu", "Quản lý hồ sơ dự án và tài liệu nội bộ.", "bi-folder2-open"),
     ("company_media", "Thư viện ảnh/video công ty", "Album truyền thông nội bộ.", "bi-images"),
 )
 

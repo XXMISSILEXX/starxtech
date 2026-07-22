@@ -74,7 +74,7 @@ def can_access_project_documents_module(user=None):
     user = user or current_user
     from app.project_memberships import has_any_project_capability
     return bool(user.is_authenticated and user.is_active and (
-        is_project_admin(user) or is_viewer_admin(user) or
+        is_project_admin(user) or is_viewer_admin(user) or user.can("modules.project_documents.access") or
         has_any_project_capability(user, ("can_view_documents", "can_upload_documents"))))
 def can_access_company_media_module(user=None):
     user = user or current_user

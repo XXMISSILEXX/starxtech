@@ -8,24 +8,34 @@ from app.project_documents.permissions import (can_access_project_documents, can
     can_delete_project_document_folder, can_edit_project_document_folder, can_restore_project_document_folder, can_share_project_document_folder,
     can_view_project_document_folder, can_upload_project_document_folder, can_download_project_document_file,
     can_edit_project_document_file, can_delete_project_document_file, can_restore_project_document_file,
-    can_view_project_document_file)
+    can_view_project_document_file, can_create_custom_root)
 from app.project_documents.services import (DocumentValidationError, archive_folder, build_breadcrumb, create_folder,
     get_or_create_project_root_folder, list_accessible_projects, list_folder_children, list_folder_files, list_move_destinations, move_folder,
     remove_folder_permission, rename_folder, restore_folder, set_folder_permission, presign_folder_upload_batch,
     complete_folder_upload_item, create_file_download_url, create_file_preview_url, rename_file, archive_file, restore_file, file_payload,
-    bulk_archive_files, bulk_restore_files, bulk_file_download_urls)
+    bulk_archive_files, bulk_restore_files, bulk_file_download_urls, create_custom_root_folder)
 from app.storage.exceptions import StorageNotFoundError, StorageValidationError
 
 
 @bp.before_request
 def require_module():
-    if not can_access_project_documents(current_user): abort(403, description="Bạn không có quyền truy cập Hồ sơ dự án.")
+    if not can_access_project_documents(current_user): abort(403, description="Bạn không có quyền truy cập Hồ sơ tài liệu.")
 
 
 @bp.get("")
 @bp.get("/")
 def index():
-    return render_template("project_documents/index.html", projects=list_accessible_projects(current_user))
+    custom_roots = [item for item in ProjectDocumentFolder.query.filter_by(project_id=None, is_root=True, root_type="custom").filter(ProjectDocumentFolder.deleted_at.is_(None)).all() if can_view_project_document_folder(current_user, item)]
+    return render_template("project_documents/index.html", projects=list_accessible_projects(current_user), custom_roots=custom_roots, can_create_custom_root=can_create_custom_root(current_user))
+
+@bp.post("/custom-roots")
+def custom_root_create():
+    if not can_create_custom_root(current_user): abort(403)
+    try: root = create_custom_root_folder(current_user, request.form.get("name"), request.form.get("description"), request.form.get("is_restricted") == "1")
+    except DocumentValidationError as exc:
+        flash(str(exc), "danger"); return redirect(url_for("project_documents.index"))
+    flash("Đã tạo mục hồ sơ tài liệu.", "success")
+    return redirect(url_for("project_documents.folder", folder_id=root.id))
 
 
 @bp.get("/projects/<int:project_id>")

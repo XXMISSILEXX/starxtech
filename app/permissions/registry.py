@@ -48,6 +48,7 @@ PERMISSIONS = [
     _permission("modules.reports.access", "Truy cập phân hệ Báo cáo hàng ngày"),
     _permission("modules.partners.access", "Truy cập phân hệ Quản lý đối tác"),
     _permission("modules.project_documents.access", "Truy cập phân hệ Hồ sơ tài liệu dự án"),
+    _permission("project_documents.custom_roots.create", "Tạo mục hồ sơ tài liệu khác", dangerous=True),
     _permission("modules.company_media.access", "Truy cập phân hệ Thư viện ảnh/video công ty"),
     *[_permission(f"project_document_folders.{action}", f"{action.title()} Thư mục hồ sơ", dangerous=action in {"delete", "share"}) for action in ("view", "create", "edit", "delete", "share", "restore")],
     *[_permission(f"project_document_files.{action}", f"{action.title()} Tệp hồ sơ", dangerous=action == "delete") for action in ("view", "upload", "edit", "delete", "download", "restore")],
