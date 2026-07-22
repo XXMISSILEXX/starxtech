@@ -24,6 +24,8 @@ class StorageObject(CreatedAtMixin, SoftDeleteMixin, db.Model):
     file_ext = db.Column(db.String(20), nullable=False)
     file_size = db.Column(db.BigInteger, nullable=False)
     checksum_sha256 = db.Column(db.String(64), nullable=True)
+    # Null means a legacy object: its persisted object_key remains canonical.
+    storage_module = db.Column(db.String(40), nullable=True, index=True)
     width = db.Column(db.Integer, nullable=True)
     height = db.Column(db.Integer, nullable=True)
     duration_seconds = db.Column(db.Numeric(12, 3), nullable=True)

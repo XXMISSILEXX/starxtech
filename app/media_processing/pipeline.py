@@ -3,8 +3,8 @@ from datetime import datetime
 from pathlib import Path
 from PIL import Image, UnidentifiedImageError
 from app.extensions import db
-from app.models import MediaProcessingJob, StorageDerivative
-from app.storage.keys import generate_original_key
+from app.models import CompanyMediaFile, MediaProcessingJob, ProjectDocumentFile, StorageDerivative
+from app.storage.keys import build_derivative_key
 from app.storage.providers import get_storage_provider
 
 def process_job(job_id):
@@ -25,11 +25,21 @@ def process_job(job_id):
  return job
 
 def _save_derivative(obj,job,kind,path,mime,provider):
- key=generate_original_key("webp",__import__('flask').current_app.config["STORAGE_PREFIX"]).replace("originals/","derivatives/").replace(".webp",f"_{kind}.webp")
  existing=StorageDerivative.query.filter_by(storage_object_id=obj.id,derivative_type=kind,deleted_at=None).first()
  if existing:return existing
+ # Legacy objects deliberately retain their existing derivative records. New
+ # objects carry their module at upload time so derivatives share its prefix.
+ module=obj.storage_module or _legacy_object_module(obj)
+ key=build_derivative_key(module,obj.id,kind,"webp",__import__('flask').current_app.config["STORAGE_PREFIX"])
  provider.upload_object(obj.bucket,key,path,mime); im=Image.open(path)
  row=StorageDerivative(storage_object_id=obj.id,derivative_type=kind,bucket=obj.bucket,object_key=key,mime_type=mime,file_ext="webp",file_size=path.stat().st_size,width=im.width,height=im.height,created_by_job_id=job.id);db.session.add(row);return row
+
+def _legacy_object_module(obj):
+ if ProjectDocumentFile.query.filter_by(storage_object_id=obj.id).first(): return "document-library"
+ if CompanyMediaFile.query.filter_by(storage_object_id=obj.id).first(): return "company-media"
+ # Storage objects outside both Phase-7 modules retain their stored key; this
+ # fallback is only reached for malformed/orphan processing jobs.
+ return "document-library"
 
 def _image(obj,job,source,tmp,provider):
  Image.MAX_IMAGE_PIXELS=__import__('flask').current_app.config.get("MEDIA_IMAGE_MAX_PIXELS",100_000_000)

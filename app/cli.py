@@ -286,6 +286,8 @@ def _security_audit():
     check(config.get("APP_ENV") != "production" or not config.get("CELERY_TASK_ALWAYS_EAGER"), "celery-eager-not-production", "Celery eager disabled in production", "CELERY_TASK_ALWAYS_EAGER enabled in production")
     check(bool(config.get("MEDIA_TEMP_ROOT")), "media-temp-root-configured", "media temp root configured", "MEDIA_TEMP_ROOT missing")
     check(all(int(config.get(n, 0)) > 0 for n in ("CELERY_TASK_TIME_LIMIT_IMAGE_SECONDS", "CELERY_TASK_TIME_LIMIT_VIDEO_SECONDS")), "media-timeouts-configured", "media timeouts configured", "media timeout missing")
+    check(all(int(config.get(n, 0)) > 0 for n in ("BULK_DOWNLOAD_MAX_FILES", "BULK_DOWNLOAD_MAX_TOTAL_BYTES", "BULK_DOWNLOAD_ZIP_TTL_SECONDS", "CELERY_TASK_TIME_LIMIT_BULK_DOWNLOAD_SECONDS")), "bulk-download-configured", "bulk ZIP limits configured", "bulk ZIP configuration missing")
+    check(bool(config.get("BULK_DOWNLOAD_TEMP_ROOT")), "bulk-download-temp-root", "bulk ZIP temp root configured", "bulk ZIP temp root missing")
     check(all(int(config.get(n, 0)) > 0 for n in ("MEDIA_IMAGE_THUMBNAIL_MAX_SIZE", "MEDIA_IMAGE_PREVIEW_MAX_SIZE", "MEDIA_VIDEO_POSTER_MAX_SIZE", "MEDIA_PROCESSING_MAX_ATTEMPTS")), "media-processing-limits-configured", "media processing limits configured", "media processing limit missing")
     try:
         _validated_upload_root()

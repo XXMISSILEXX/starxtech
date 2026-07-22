@@ -10,3 +10,4 @@ flask_app = create_app()
 
 # Import only after create_app configured celery_app.Task as ContextTask.
 import app.media_processing.tasks  # noqa: E402,F401
+import app.bulk_downloads.tasks  # noqa: E402,F401

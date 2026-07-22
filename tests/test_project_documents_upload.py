@@ -35,6 +35,7 @@ def test_presign_complete_creates_metadata_idempotently_and_downloads(app):
         ], provider=provider)
         assert [item["accepted"] for item in result["items"]] == [True, False]
         item = result["items"][0]; storage = db.session.get(StorageObject, item["storage_object_id"])
+        assert "document-library/originals/" in storage.object_key and storage.storage_module == "document-library"
         provider.register_object(storage.bucket, storage.object_key, 5, "application/pdf")
         complete = complete_folder_upload_item(pm, root, item["upload_batch_item_id"], provider=provider)
         assert complete["file"]["display_name"] == "contract.pdf" and ProjectDocumentFile.query.count() == 1
@@ -213,6 +214,8 @@ def test_bulk_file_routes_apply_acl_and_never_delete_storage(client, app):
         admin, root = db.session.get(User, 6), _root()
         objects = [StorageObject(bucket="b", object_key=f"originals/bulk-{index}.pdf", original_filename=f"bulk-{index}.pdf", mime_type="application/pdf", file_ext="pdf", file_size=1, uploaded_by_id=admin.id, upload_status="active") for index in range(2)]
         db.session.add_all(objects); db.session.flush()
+        for item in objects:
+            provider.put_bytes(item.bucket, item.object_key, b"bulk", item.mime_type)
         files = [ProjectDocumentFile(project_id=root.project_id, folder_id=root.id, storage_object_id=item.id, display_name=item.original_filename, created_by_id=admin.id) for item in objects]
         db.session.add_all(files); db.session.commit()
         root_id, ids = root.id, [item.id for item in files]
@@ -225,7 +228,7 @@ def test_bulk_file_routes_apply_acl_and_never_delete_storage(client, app):
     restored = client.post(f"/project-documents/folders/{root_id}/files/bulk-restore", json={"file_ids": ids})
     assert restored.status_code == 200 and restored.get_json()["restored"] == 2
     downloads = client.post(f"/project-documents/folders/{root_id}/files/bulk-signed-download", json={"file_ids": ids})
-    assert downloads.status_code == 200 and len(downloads.get_json()["downloads"]) == 2
+    assert downloads.status_code == 200 and downloads.get_json()["kind"] == "job"
     client.post("/logout", data={})
     client.post("/login", data={"username_or_email": "viewer", "password": "password123"})
     assert client.post(f"/project-documents/folders/{root_id}/files/bulk-archive", json={"file_ids": ids}).status_code == 403

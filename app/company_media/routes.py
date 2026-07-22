@@ -4,6 +4,8 @@ from app.company_media import bp
 from app.company_media import permissions as p
 from app.company_media import services as s
 from app.models import CompanyMediaAlbum, CompanyMediaAlbumPermission, CompanyMediaFile, Role, User
+from app.models import BulkDownloadJob
+from app.bulk_downloads.services import BulkDownloadError, request_media_download, serialize_job
 
 def _ctx():
     status=request.values.get("media_status","active").lower(); return {"q":request.values.get("q","").strip(),"media_status":status if status in {"active","archived","all"} else "active"}
@@ -115,7 +117,21 @@ def bulk_archive(album_id): return _bulk(album_id,"archived")
 @bp.post("/albums/<int:album_id>/files/bulk-restore")
 def bulk_restore(album_id): return _bulk(album_id,"restored")
 @bp.post("/albums/<int:album_id>/files/bulk-signed-download")
-def bulk_download(album_id): return _bulk(album_id,"downloads")
+def bulk_download(album_id):
+    a=CompanyMediaAlbum.query.get_or_404(album_id)
+    if not p.view_album(current_user,a): abort(403)
+    try:
+        return jsonify(ok=True, **request_media_download(current_user, a, (request.get_json() or {}).get("file_ids", [])))
+    except PermissionError:
+        abort(403)
+    except BulkDownloadError as exc:
+        return jsonify(error=str(exc)), 400
+
+@bp.get("/bulk-download-jobs/<int:job_id>")
+def bulk_download_status(job_id):
+    job=BulkDownloadJob.query.get_or_404(job_id)
+    try: return jsonify(ok=True, **serialize_job(current_user,job))
+    except PermissionError: abort(403)
 @bp.route("/albums/<int:album_id>/permissions",methods=["GET","POST"])
 def permissions(album_id):
     a=CompanyMediaAlbum.query.get_or_404(album_id)

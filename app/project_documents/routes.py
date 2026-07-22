@@ -15,6 +15,8 @@ from app.project_documents.services import (DocumentValidationError, archive_fol
     complete_folder_upload_item, create_file_download_url, create_file_preview_url, rename_file, archive_file, restore_file, file_payload,
     bulk_archive_files, bulk_restore_files, bulk_file_download_urls, create_custom_root_folder)
 from app.storage.exceptions import StorageNotFoundError, StorageValidationError
+from app.bulk_downloads.services import BulkDownloadError, request_document_download, serialize_job
+from app.models import BulkDownloadJob
 
 
 @bp.before_request
@@ -211,9 +213,20 @@ def bulk_restore(folder_id):
 def bulk_signed_download(folder_id):
     folder = _bulk_folder_or_403(folder_id)
     try:
-        return _bulk_response(bulk_file_download_urls(current_user, folder, _bulk_payload_file_ids()), "downloads")
-    except DocumentValidationError as exc:
+        return jsonify(ok=True, **request_document_download(current_user, folder, _bulk_payload_file_ids()))
+    except PermissionError:
+        abort(403)
+    except (DocumentValidationError, BulkDownloadError) as exc:
         return jsonify(error=str(exc)), 400
+
+
+@bp.get("/bulk-download-jobs/<int:job_id>")
+def bulk_download_status(job_id):
+    job = BulkDownloadJob.query.get_or_404(job_id)
+    try:
+        return jsonify(ok=True, **serialize_job(current_user, job))
+    except PermissionError:
+        abort(403)
 
 
 def _folder_or_404(folder_id): return ProjectDocumentFolder.query.get_or_404(folder_id)

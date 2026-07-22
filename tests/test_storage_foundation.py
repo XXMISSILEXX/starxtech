@@ -7,6 +7,7 @@ from app.extensions import db
 from app.models import StorageObject, UploadBatchItem, User
 from app.storage.exceptions import StorageNotFoundError, StorageValidationError
 from app.storage.providers import FakeStorageProvider
+from app.storage.keys import STORAGE_MODULE_DOCUMENT_LIBRARY
 from app.storage.services import cleanup_pending_uploads, complete_upload_item, create_signed_download_url, create_upload_batch_presign
 
 
@@ -27,7 +28,13 @@ def test_batch_presign_partial_success_generates_private_keys(app):
         assert "upload_batch_item_id" not in result["items"][2]
         objects = StorageObject.query.all()
         assert len(objects) == 2 and len({item.object_key for item in objects}) == 2
-        assert all("summer" not in item.object_key and item.object_key.startswith("originals/") for item in objects)
+        assert all(
+            "summer" not in item.object_key
+            and (item.object_key.startswith(f"{STORAGE_MODULE_DOCUMENT_LIBRARY}/originals/")
+                 or f"/{STORAGE_MODULE_DOCUMENT_LIBRARY}/originals/" in item.object_key)
+            and item.storage_module == STORAGE_MODULE_DOCUMENT_LIBRARY
+            for item in objects
+        )
         assert UploadBatchItem.query.filter_by(status="rejected").one().storage_object_id is None
 
 

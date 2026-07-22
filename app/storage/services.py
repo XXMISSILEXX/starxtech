@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from sqlalchemy import func
 
 from app.extensions import db
 from app.models import StorageObject, UploadBatch, UploadBatchItem, UserRole
 from app.storage.exceptions import StorageAuthorizationError, StorageNotFoundError, StorageValidationError
-from app.storage.keys import generate_original_key
+from app.storage.keys import build_original_key, normalize_storage_module
 from app.storage.providers import get_storage_provider
 from app.storage.validation import validate_file_metadata
 
@@ -30,6 +31,7 @@ def create_upload_batch_presign(*, user, module_type, target_type, target_id, fi
         raise StorageValidationError("client_file_id phải duy nhất và không được để trống.")
 
     provider = provider or get_storage_provider()
+    storage_module = normalize_storage_module(module_type)
     batch = UploadBatch(module_type=module_type, target_type=target_type, target_id=int(target_id), created_by_id=user.id, total_files=len(files))
     _add(batch)
     db.session.flush()
@@ -38,8 +40,8 @@ def create_upload_batch_presign(*, user, module_type, target_type, target_id, fi
         client_file_id = str(item["client_file_id"])
         try:
             meta = validate_file_metadata(item.get("filename"), item.get("mime_type"), item.get("size"), item.get("checksum_sha256"))
-            object_key = generate_original_key(meta["file_ext"], _config("STORAGE_PREFIX"))
-            storage_object = StorageObject(bucket=_config("STORAGE_BUCKET"), object_key=object_key, original_filename=meta["filename"], mime_type=meta["mime_type"], file_ext=meta["file_ext"], file_size=meta["file_size"], checksum_sha256=meta["checksum_sha256"], uploaded_by_id=user.id)
+            object_key = build_original_key(storage_module, uuid4().hex, meta["filename"], _config("STORAGE_PREFIX"))
+            storage_object = StorageObject(bucket=_config("STORAGE_BUCKET"), object_key=object_key, storage_module=storage_module, original_filename=meta["filename"], mime_type=meta["mime_type"], file_ext=meta["file_ext"], file_size=meta["file_size"], checksum_sha256=meta["checksum_sha256"], uploaded_by_id=user.id)
             _add(storage_object)
             db.session.flush()
             batch_item = UploadBatchItem(upload_batch_id=batch.id, storage_object_id=storage_object.id, client_file_id=client_file_id, original_filename=meta["filename"], mime_type=meta["mime_type"], file_size=meta["file_size"], status="accepted")

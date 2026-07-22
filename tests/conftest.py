@@ -4,7 +4,7 @@ from werkzeug.security import generate_password_hash
 from app import create_app
 from app.auth.permissions import project_read_required, project_write_required
 from app.extensions import db
-from app.models import Project, ProjectUser, ReportCategory, Role, User, UserRole
+from app.models import BulkDownloadJob, Project, ProjectUser, ReportCategory, Role, User, UserRole
 from app.project_memberships import preset_flags
 
 

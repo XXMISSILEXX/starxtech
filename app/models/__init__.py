@@ -26,6 +26,7 @@ from app.models.storage import StorageObject, UploadBatch, UploadBatchItem
 from app.models.media_processing import StorageDerivative, MediaProcessingJob
 from app.models.project_document import ProjectDocumentFile, ProjectDocumentFolder, ProjectDocumentFolderPermission
 from app.models.company_media import CompanyMediaAlbum, CompanyMediaFile, CompanyMediaAlbumPermission
+from app.models.bulk_download import BulkDownloadJob
 
 __all__ = [
     "AuditLog",
@@ -60,4 +61,5 @@ __all__ = [
     "StorageDerivative", "MediaProcessingJob",
     "ProjectDocumentFolder", "ProjectDocumentFile", "ProjectDocumentFolderPermission",
     "CompanyMediaAlbum", "CompanyMediaFile", "CompanyMediaAlbumPermission",
+    "BulkDownloadJob",
 ]

@@ -87,9 +87,29 @@ document.addEventListener("DOMContentLoaded", () => {
   downloadButton?.addEventListener("click", async () => {
     try {
       const result = await postBulk(root.dataset.bulkDownloadUrl);
-      if (result.downloads.length > 10) window.alert("Trình duyệt có thể chặn nhiều lượt tải xuống.");
-      result.downloads.forEach((download, index) => window.setTimeout(() => window.open(download.url, "_blank", "noopener"), index * 150));
-      if (result.skipped || result.forbidden) showSummary(result, "downloads");
+      if (result.kind === "direct") {
+        window.location.assign(result.download.url);
+        return;
+      }
+      if (result.kind !== "job" || !result.job?.id) throw new Error("Không thể tạo file ZIP, vui lòng thử lại");
+      downloadButton.disabled = true;
+      const originalText = downloadButton.textContent;
+      downloadButton.textContent = "Đang chuẩn bị file ZIP...";
+      const statusUrl = `${window.location.pathname.startsWith("/company-media") ? "/company-media" : "/project-documents"}/bulk-download-jobs/${result.job.id}`;
+      const poll = async () => {
+        const response = await fetch(statusUrl, { headers: { "X-CSRFToken": csrfToken } });
+        const job = await response.json();
+        if (!response.ok) throw new Error(job.error || "Không thể tạo file ZIP, vui lòng thử lại");
+        if (job.status === "succeeded" && job.download?.url) {
+          window.location.assign(job.download.url);
+          return;
+        }
+        if (job.status === "failed" || job.status === "expired") throw new Error(job.error || "Không thể tạo file ZIP, vui lòng thử lại");
+        downloadButton.textContent = job.file_count ? `Đang nén ${job.completed_file_count || 0}/${job.file_count} tệp...` : "Đang chuẩn bị file ZIP...";
+        window.setTimeout(() => poll().catch(fail), 1000);
+      };
+      const fail = (error) => { window.alert(error.message || "Không thể tạo file ZIP, vui lòng thử lại"); downloadButton.disabled = false; downloadButton.textContent = originalText; };
+      poll().catch(fail);
     } catch (error) { window.alert(error.message); }
   });
 
