@@ -48,7 +48,7 @@ def signed_preview(f,variant=None,user=None):
         from app.storage.providers import get_storage_provider
         from app.storage.quota import ensure_bandwidth, record_download
         user=user or db.session.get(User, f.created_by_id)
-        ensure_bandwidth(user,obj.file_size,preview=True);record_download(user,kind="preview",estimated_bytes=obj.file_size,storage_object_id=obj.id);db.session.commit()
+        ensure_bandwidth(user,obj.file_size,preview=True);record_download(user,kind="preview",source_type="preview",module="company-media",estimated_bytes=obj.file_size,storage_object_id=obj.id,estimated_storage_egress_bytes=obj.file_size,estimated_client_egress_bytes=obj.file_size);db.session.commit()
         return {"ok":True,"status":"ready","kind":"video","mime_type":obj.mime_type,"url":get_storage_provider().create_presigned_download(obj.bucket,obj.object_key,300,"inline",f.display_name)["url"]}
     for typ in types:
         d=StorageDerivative.query.filter_by(storage_object_id=obj.id,derivative_type=typ).filter(StorageDerivative.deleted_at.is_(None)).first()
@@ -56,7 +56,7 @@ def signed_preview(f,variant=None,user=None):
             from app.storage.providers import get_storage_provider
             from app.storage.quota import ensure_bandwidth, record_download
             user=user or db.session.get(User, f.created_by_id)
-            ensure_bandwidth(user, d.file_size, preview=True); record_download(user,kind="preview",estimated_bytes=d.file_size,derivative_id=d.id);db.session.commit()
+            ensure_bandwidth(user, d.file_size, preview=True); record_download(user,kind="thumbnail" if d.derivative_type == "thumbnail" else "preview",source_type="thumbnail" if d.derivative_type == "thumbnail" else "preview",module="company-media",estimated_bytes=d.file_size,derivative_id=d.id,estimated_storage_egress_bytes=d.file_size,estimated_client_egress_bytes=d.file_size);db.session.commit()
             return {"ok":True,"kind":"image" if obj.mime_type.startswith("image/") else "video","url":get_storage_provider().create_presigned_download(d.bucket,d.object_key,300,"inline",f.display_name)["url"]}
     if obj.processing_status == "failed" and obj.mime_type.startswith("image/"):
         return {"ok":False,"status":"unavailable","message":"Không tạo được ảnh xem trước cho tệp này."}
@@ -69,7 +69,7 @@ def signed_download(f, user=None):
     from app.storage.quota import ensure_bandwidth, record_download
     try: ensure_bandwidth(user,f.storage_object.file_size)
     except ValueError as exc: raise CompanyMediaError(str(exc))
-    record_download(user,kind="original",estimated_bytes=f.storage_object.file_size,storage_object_id=f.storage_object_id);db.session.commit()
+    record_download(user,kind="original",source_type="original",module="company-media",estimated_bytes=f.storage_object.file_size,storage_object_id=f.storage_object_id,estimated_storage_egress_bytes=f.storage_object.file_size,estimated_client_egress_bytes=f.storage_object.file_size);db.session.commit()
     return get_storage_provider().create_presigned_download(f.storage_object.bucket,f.storage_object.object_key,300,"attachment",f.display_name)
 def set_cover(user,a,media_id):
     f=db.session.get(CompanyMediaFile,media_id)

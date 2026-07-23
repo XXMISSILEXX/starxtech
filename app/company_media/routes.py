@@ -5,7 +5,8 @@ from app.company_media import permissions as p
 from app.company_media import services as s
 from app.models import CompanyMediaAlbum, CompanyMediaAlbumPermission, CompanyMediaFile, Role, User
 from app.models import BulkDownloadJob
-from app.bulk_downloads.services import BulkDownloadError, request_media_download, stream_zip_download, serialize_job
+from app.bulk_downloads.services import (BulkDownloadError, parse_file_ids, preflight_media_download,
+    request_media_download, stream_zip_download, serialize_job)
 from app.storage.services import create_upload_selection_session, finalize_upload_selection_session
 from app.storage.exceptions import StorageAuthorizationError, StorageValidationError
 
@@ -123,7 +124,9 @@ def file_restore(file_id):
 def _bulk(album_id, action):
     a=CompanyMediaAlbum.query.get_or_404(album_id)
     if not p.view_album(current_user,a):abort(403)
-    ids=(request.get_json() or {}).get("file_ids",[]); items=CompanyMediaFile.query.filter(CompanyMediaFile.album_id==a.id,CompanyMediaFile.id.in_(ids)).all(); result={action:[] if action=="downloads" else 0,"skipped":0,"forbidden":0}
+    try: ids=parse_file_ids(request)
+    except BulkDownloadError as exc: return jsonify(error=str(exc)),400
+    items=CompanyMediaFile.query.filter(CompanyMediaFile.album_id==a.id,CompanyMediaFile.id.in_(ids)).all(); result={action:[] if action=="downloads" else 0,"skipped":0,"forbidden":0}
     for f in items:
         allowed={"archived":p.delete_file(current_user,f),"restored":p.restore_file(current_user,f) and a.is_active,"downloads":p.download_file(current_user,f)}[action]
         if not allowed:result["forbidden"]+=1;continue
@@ -140,8 +143,19 @@ def bulk_download(album_id):
     a=CompanyMediaAlbum.query.get_or_404(album_id)
     if not p.view_album(current_user,a): abort(403)
     try:
-        result = request_media_download(current_user, a, (request.get_json() or {}).get("file_ids", []))
+        result = request_media_download(current_user, a, parse_file_ids(request))
         return stream_zip_download(current_user, result) if result["kind"] == "zip" else jsonify(ok=True, **result)
+    except PermissionError:
+        abort(403)
+    except BulkDownloadError as exc:
+        return jsonify(error=str(exc)), 400
+
+@bp.post("/albums/<int:album_id>/files/bulk-download-validate")
+def bulk_download_validate(album_id):
+    a=CompanyMediaAlbum.query.get_or_404(album_id)
+    if not p.view_album(current_user,a): abort(403)
+    try:
+        return jsonify(ok=True, **preflight_media_download(current_user, a, parse_file_ids(request)))
     except PermissionError:
         abort(403)
     except BulkDownloadError as exc:

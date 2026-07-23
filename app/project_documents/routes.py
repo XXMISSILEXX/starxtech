@@ -16,7 +16,8 @@ from app.project_documents.services import (DocumentValidationError, archive_fol
     bulk_archive_files, bulk_restore_files, bulk_file_download_urls, create_custom_root_folder)
 from app.storage.exceptions import StorageNotFoundError, StorageValidationError, StorageAuthorizationError
 from app.storage.services import create_upload_selection_session, finalize_upload_selection_session
-from app.bulk_downloads.services import BulkDownloadError, request_document_download, stream_zip_download, serialize_job
+from app.bulk_downloads.services import (BulkDownloadError, parse_file_ids, preflight_document_download,
+    request_document_download, stream_zip_download, serialize_job)
 from app.models import BulkDownloadJob
 
 
@@ -35,7 +36,7 @@ def index():
 def custom_root_create():
     if not can_create_custom_root(current_user): abort(403)
     try: root = create_custom_root_folder(current_user, request.form.get("name"), request.form.get("description"), request.form.get("is_restricted") == "1")
-    except DocumentValidationError as exc:
+    except (DocumentValidationError, BulkDownloadError) as exc:
         flash(str(exc), "danger"); return redirect(url_for("project_documents.index"))
     flash("Đã tạo mục hồ sơ tài liệu.", "success")
     return redirect(url_for("project_documents.folder", folder_id=root.id))
@@ -191,8 +192,7 @@ def file_restore(file_id):
 
 
 def _bulk_payload_file_ids():
-    payload = request.get_json(silent=True) or {}
-    return payload.get("file_ids", []) if isinstance(payload, dict) else []
+    return parse_file_ids(request)
 
 
 def _bulk_folder_or_403(folder_id):
@@ -214,7 +214,7 @@ def bulk_archive(folder_id):
     folder = _bulk_folder_or_403(folder_id)
     try:
         return _bulk_response(bulk_archive_files(current_user, folder, _bulk_payload_file_ids()), "archived")
-    except DocumentValidationError as exc:
+    except (DocumentValidationError, BulkDownloadError) as exc:
         return jsonify(error=str(exc)), 400
 
 
@@ -223,7 +223,7 @@ def bulk_restore(folder_id):
     folder = _bulk_folder_or_403(folder_id)
     try:
         return _bulk_response(bulk_restore_files(current_user, folder, _bulk_payload_file_ids()), "restored")
-    except DocumentValidationError as exc:
+    except (DocumentValidationError, BulkDownloadError) as exc:
         return jsonify(error=str(exc)), 400
 
 
@@ -233,6 +233,17 @@ def bulk_signed_download(folder_id):
     try:
         result = request_document_download(current_user, folder, _bulk_payload_file_ids())
         return stream_zip_download(current_user, result) if result["kind"] == "zip" else jsonify(ok=True, **result)
+    except PermissionError:
+        abort(403)
+    except (DocumentValidationError, BulkDownloadError) as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@bp.post("/folders/<int:folder_id>/files/bulk-download-validate")
+def bulk_download_validate(folder_id):
+    folder = _bulk_folder_or_403(folder_id)
+    try:
+        return jsonify(ok=True, **preflight_document_download(current_user, folder, _bulk_payload_file_ids()))
     except PermissionError:
         abort(403)
     except (DocumentValidationError, BulkDownloadError) as exc:

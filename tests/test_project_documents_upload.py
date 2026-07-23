@@ -1,4 +1,6 @@
 import pytest
+from io import BytesIO
+import zipfile
 
 from app.extensions import db
 from app.models import MediaProcessingJob, Project, ProjectDocumentFile, StorageDerivative, StorageObject, User
@@ -42,6 +44,10 @@ def test_presign_complete_creates_metadata_idempotently_and_downloads(app):
         complete_folder_upload_item(pm, root, item["upload_batch_item_id"], provider=provider)
         assert ProjectDocumentFile.query.count() == 1
         assert "signature=fake" in create_file_download_url(pm, ProjectDocumentFile.query.one(), provider=provider)["url"]
+        from app.models import DownloadEvent
+        event = DownloadEvent.query.one()
+        assert event.source_type == "original" and event.module == "document-library"
+        assert event.estimated_storage_egress_bytes == 5 and event.estimated_client_egress_bytes == 5
 
 
 def test_complete_route_rejects_missing_item_id_and_accepts_valid_id(client, app):
@@ -251,6 +257,28 @@ def test_bulk_file_routes_apply_acl_and_never_delete_storage(client, app):
     client.post("/login", data={"username_or_email": "viewer", "password": "password123"})
     assert client.post(f"/project-documents/folders/{root_id}/files/bulk-archive", json={"file_ids": ids}).status_code == 403
     assert client.post(f"/project-documents/files/{ids[0]}/rename", data={"display_name": "forbidden.pdf"}).status_code == 403
+
+
+def test_bulk_download_route_bundles_archive_sources_before_response(client, app, tmp_path):
+    with app.app_context():
+        provider = FakeStorageProvider(); app.extensions["storage_provider"] = provider
+        app.config["BULK_DOWNLOAD_TEMP_ROOT"] = str(tmp_path)
+        admin, root = db.session.get(User, 6), _root()
+        nested = BytesIO()
+        with zipfile.ZipFile(nested, "w") as archive: archive.writestr("inside.txt", "archive")
+        objects = [StorageObject(bucket="b", object_key=f"originals/archive-{index}.zip", original_filename=f"archive-{index}.zip", mime_type="application/zip", file_ext="zip", file_size=len(nested.getvalue()), uploaded_by_id=admin.id, upload_status="active") for index in range(2)]
+        db.session.add_all(objects); db.session.flush()
+        for item in objects: provider.put_bytes(item.bucket, item.object_key, nested.getvalue(), "application/zip")
+        files = [ProjectDocumentFile(project_id=root.project_id, folder_id=root.id, storage_object_id=item.id, display_name=item.original_filename, created_by_id=admin.id) for item in objects]
+        db.session.add_all(files); db.session.commit(); root_id, ids = root.id, [item.id for item in files]
+    client.post("/login", data={"username_or_email": "admin", "password": "password123"})
+    response = client.post(f"/project-documents/folders/{root_id}/files/bulk-signed-download", json={"file_ids": ids})
+    assert response.status_code == 200 and response.mimetype == "application/zip" and response.data
+    with zipfile.ZipFile(BytesIO(response.data)) as archive:
+        assert archive.namelist() == ["archive-0.zip", "archive-1.zip"]
+        assert archive.read("archive-0.zip") == nested.getvalue()
+    response.close()
+    assert not list(tmp_path.glob("zip-stream-*"))
 
 
 def test_video_and_pdf_preview_use_runtime_signed_urls(app):

@@ -30,9 +30,10 @@ def _storage(user, key, name, data=b"x"):
     db.session.add(item); db.session.flush(); return item
 
 
-def test_document_bulk_zip_stream_uses_existing_object_keys_without_s3_zip(app):
+def test_document_bulk_zip_stream_uses_existing_object_keys_without_s3_zip(app, tmp_path):
     with app.app_context():
         provider = FakeStorageProvider(); app.extensions["storage_provider"] = provider
+        app.config["BULK_DOWNLOAD_TEMP_ROOT"] = str(tmp_path)
         admin = db.session.get(User, 6)
         root = get_or_create_project_root_folder(db.session.get(Project, 1), admin)
         first = _storage(admin, "dev/originals/legacy.pdf", "same.pdf", b"one")
@@ -45,12 +46,16 @@ def test_document_bulk_zip_stream_uses_existing_object_keys_without_s3_zip(app):
         with app.test_request_context():
             response = stream_zip_download(admin, result)
             assert response.mimetype == "application/zip"
+            assert list(tmp_path.glob("zip-stream-*"))
             response.direct_passthrough = False
             with zipfile.ZipFile(BytesIO(response.get_data())) as archive:
                 assert archive.namelist() == ["same.pdf", "same (2).pdf"]
             response.close()
+            assert not list(tmp_path.glob("zip-stream-*"))
         assert not any("bulk-downloads/" in key for _, key in provider.objects)
-        assert DownloadEvent.query.one().source_type == "zip_stream"
+        event = DownloadEvent.query.one()
+        assert event.source_type == "zip_stream" and event.module == "document-library"
+        assert event.estimated_storage_egress_bytes == 6 and event.estimated_client_egress_bytes > 0
 
 
 def test_media_bulk_download_requires_album_download_acl_and_single_is_direct(app):
@@ -100,6 +105,26 @@ def test_zip_stream_rejects_limit_and_missing_source_before_response(app):
         selection = request_document_download(admin, root, [item.id for item in files])
         with app.test_request_context(), pytest.raises(BulkDownloadError, match="Không tìm thấy"):
             stream_zip_download(admin, selection)
+
+
+def test_zip_stream_bundles_precompressed_sources(app):
+    with app.app_context():
+        provider = FakeStorageProvider(); app.extensions["storage_provider"] = provider
+        admin = db.session.get(User, 6); root = get_or_create_project_root_folder(db.session.get(Project, 1), admin)
+        nested = BytesIO()
+        with zipfile.ZipFile(nested, "w") as archive: archive.writestr("inside.txt", "x")
+        first = _storage(admin, "originals/first.zip", "first.zip", nested.getvalue())
+        second = _storage(admin, "originals/second.pdf", "second.pdf", b"pdf")
+        provider.put_bytes("b", first.object_key, nested.getvalue(), "application/zip")
+        provider.put_bytes("b", second.object_key, b"pdf", "application/pdf")
+        files = [ProjectDocumentFile(project_id=root.project_id, folder_id=root.id, storage_object_id=item.id, display_name=item.original_filename, created_by_id=admin.id) for item in (first, second)]
+        db.session.add_all(files); db.session.commit()
+        with app.test_request_context():
+            response = stream_zip_download(admin, request_document_download(admin, root, [item.id for item in files]))
+            response.direct_passthrough = False
+            with zipfile.ZipFile(BytesIO(response.get_data())) as archive:
+                assert archive.namelist() == ["first.zip", "second.pdf"]
+            response.close()
 
 
 def test_company_media_upload_uses_company_media_namespace(app):

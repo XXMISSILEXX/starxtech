@@ -170,7 +170,9 @@ def create_file_download_url(user, document_file, provider=None):
     provider = provider or get_storage_provider()
     result = provider.create_presigned_download(storage_object.bucket, storage_object.object_key, 300, "attachment", document_file.display_name)
     audit("document.file.download", "ProjectDocumentFile", document_file.id)
-    record_download(user, kind="original", estimated_bytes=storage_object.file_size, storage_object_id=storage_object.id)
+    record_download(user, kind="original", source_type="original", module="document-library",
+        estimated_bytes=storage_object.file_size, storage_object_id=storage_object.id,
+        estimated_storage_egress_bytes=storage_object.file_size, estimated_client_egress_bytes=storage_object.file_size)
     db.session.commit()
     return result
 
@@ -195,7 +197,7 @@ def create_file_preview_url(user, document_file, variant=None, provider=None):
         provider = provider or get_storage_provider()
         result = provider.create_presigned_download(storage_object.bucket, storage_object.object_key, 300, "inline", document_file.display_name)
         from app.storage.quota import ensure_bandwidth, record_download
-        ensure_bandwidth(user, storage_object.file_size, preview=True); record_download(user, kind="preview", estimated_bytes=storage_object.file_size, storage_object_id=storage_object.id); db.session.commit()
+        ensure_bandwidth(user, storage_object.file_size, preview=True); record_download(user, kind="preview", source_type="preview", module="document-library", estimated_bytes=storage_object.file_size, storage_object_id=storage_object.id, estimated_storage_egress_bytes=storage_object.file_size, estimated_client_egress_bytes=storage_object.file_size); db.session.commit()
         return {"ok": True, "status": "ready", "kind": "video", "mime_type": storage_object.mime_type, **result}
     elif mime_type.startswith("video/"):
         derivative_types = {"poster": ("poster",), None: ("poster",)}.get(variant)
@@ -207,7 +209,7 @@ def create_file_preview_url(user, document_file, variant=None, provider=None):
         provider = provider or get_storage_provider()
         result = provider.create_presigned_download(storage_object.bucket, storage_object.object_key, 300, "inline", document_file.display_name)
         from app.storage.quota import ensure_bandwidth, record_download
-        ensure_bandwidth(user, storage_object.file_size, preview=True); record_download(user, kind="preview", estimated_bytes=storage_object.file_size, storage_object_id=storage_object.id); db.session.commit()
+        ensure_bandwidth(user, storage_object.file_size, preview=True); record_download(user, kind="preview", source_type="preview", module="document-library", estimated_bytes=storage_object.file_size, storage_object_id=storage_object.id, estimated_storage_egress_bytes=storage_object.file_size, estimated_client_egress_bytes=storage_object.file_size); db.session.commit()
         return {"ok": True, "status": "ready", "kind": "pdf", "mime_type": storage_object.mime_type, **result}
     else:
         derivative_types = None
@@ -236,7 +238,7 @@ def create_file_preview_url(user, document_file, variant=None, provider=None):
     provider = provider or get_storage_provider()
     result = provider.create_presigned_download(derivative.bucket, derivative.object_key, 300, "inline", document_file.display_name)
     from app.storage.quota import ensure_bandwidth, record_download
-    ensure_bandwidth(user, derivative.file_size, preview=True); record_download(user, kind="preview", estimated_bytes=derivative.file_size, derivative_id=derivative.id); db.session.commit()
+    ensure_bandwidth(user, derivative.file_size, preview=True); record_download(user, kind="thumbnail" if derivative.derivative_type == "thumbnail" else "preview", source_type="thumbnail" if derivative.derivative_type == "thumbnail" else "preview", module="document-library", estimated_bytes=derivative.file_size, derivative_id=derivative.id, estimated_storage_egress_bytes=derivative.file_size, estimated_client_egress_bytes=derivative.file_size); db.session.commit()
     return {"ok": True, "status": "ready", "kind": "image", "mime_type": derivative.mime_type, **result}
 
 

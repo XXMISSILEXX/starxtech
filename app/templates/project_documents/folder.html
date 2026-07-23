@@ -87,4 +87,5 @@
   }));
 })();
 </script>{% endif %}
+<span hidden data-bulk-download-validate-url="{{ url_for('project_documents.bulk_download_validate', folder_id=folder.id) }}"></span>
 {% endblock %}

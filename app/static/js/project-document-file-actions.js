@@ -87,27 +87,40 @@ document.addEventListener("DOMContentLoaded", () => {
   downloadButton?.addEventListener("click", async () => {
     try {
       downloadButton.disabled = true;
-      const originalText = downloadButton.textContent;
       downloadButton.textContent = "Đang chuẩn bị tải xuống...";
       const fileIds = selected().map((checkbox) => Number(checkbox.value));
-      const response = await fetch(root.dataset.bulkDownloadUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken }, body: JSON.stringify({ file_ids: fileIds }) });
-      const contentType = response.headers.get("Content-Type") || "";
-      if (!response.ok) {
-        const result = contentType.includes("application/json") ? await response.json() : {};
-        throw new Error(result.error || "Không thể tải xuống các tệp đã chọn.");
-      }
-      if (contentType.includes("application/json")) {
+      if (fileIds.length === 1) {
+        const response = await fetch(root.dataset.bulkDownloadUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken }, body: JSON.stringify({ file_ids: fileIds }) });
         const result = await response.json();
-        if (result.kind === "direct" && result.download?.url) { window.location.assign(result.download.url); return; }
+        if (!response.ok || result.kind !== "direct" || !result.download?.url) {
+          throw new Error(result.error || "Không thể tải xuống tệp đã chọn.");
+        }
+        window.location.assign(result.download.url);
+        return;
+      }
+
+      const validateUrl = root.dataset.bulkDownloadValidateUrl || document.querySelector("[data-bulk-download-validate-url]")?.dataset.bulkDownloadValidateUrl;
+      const response = await fetch(validateUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken }, body: JSON.stringify({ file_ids: fileIds }) });
+      const result = await response.json();
+      if (!response.ok || result.kind !== "zip") {
         throw new Error(result.error || "Không thể tải xuống các tệp đã chọn.");
       }
-      const blob = await response.blob();
-      const disposition = response.headers.get("Content-Disposition") || "";
-      const filename = (disposition.match(/filename="?([^";]+)"?/) || [])[1] || "download.zip";
-      const objectUrl = URL.createObjectURL(blob); const link = document.createElement("a");
-      link.href = objectUrl; link.download = filename; document.body.append(link); link.click(); link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
-    } catch (error) { window.alert(error.message); }
+
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = root.dataset.bulkDownloadUrl;
+      form.hidden = true;
+      for (const [name, value] of [["csrf_token", csrfToken], ["file_ids_json", JSON.stringify(fileIds)]]) {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = name;
+        input.value = value;
+        form.append(input);
+      }
+      document.body.append(form);
+      form.submit();
+      window.setTimeout(() => form.remove(), 0);
+    } catch (error) { window.alert(error.message || "Tải file ZIP thất bại. Vui lòng thử lại hoặc chọn ít tệp hơn."); }
     finally { downloadButton.disabled = false; downloadButton.textContent = "Tải xuống"; }
   });
 

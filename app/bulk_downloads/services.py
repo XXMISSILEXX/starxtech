@@ -1,6 +1,7 @@
 import shutil
 import tempfile
 import zipfile
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -17,21 +18,52 @@ class BulkDownloadError(ValueError):
     pass
 
 
+def parse_file_ids(request):
+    """Read bulk file IDs from the JSON API or a native HTML form."""
+    if request.is_json:
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or not isinstance(payload.get("file_ids"), list):
+            raise BulkDownloadError("Danh sách tệp không hợp lệ.")
+        return payload["file_ids"]
+
+    if "file_ids_json" in request.form:
+        try:
+            values = json.loads(request.form["file_ids_json"])
+        except (TypeError, ValueError) as exc:
+            raise BulkDownloadError("Danh sách tệp không hợp lệ.") from exc
+        if not isinstance(values, list):
+            raise BulkDownloadError("Danh sách tệp không hợp lệ.")
+        return values
+
+    values = request.form.getlist("file_ids[]")
+    if values:
+        return values
+    return []
+
+
+def preflight_document_download(user, folder, file_ids):
+    files = _select_document_files(user, folder, file_ids)
+    _ensure_objects_exist(files)
+    return {"kind": "direct" if len(files) == 1 else "zip"}
+
+
+def preflight_media_download(user, album, file_ids):
+    files = _select_media_files(user, album, file_ids)
+    _ensure_objects_exist(files)
+    return {"kind": "direct" if len(files) == 1 else "zip"}
+
+
 def request_document_download(user, folder, file_ids):
-    from app.project_documents.permissions import can_download_project_document_file
     from app.project_documents.services import create_file_download_url
-    files = _document_files(folder, file_ids)
-    _validate_selected(files, file_ids, lambda item: can_download_project_document_file(user, item))
+    files = _select_document_files(user, folder, file_ids)
     if len(files) == 1:
         return {"kind": "direct", "download": create_file_download_url(user, files[0])}
     return {"kind": "zip", "files": files, "filename": f"ho-so-tai-lieu-{_now():%Y%m%d-%H%M}.zip", "module": STORAGE_MODULE_DOCUMENT_LIBRARY}
 
 
 def request_media_download(user, album, file_ids):
-    from app.company_media.permissions import download_file
     from app.company_media.services import signed_download
-    files = _media_files(album, file_ids)
-    _validate_selected(files, file_ids, lambda item: download_file(user, item))
+    files = _select_media_files(user, album, file_ids)
     if len(files) == 1:
         return {"kind": "direct", "download": signed_download(files[0], user)}
     return {"kind": "zip", "files": files, "filename": f"album-{safe_storage_filename(album.name, 'media')}-{_now():%Y%m%d-%H%M}.zip", "module": STORAGE_MODULE_COMPANY_MEDIA}
@@ -40,13 +72,8 @@ def request_media_download(user, album, file_ids):
 def stream_zip_download(user, selection):
     """Create a request-local ZIP; legacy jobs remain the only S3 ZIP producers."""
     files = selection["files"]
+    _ensure_objects_exist(files)
     provider = get_storage_provider()
-    try:
-        for item in files:
-            storage = item.storage_object
-            provider.head_object(storage.bucket, storage.object_key)
-    except Exception as exc:
-        raise BulkDownloadError("Không tìm thấy một hoặc nhiều tệp trên kho lưu trữ. Vui lòng kiểm tra lại hoặc liên hệ quản trị viên.") from exc
 
     temp_root = Path(current_app.config["BULK_DOWNLOAD_TEMP_ROOT"])
     temp_root.mkdir(parents=True, exist_ok=True)
@@ -55,12 +82,17 @@ def stream_zip_download(user, selection):
     total_size = sum(int(item.storage_object.file_size or 0) for item in files)
     try:
         names = set()
-        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
+        # This is a bundle, not a recompression service. Storing entries avoids
+        # expensive/redundant compression of ZIP, Office, media, and archives.
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
             for index, item in enumerate(files, start=1):
                 storage = item.storage_object
                 source = temp_dir / f"source-{index}"
                 provider.download_object(storage.bucket, storage.object_key, source)
                 archive.write(source, arcname=_unique_zip_name(item.display_name, names))
+                source.unlink(missing_ok=True)
+        if not zip_path.is_file() or zip_path.stat().st_size <= 0:
+            raise BulkDownloadError("Không thể tạo file ZIP. Vui lòng thử lại hoặc chọn ít tệp hơn.")
         from app.storage.quota import ensure_bandwidth, record_download
         try:
             ensure_bandwidth(user, total_size)
@@ -71,7 +103,11 @@ def stream_zip_download(user, selection):
             estimated_bytes=total_size, estimated_storage_egress_bytes=total_size,
             estimated_client_egress_bytes=zip_size)
         db.session.commit()
-        response = send_file(zip_path, mimetype="application/zip", as_attachment=True, download_name=selection["filename"])
+        response = send_file(zip_path, mimetype="application/zip", as_attachment=True,
+            download_name=selection["filename"], conditional=False, max_age=0)
+        # send_file defaults to direct_passthrough. Disable it so the Flask
+        # Response close lifecycle invokes call_on_close after body iteration.
+        response.direct_passthrough = False
         response.call_on_close(lambda: shutil.rmtree(temp_dir, ignore_errors=True))
         return response
     except Exception:
@@ -180,6 +216,30 @@ def _document_files(folder, ids):
 def _media_files(album, ids):
     values = _normal_ids(ids)
     return CompanyMediaFile.query.filter(CompanyMediaFile.album_id == album.id, CompanyMediaFile.id.in_(values)).all()
+
+
+def _select_document_files(user, folder, file_ids):
+    from app.project_documents.permissions import can_download_project_document_file
+    files = _document_files(folder, file_ids)
+    _validate_selected(files, file_ids, lambda item: can_download_project_document_file(user, item))
+    return files
+
+
+def _select_media_files(user, album, file_ids):
+    from app.company_media.permissions import download_file
+    files = _media_files(album, file_ids)
+    _validate_selected(files, file_ids, lambda item: download_file(user, item))
+    return files
+
+
+def _ensure_objects_exist(files):
+    provider = get_storage_provider()
+    try:
+        for item in files:
+            storage = item.storage_object
+            provider.head_object(storage.bucket, storage.object_key)
+    except Exception as exc:
+        raise BulkDownloadError("Không tìm thấy một hoặc nhiều tệp trên kho lưu trữ. Vui lòng kiểm tra lại hoặc liên hệ quản trị viên.") from exc
 
 
 def _task_files(job):
