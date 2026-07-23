@@ -24,6 +24,8 @@ def create_app(config_class=Config):
         "UPLOAD_SELECTION_MAX_BYTES": 2 * 1024 * 1024 * 1024, "UPLOAD_SINGLE_FILE_MAX_BYTES": 300 * 1024 * 1024,
         "DOWNLOAD_SINGLE_FILE_MAX_BYTES": 300 * 1024 * 1024, "STORAGE_QUOTA_BYTES": 500 * 1024 * 1024 * 1024,
         "DOWNLOAD_MONTHLY_QUOTA_BYTES": 1024 * 1024 * 1024 * 1024,
+        "STORAGE_WARN_RATIO": .70, "STORAGE_SOFT_RATIO": .85, "STORAGE_HARD_RATIO": .95,
+        "DOWNLOAD_WARN_RATIO": .70, "DOWNLOAD_SOFT_RATIO": .85, "DOWNLOAD_HARD_RATIO": .95,
         "STORAGE_PENDING_UPLOAD_HOURS": 24,
         "BULK_DOWNLOAD_MAX_FILES": 100, "BULK_DOWNLOAD_MAX_TOTAL_BYTES": 300 * 1024 * 1024,
         "BULK_DOWNLOAD_ZIP_TTL_SECONDS": 86400, "BULK_DOWNLOAD_TEMP_ROOT": "/tmp/starx-bulk-downloads",
@@ -71,6 +73,7 @@ def create_app(config_class=Config):
 
 def register_blueprints(app):
     from app.admin import bp as admin_bp
+    from app.admin_storage import bp as admin_storage_bp
     from app.attachments import bp as attachments_bp
     from app.auth import bp as auth_bp
     from app.dashboard import api_bp as dashboard_api_bp
@@ -89,6 +92,7 @@ def register_blueprints(app):
     from app.users import bp as users_bp
 
     app.register_blueprint(admin_bp)
+    app.register_blueprint(admin_storage_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(modules_bp)
     app.register_blueprint(dashboard_bp)

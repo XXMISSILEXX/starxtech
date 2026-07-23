@@ -21,6 +21,7 @@ _RESOURCES = {
     "security": "Bảo mật", "system": "Hệ thống", "project_assignments": "Phân quyền dự án",
     "project_documents": "Hồ sơ tài liệu dự án", "project_document_folders": "Thư mục hồ sơ", "project_document_files": "Tệp hồ sơ",
     "company_media": "Thư viện ảnh/video công ty", "company_media_albums": "Album công ty", "company_media_files": "Media công ty",
+    "storage": "Dung lượng & băng thông",
 }
 
 def _permission(code, name, *, dangerous=False, sort_order=0):
@@ -60,16 +61,20 @@ PERMISSIONS = [
     *[_permission(f"partner_fields.{action}", f"{action.title()} Trường dữ liệu đối tác") for action in ("view", "manage")],
     *[_permission(f"partner_field_collections.{action}", f"{action.title()} Bộ trường dữ liệu") for action in ("view", "manage")],
     *[_permission(f"partner_relations.{action}", f"{action.title()} Quan hệ đối tác", dangerous=action == "delete") for action in ("view", "manage", "delete")],
+    _permission("storage.dashboard.view", "Xem Dung lượng & băng thông"),
+    _permission("storage.dashboard.export", "Xuất Dung lượng & băng thông"),
+    _permission("storage.dashboard.manage", "Quản lý Dung lượng & băng thông", dangerous=True),
 ]
 
 DEFAULTS = {
-    UserRole.ADMIN.value: {p["code"] for p in PERMISSIONS if p["code"] not in {"roles.view", "roles.manage", "system.settings"}},
+    UserRole.ADMIN.value: {p["code"] for p in PERMISSIONS if p["code"] not in {"roles.view", "roles.manage", "system.settings", "storage.dashboard.export", "storage.dashboard.manage"}},
     UserRole.VIEWER_ADMIN.value: {
         *{p["code"] for p in PERMISSIONS if p["action"] == "view" and p["code"] != "roles.view"},
         "modules.reports.access",
         "modules.partners.access",
         "modules.project_documents.access", "project_document_folders.view", "project_document_files.view", "project_document_files.download",
         "modules.company_media.access", "company_media_albums.view", "company_media_files.view", "company_media_files.download",
+        "storage.dashboard.view",
     },
     UserRole.SUPER_ADMIN.value: set(),  # bypass; grants intentionally meaningless
 }

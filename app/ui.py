@@ -120,6 +120,7 @@ def category_icon(icon):
 
 
 def register_template_helpers(app):
+    from app.admin_storage.services import format_bytes
     from app.auth.permissions import (
         can_access_partners_module,
         can_access_project_documents_module,
@@ -140,6 +141,7 @@ def register_template_helpers(app):
     app.jinja_env.filters["status_tone"] = status_tone
     app.jinja_env.filters["issue_severity_label"] = issue_severity_label
     app.jinja_env.filters["issue_status_label"] = issue_status_label
+    app.jinja_env.filters["vn_bytes"] = format_bytes
     app.jinja_env.globals["category_icon"] = category_icon
     app.jinja_env.globals["status_icon"] = status_icon
     app.jinja_env.globals["status_tone"] = status_tone

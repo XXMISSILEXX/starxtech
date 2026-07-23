@@ -15,11 +15,12 @@
   <body>
     {% if current_user.is_authenticated %}
     {% set endpoint = request.endpoint or '' %}
-    {% set active_module = 'admin' if endpoint.startswith('admin.') else ('company_media' if endpoint.startswith('company_media.') else ('project_documents' if endpoint.startswith('project_documents.') else ('partners' if endpoint.startswith('partners.') or endpoint.startswith('partner_') else 'reports'))) %}
+    {% set active_module = 'admin' if endpoint.startswith('admin.') or endpoint.startswith('admin_storage.') else ('company_media' if endpoint.startswith('company_media.') else ('project_documents' if endpoint.startswith('project_documents.') else ('partners' if endpoint.startswith('partners.') or endpoint.startswith('partner_') else 'reports'))) %}
     {% set initials = (current_user.full_name or current_user.username or 'U').split()|map('first')|join('')|upper %}
     {% set can_view_admin_users = current_user.can('users.view') %}
     {% set can_view_roles = current_user.can('roles.view') %}
     {% set can_view_report_admin = current_user.can('projects.view') %}
+    {% set can_view_storage_dashboard = current_user.can('storage.dashboard.view') %}
     <div class="app-shell min-vh-100">
       <aside class="sidebar d-none d-lg-flex">
         <div class="brand">
@@ -58,10 +59,11 @@
             {% if can_access_company_media_module() %}<a class="nav-link active" href="{{ url_for('company_media.index') }}"><i class="bi bi-images"></i><span>Thư viện ảnh/video công ty</span></a>{% endif %}
           {% endif %}
           {% if active_module != 'partners' %}
-            {% if can_view_report_admin or can_view_roles %}
+            {% if can_view_report_admin or can_view_roles or can_view_storage_dashboard %}
               <div class="nav-section">Quản trị</div>
               {% if can_view_admin_users %}<a class="nav-link {% if endpoint.startswith('admin.users') %}active{% endif %}" href="{{ url_for('admin.users_index') }}"><i class="bi bi-people"></i><span>Người dùng</span></a>{% endif %}
               {% if can_view_report_admin %}<a class="nav-link {% if endpoint.startswith('admin.projects') or endpoint.startswith('admin.categories') %}active{% endif %}" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-kanban"></i><span>Quản lý dự án</span></a>{% endif %}
+              {% if can_view_storage_dashboard %}<a class="nav-link {% if endpoint.startswith('admin_storage.') %}active{% endif %}" href="{{ url_for('admin_storage.index') }}"><i class="bi bi-device-ssd"></i><span>Dung lượng & băng thông</span></a>{% endif %}
               {% if can_view_roles %}<a class="nav-link {% if request.path.startswith('/admin/roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>{% endif %}
             {% endif %}
           {% endif %}
@@ -120,10 +122,11 @@
               {% if can_access_company_media_module() %}<a class="nav-link active" href="{{ url_for('company_media.index') }}"><i class="bi bi-images"></i><span>Thư viện ảnh/video công ty</span></a>{% endif %}
             {% endif %}
             {% if active_module != 'partners' %}
-              {% if can_view_report_admin or can_view_roles %}
+              {% if can_view_report_admin or can_view_roles or can_view_storage_dashboard %}
                 <div class="nav-section">Quản trị</div>
                 {% if can_view_admin_users %}<a class="nav-link {% if endpoint.startswith('admin.users') %}active{% endif %}" href="{{ url_for('admin.users_index') }}"><i class="bi bi-people"></i><span>Người dùng</span></a>{% endif %}
                 {% if can_view_report_admin %}<a class="nav-link {% if endpoint.startswith('admin.projects') or endpoint.startswith('admin.categories') %}active{% endif %}" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-kanban"></i><span>Quản lý dự án</span></a>{% endif %}
+                {% if can_view_storage_dashboard %}<a class="nav-link {% if endpoint.startswith('admin_storage.') %}active{% endif %}" href="{{ url_for('admin_storage.index') }}"><i class="bi bi-device-ssd"></i><span>Dung lượng & băng thông</span></a>{% endif %}
                 {% if can_view_roles %}<a class="nav-link {% if request.path.startswith('/admin/roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>{% endif %}
               {% endif %}
             {% endif %}
