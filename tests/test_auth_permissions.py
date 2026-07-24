@@ -64,10 +64,10 @@ def test_inactive_user_cannot_login(client):
 
 
 def test_protected_routes_redirect_anonymous_to_login(client):
-    response = client.get("/projects/")
+    response = client.get("/reports/projects")
 
     assert response.status_code == 302
-    assert response.headers["Location"].endswith("/login?next=/projects/")
+    assert response.headers["Location"].endswith("/login?next=/reports/projects")
 
 
 def test_viewer_admin_is_blocked_from_project_write_route(client):

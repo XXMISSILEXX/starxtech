@@ -4,12 +4,13 @@
 {% block page_title %}{{ 'Sửa đối tác' if partner else 'Thêm đối tác' }}{% endblock %}
 
 {% block content %}
-<form method="post" class="vstack gap-3">
+<form method="post" enctype="multipart/form-data" class="vstack gap-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="card">
     <div class="card-header bg-white fw-semibold">Thông tin cơ bản</div>
     <div class="card-body">
       <div class="row g-3">
+        <div class="col-md-3" data-display-image-picker><label class="form-label">Ảnh đại diện</label><div data-display-image-preview class="display-image-preview-circle mb-2">{% if partner and partner.profile_photo_storage_object %}<img src="{{ url_for('partners.photo_preview', partner_id=partner.id) }}" alt="Ảnh hiện tại">{% else %}<span>?</span>{% endif %}</div><label class="upload-dropzone d-block" data-dropzone><input class="visually-hidden" type="file" name="photo" accept=".jpg,.jpeg,.png,.webp,.heic,.heif" data-file-input><span class="upload-title">Chọn hoặc kéo thả ảnh</span></label><div data-picker-status class="small text-muted mt-2"></div><button class="btn btn-sm btn-outline-secondary mt-2" type="button" data-remove-selection>Bỏ lựa chọn</button></div>
         <div class="col-md-6">
           <label class="form-label">Họ tên <span class="text-danger">*</span></label>
           <input class="form-control {% if form_errors.get('full_name') %}is-invalid{% endif %}" name="full_name" value="{{ form_data.get('full_name', '') }}">

@@ -8,17 +8,22 @@ def login(client, username, password="password123"):
 
 def test_roles_navigation_visibility_and_access(client, app):
     login(client, "super")
-    response = client.get("/dashboard")
-    assert b"Vai tr\xc3\xb2 & ph\xc3\xa2n quy\xe1\xbb\x81n" in response.data
-    assert b'href="/admin/roles"' in response.data
+    response = client.get("/reports/dashboard")
+    assert response.status_code == 200
+    assert b"Vai tr\xc3\xb2 & ph\xc3\xa2n quy\xe1\xbb\x81n" not in response.data
+    assert b'href="/admin/roles"' not in response.data
+    modules = client.get("/modules/")
+    assert b"Qu\xe1\xba\xa3n tr\xe1\xbb\x8b h\xe1\xbb\x87 th\xe1\xbb\x91ng" in modules.data
+    assert b'href="/modules/select/admin"' in modules.data
+    assert client.get("/modules/select/admin").status_code == 302
     roles_page = client.get("/admin/roles")
     assert roles_page.status_code == 200
-    assert b'nav-link active" href="/admin/roles"' in roles_page.data
+    assert b"Vai tr\xc3\xb2 & ph\xc3\xa2n quy\xe1\xbb\x81n" in roles_page.data
+    assert b"B\xe1\xba\xa3ng \xc4\x91i\xe1\xbb\x81u khi\xe1\xbb\x83n" not in roles_page.data
 
     client.post("/logout")
     login(client, "admin")
-    response = client.get("/dashboard")
-    assert b"Vai tr\xc3\xb2 & ph\xc3\xa2n quy\xe1\xbb\x81n" not in response.data
+    assert client.get("/admin/roles").status_code == 403
 
     with app.app_context():
         permission = Permission.query.filter_by(code="roles.view").first()
@@ -42,7 +47,7 @@ def test_roles_navigation_visibility_and_access(client, app):
 
     client.post("/logout")
     login(client, "admin")
-    response = client.get("/dashboard")
-    assert b"Vai tr\xc3\xb2 & ph\xc3\xa2n quy\xe1\xbb\x81n" in response.data
-    assert b'href="/admin/roles"' in response.data
+    assert "Quản trị hệ thống".encode() in client.get("/modules/").data
+    response = client.get("/reports/dashboard")
+    assert b"Vai tr\xc3\xb2 & ph\xc3\xa2n quy\xe1\xbb\x81n" not in response.data
     assert client.get("/admin/roles").status_code == 200

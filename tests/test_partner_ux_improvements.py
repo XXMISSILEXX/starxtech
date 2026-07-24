@@ -30,7 +30,7 @@ def create_field(label="Sở thích", key="hobby", field_type="text", group="Cá
 
 
 def create_company_department(company_id=900, company_name="Test Co", department_name="Ban giám đốc"):
-    company = Company.query.get(company_id)
+    company = db.session.get(Company, company_id)
     if not company:
         company = Company(id=company_id, name=company_name)
         db.session.add(company)
@@ -90,7 +90,7 @@ def test_create_company_department_with_parent_and_search(client, app):
     )
     assert updated.status_code == 302
     with app.app_context():
-        assert CompanyDepartment.query.get(child.id).is_special_department is False
+        assert db.session.get(CompanyDepartment, child.id).is_special_department is False
 
     search = client.get("/partner-companies/800/departments?q=Kỹ")
     assert search.status_code == 200
@@ -666,7 +666,7 @@ def test_relationship_delete_uses_post(client, app):
     post_response = client.post("/partner-relations/company/240/relationships/242/delete")
     assert post_response.status_code == 302
     with app.app_context():
-        assert PartnerRelationship.query.get(242).is_active is False
+        assert db.session.get(PartnerRelationship, 242).is_active is False
 
 
 def test_relationship_actions_are_mobile_accessible(client, app):

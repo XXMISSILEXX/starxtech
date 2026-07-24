@@ -1,6 +1,7 @@
 from datetime import date, datetime, time
 
-from flask import abort, flash, redirect, render_template, request, url_for
+from flask import abort, flash, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user
 from sqlalchemy import func
 
 from app.auth.permissions import (
@@ -135,6 +136,9 @@ def new():
             partner = save_partner(request.form)
             audit("partner.create", "Partner", partner.id, new_values=_partner_snapshot(partner))
             db.session.commit()
+            if request.files.get("photo") and request.files["photo"].filename:
+                from app.partner_photos import replace_photo
+                replace_photo(partner, request.files["photo"], kind="profile_photo", user=current_user)
         except PartnerValidationError as exc:
             db.session.rollback()
             flash(str(exc), "danger")
@@ -163,6 +167,47 @@ def detail(partner_id):
     )
 
 
+@bp.post("/<int:partner_id>/photo")
+@permission_required("partners.edit")
+def photo(partner_id):
+    partner = _active_partner_or_404(partner_id)
+    if not can_edit_partner(partner): abort(403)
+    from app.partner_photos import PartnerPhotoError, replace_photo
+    try: replace_photo(partner, request.files.get("photo"), kind="profile_photo", user=current_user)
+    except (PartnerPhotoError, AttributeError) as exc: flash(str(exc) or "Vui lòng chọn ảnh.", "danger")
+    else: flash("Đã cập nhật ảnh đại diện.", "success")
+    return redirect(url_for("partners.detail", partner_id=partner.id))
+
+
+@bp.post("/<int:partner_id>/photo/delete")
+@permission_required("partners.edit")
+def photo_delete(partner_id):
+    partner = _active_partner_or_404(partner_id)
+    if not can_edit_partner(partner): abort(403)
+    from app.partner_photos import delete_photo
+    delete_photo(partner, kind="profile_photo"); flash("Đã xóa ảnh đại diện.", "success")
+    return redirect(url_for("partners.detail", partner_id=partner.id))
+
+
+@bp.post("/<int:partner_id>/photo/signed-preview")
+@permission_required("partners.view")
+def photo_signed_preview(partner_id):
+    partner = _partner_or_404(partner_id)
+    if not can_view_partner(partner): abort(403)
+    from app.partner_photos import PartnerPhotoError, signed_preview
+    try: return jsonify({"ok": True, **signed_preview(partner, kind="profile_photo", user=current_user)})
+    except PartnerPhotoError as exc: return jsonify({"ok": False, "message": str(exc)}), 404
+
+
+@bp.get("/<int:partner_id>/photo/preview")
+@permission_required("partners.view")
+def photo_preview(partner_id):
+    partner = _partner_or_404(partner_id)
+    if not can_view_partner(partner): abort(403)
+    from app.partner_photos import signed_preview
+    return redirect(signed_preview(partner, kind="profile_photo", user=current_user)["url"])
+
+
 @bp.route("/<int:partner_id>/edit", methods=["GET", "POST"])
 @permission_required("partners.edit")
 def edit(partner_id):
@@ -176,6 +221,9 @@ def edit(partner_id):
             save_partner(request.form, partner)
             audit("partner.update", "Partner", partner.id, old_values, _partner_snapshot(partner))
             db.session.commit()
+            if request.files.get("photo") and request.files["photo"].filename:
+                from app.partner_photos import replace_photo
+                replace_photo(partner, request.files["photo"], kind="profile_photo", user=current_user)
         except PartnerValidationError as exc:
             db.session.rollback()
             flash(str(exc), "danger")

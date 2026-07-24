@@ -4,9 +4,10 @@
 {% block page_title %}{{ 'Sửa công ty' if company else 'Thêm công ty' }}{% endblock %}
 
 {% block content %}
-<form method="post" class="card">
+<form method="post" enctype="multipart/form-data" class="card">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="card-body row g-3">
+    <div class="col-md-3" data-display-image-picker><label class="form-label">Logo</label><div data-display-image-preview class="display-image-preview-circle mb-2">{% if company and company.company_photo_storage_object %}<img src="{{ url_for('partner_companies.photo_preview', company_id=company.id) }}" alt="Logo hiện tại">{% else %}<span>SX</span>{% endif %}</div><label class="upload-dropzone d-block" data-dropzone><input class="visually-hidden" type="file" name="photo" accept=".jpg,.jpeg,.png,.webp,.heic,.heif" data-file-input><span class="upload-title">Chọn hoặc kéo thả logo</span></label><div data-picker-status class="small text-muted mt-2"></div><button class="btn btn-sm btn-outline-secondary mt-2" type="button" data-remove-selection>Bỏ lựa chọn</button></div>
     <div class="col-md-6">
       <label class="form-label">Tên công ty <span class="text-danger">*</span></label>
       <input class="form-control {% if errors.get('name') %}is-invalid{% endif %}" name="name" value="{{ request.form.get('name', company.name if company else '') }}">

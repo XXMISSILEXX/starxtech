@@ -31,6 +31,7 @@ def read_csv_setting(name: str) -> tuple[str, ...]:
 
 
 class Config:
+    STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", "20260724-83")
     APP_ENV = os.getenv("APP_ENV", "local")
     DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true" and APP_ENV != "production"
     SECRET_KEY = read_secret("SECRET_KEY", "dev-secret-key")
@@ -47,7 +48,7 @@ class Config:
     SESSION_COOKIE_HTTPONLY = os.getenv("SESSION_COOKIE_HTTPONLY", "true").lower() == "true"
     SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
     SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
-    RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
+    RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "redis://127.0.0.1:6379/2")
     RATELIMIT_LOGIN_LIMIT = os.getenv("RATELIMIT_LOGIN_LIMIT", "5 per minute")
     RATELIMIT_EXPORT_LIMIT = os.getenv("RATELIMIT_EXPORT_LIMIT", "10 per hour")
     TRUST_PROXY_HOPS = int(os.getenv("TRUST_PROXY_HOPS", "0"))

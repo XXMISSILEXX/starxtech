@@ -1,10 +1,13 @@
+import inspect
+from io import BytesIO
+
 import pytest
+from PIL import Image
 from werkzeug.security import check_password_hash
 
 from app import create_app
-from app.attachments.routes import _resolve_attachment_path
 from app.extensions import db
-from app.models import Role, User, UserRole
+from app.models import DownloadEvent, ReportAttachment, Role, User, UserRole
 from app.security import password_policy_errors
 
 
@@ -22,29 +25,93 @@ def test_response_security_headers_are_present(client):
 
 
 def test_csp_allows_only_valid_configured_s3_endpoint_origin(client, app):
+    def directives(value):
+        return {
+            part.split()[0]: set(part.split()[1:])
+            for part in value.rstrip(";").split("; ")
+            if part
+        }
+
     app.config.update(STORAGE_PROVIDER="s3", STORAGE_ENDPOINT_URL="http://127.0.0.1:9000/starx-local")
-    csp = client.get("/health").headers["Content-Security-Policy"]
-    assert "connect-src 'self' http://127.0.0.1:9000;" in csp
-    assert "img-src 'self' data: http://127.0.0.1:9000;" in csp
-    assert "media-src 'self' http://127.0.0.1:9000;" in csp
-    assert "frame-src 'self' http://127.0.0.1:9000;" in csp
-    assert "starx-local" not in csp
+    csp = directives(client.get("/health").headers["Content-Security-Policy"])
+    origin = "http://127.0.0.1:9000"
+    assert {"'self'", origin}.issubset(csp["connect-src"])
+    assert {"'self'", "data:", "blob:", origin}.issubset(csp["img-src"])
+    assert {"'self'", "blob:", origin}.issubset(csp["media-src"])
+    assert "starx-local" not in " ".join(sum((list(v) for v in csp.values()), []))
+    assert "*" not in set().union(*csp.values())
+    assert not ({"data:", "javascript:"} & csp["connect-src"])
     app.config.update(STORAGE_PROVIDER="fake", STORAGE_ENDPOINT_URL="https://fake-storage.invalid")
-    csp = client.get("/health").headers["Content-Security-Policy"]
-    assert "connect-src 'self';" in csp and "img-src 'self' data:;" in csp and "media-src 'self';" in csp and "frame-src 'self';" in csp
+    csp = directives(client.get("/health").headers["Content-Security-Policy"])
+    assert csp["connect-src"] == {"'self'"}
+    assert csp["img-src"] == {"'self'", "data:", "blob:"}
+    assert csp["media-src"] == {"'self'", "blob:"}
     assert "fake-storage.invalid" not in csp
 
 
-def test_attachment_path_must_stay_inside_upload_root(app, tmp_path):
-    app.config["UPLOAD_ROOT"] = str(tmp_path / "uploads")
+def _login(client, username):
+    return client.post("/login", data={"username_or_email": username, "password": "password123"})
+
+
+def _report_attachment(client, app, project_id=1):
+    stream = BytesIO(); Image.new("RGB", (16, 16), "navy").save(stream, "JPEG"); stream.seek(0)
+    response = client.post(f"/reports/projects/{project_id}/reports/create", data={
+        "report_date": "2026-07-23", "overall_status": "UPDATED", "highlight": "Secure storage",
+        "sections-0-category_id": "1" if project_id == 1 else "3", "sections-0-status": "GOOD",
+        "sections-0-content": "Attachment", "sections-0-images": (stream, "safe.jpg"),
+    }, content_type="multipart/form-data")
+    assert response.status_code == 302
+    with app.app_context(): return ReportAttachment.query.one().id
+
+
+def test_attachment_preview_is_authorized_signed_redirect_without_local_runtime(client, app):
+    _login(client, "reporter")
+    attachment_id = _report_attachment(client, app)
     with app.app_context():
-        assert _resolve_attachment_path("project_1/image.jpg") == (tmp_path / "uploads/project_1/image.jpg").resolve()
-        with pytest.raises(Exception) as absolute:
-            _resolve_attachment_path("/etc/passwd")
-        assert getattr(absolute.value, "code", None) == 404
-        with pytest.raises(Exception) as traversal:
-            _resolve_attachment_path("../secret.jpg")
-        assert getattr(traversal.value, "code", None) == 404
+        attachment = db.session.get(ReportAttachment, attachment_id)
+        object_key = attachment.storage_object.object_key
+        report_id = attachment.section.daily_report_id
+    response = client.get(f"/attachments/{attachment_id}")
+    assert response.status_code == 302
+    assert "fake-storage.invalid" in response.headers["Location"]
+    assert object_key in response.headers["Location"]  # signed provider URL, not rendered HTML
+    detail = client.get(f"/reports/{report_id}")
+    assert object_key.encode() not in detail.data
+    import app.attachments.routes as routes
+    source = inspect.getsource(routes)
+    forbidden = ("send" + "_file", "UPLOAD" + "_ROOT", "_resolve" + "_attachment_path")
+    assert all(value not in source for value in forbidden)
+
+
+def test_attachment_original_download_is_signed_and_audited(client, app):
+    _login(client, "reporter")
+    attachment_id = _report_attachment(client, app)
+    response = client.get(f"/attachments/{attachment_id}/download")
+    assert response.status_code == 302 and "fake-storage.invalid" in response.headers["Location"]
+    with app.app_context():
+        event = DownloadEvent.query.filter_by(module="daily-reports", source_type="original").one()
+        assert event.storage_object_id == db.session.get(ReportAttachment, attachment_id).storage_object_id
+
+
+def test_attachment_does_not_issue_signed_url_to_unauthorized_user(client, app):
+    _login(client, "super")
+    attachment_id = _report_attachment(client, app, project_id=2)
+    client.post("/logout"); _login(client, "reporter")
+    response = client.get(f"/attachments/{attachment_id}")
+    assert response.status_code == 403
+    assert "fake-storage.invalid" not in response.headers.get("Location", "")
+
+
+def test_attachment_missing_storage_object_is_safe_error_without_fallback(client, app):
+    _login(client, "reporter")
+    attachment_id = _report_attachment(client, app)
+    with app.app_context():
+        attachment = db.session.get(ReportAttachment, attachment_id)
+        attachment.storage_object_id = None
+        db.session.commit()
+    response = client.get(f"/attachments/{attachment_id}")
+    assert response.status_code == 410
+    assert "S3" in response.get_data(as_text=True)
 
 
 def test_production_configuration_refuses_unsafe_settings():
@@ -105,8 +172,9 @@ def test_reset_local_dev_runs_migrations_and_seeds_admin(tmp_path):
     assert audit.exit_code == 0, audit.output
 
 
-def test_security_audit_runs_and_warns_for_local_default_secret(app):
+def test_security_audit_reports_local_default_secret_without_warning(app):
     result = app.test_cli_runner().invoke(args=["security-audit"])
     assert result.exit_code != 0  # test fixture deliberately has no migration version table
-    assert "WARN secret-key" in result.output
+    assert "PASS secret-key: local default accepted" in result.output
+    assert "WARN " not in result.output
     assert "PASS security-headers" in result.output

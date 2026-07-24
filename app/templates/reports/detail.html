@@ -50,6 +50,7 @@
                   <a href="{{ url_for('attachments.view', attachment_id=attachment.id) }}" target="_blank" rel="noopener">
                     <img class="report-thumb" src="{{ url_for('attachments.view', attachment_id=attachment.id) }}" alt="{{ attachment.original_filename }}">
                   </a>
+                  <a class="small align-self-end" href="{{ url_for('attachments.download', attachment_id=attachment.id) }}">Tải ảnh gốc</a>
                 {% endif %}
               {% endfor %}
             </div>

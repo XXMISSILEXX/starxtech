@@ -22,6 +22,7 @@ _RESOURCES = {
     "project_documents": "Hồ sơ tài liệu dự án", "project_document_folders": "Thư mục hồ sơ", "project_document_files": "Tệp hồ sơ",
     "company_media": "Thư viện ảnh/video công ty", "company_media_albums": "Album công ty", "company_media_files": "Media công ty",
     "storage": "Dung lượng & băng thông",
+    "settings": "Cấu hình giao diện",
 }
 
 def _permission(code, name, *, dangerous=False, sort_order=0):
@@ -64,10 +65,12 @@ PERMISSIONS = [
     _permission("storage.dashboard.view", "Xem Dung lượng & băng thông"),
     _permission("storage.dashboard.export", "Xuất Dung lượng & băng thông"),
     _permission("storage.dashboard.manage", "Quản lý Dung lượng & băng thông", dangerous=True),
+    _permission("settings.branding.view", "Xem nhận diện hệ thống"),
+    _permission("settings.branding.manage", "Quản lý nhận diện hệ thống", dangerous=True),
 ]
 
 DEFAULTS = {
-    UserRole.ADMIN.value: {p["code"] for p in PERMISSIONS if p["code"] not in {"roles.view", "roles.manage", "system.settings", "storage.dashboard.export", "storage.dashboard.manage"}},
+    UserRole.ADMIN.value: {p["code"] for p in PERMISSIONS if p["code"] not in {"roles.view", "roles.manage", "system.settings", "storage.dashboard.export", "storage.dashboard.manage", "settings.branding.view", "settings.branding.manage"}},
     UserRole.VIEWER_ADMIN.value: {
         *{p["code"] for p in PERMISSIONS if p["action"] == "view" and p["code"] != "roles.view"},
         "modules.reports.access",

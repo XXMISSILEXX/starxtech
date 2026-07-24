@@ -103,8 +103,9 @@ class ReportAttachment(CreatedAtMixin, SoftDeleteMixin, db.Model):
         nullable=False,
     )
     original_filename = db.Column(db.String(255), nullable=False)
-    stored_filename = db.Column(db.String(255), nullable=False)
-    file_path = db.Column(db.Text, nullable=False)
+    # Kept nullable in ORM for the explicit 0020 -> CLI -> 0021 transition.
+    # The final database migration enforces active attachments have an object.
+    storage_object_id = db.Column(db.BigInteger, db.ForeignKey("storage_objects.id"), nullable=True, index=True)
     mime_type = db.Column(db.String(100), nullable=False)
     file_size = db.Column(db.BigInteger, nullable=False)
     image_width = db.Column(db.Integer, nullable=True)
@@ -112,6 +113,7 @@ class ReportAttachment(CreatedAtMixin, SoftDeleteMixin, db.Model):
     uploaded_by_user_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=False)
 
     section = db.relationship("DailyReportSection", back_populates="attachments")
+    storage_object = db.relationship("StorageObject", foreign_keys=[storage_object_id])
     uploaded_by = db.relationship(
         "User",
         back_populates="uploaded_attachments",

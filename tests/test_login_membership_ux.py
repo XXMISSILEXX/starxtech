@@ -10,7 +10,7 @@ def test_login_lands_on_modules_for_project_member(client):
 
 
 def test_login_respects_safe_next_and_rejects_unsafe_next(client):
-    assert login(client, "reporter", "/projects").headers["Location"].endswith("/projects")
+    assert login(client, "reporter", "/reports/projects").headers["Location"].endswith("/reports/projects")
     client.post("/logout")
     assert login(client, "reporter", "https://invalid.example").headers["Location"].endswith("/modules/")
 
@@ -32,4 +32,4 @@ def test_membership_rejects_zero_capabilities_and_deactivation_removes_access(cl
     response = client.post("/admin/projects/1/memberships/1/deactivate")
     assert response.status_code == 302
     client.post("/logout"); login(client, "reporter")
-    assert client.get("/projects/1/dashboard").status_code == 403
+    assert client.get("/reports/projects/1/dashboard").status_code == 403

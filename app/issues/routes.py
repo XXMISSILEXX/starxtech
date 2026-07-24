@@ -26,7 +26,6 @@ from app.project_memberships import has_any_project_capability
 
 
 @bp.get("")
-@bp.get("/")
 def index():
     if not has_any_project_capability(current_user, ("can_view_issues",)):
         abort(403)

@@ -75,7 +75,7 @@ def new():
 @bp.route("/<int:field_id>/edit", methods=["GET", "POST"])
 @permission_required("partner_fields.manage")
 def edit(field_id):
-    field = PartnerFieldDefinition.query.get_or_404(field_id)
+    field = db.get_or_404(PartnerFieldDefinition, field_id)
     if request.method == "POST":
         old_values = _snapshot(field)
         try:
@@ -94,7 +94,7 @@ def edit(field_id):
 @bp.post("/<int:field_id>/deactivate")
 @permission_required("partner_fields.manage")
 def deactivate(field_id):
-    field = PartnerFieldDefinition.query.get_or_404(field_id)
+    field = db.get_or_404(PartnerFieldDefinition, field_id)
     old_values = _snapshot(field)
     field.is_active = False
     audit("partner_field.deactivate", "PartnerFieldDefinition", field.id, old_values, _snapshot(field))

@@ -10,12 +10,12 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/app.css', v=static_asset_version) }}" rel="stylesheet">
   </head>
   <body>
     {% if current_user.is_authenticated %}
     {% set endpoint = request.endpoint or '' %}
-    {% set active_module = 'admin' if endpoint.startswith('admin.') or endpoint.startswith('admin_storage.') else ('company_media' if endpoint.startswith('company_media.') else ('project_documents' if endpoint.startswith('project_documents.') else ('partners' if endpoint.startswith('partners.') or endpoint.startswith('partner_') else 'reports'))) %}
+    {% set active_module = nav_active_module %}
     {% set initials = (current_user.full_name or current_user.username or 'U').split()|map('first')|join('')|upper %}
     {% set can_view_admin_users = current_user.can('users.view') %}
     {% set can_view_roles = current_user.can('roles.view') %}
@@ -23,14 +23,15 @@
     {% set can_view_storage_dashboard = current_user.can('storage.dashboard.view') %}
     <div class="app-shell min-vh-100">
       <aside class="sidebar d-none d-lg-flex">
-        <div class="brand">
-          <div class="brand-mark">SX</div>
+        <a class="brand text-decoration-none" href="{{ url_for('modules.index') }}" aria-label="Mở chọn phân hệ">
+          {% if branding.logo_url %}<img class="brand-mark object-fit-contain" src="{{ branding.logo_url }}" alt="StarX logo">{% else %}<div class="brand-mark">SX</div>{% endif %}
           <div>
             <div class="brand-title">StarX</div>
             <div class="brand-subtitle">{{ active_module|module_label }}</div>
           </div>
-        </div>
+        </a>
         <nav class="nav flex-column gap-1">
+          <div class="module-switch-section"><a class="nav-link module-switch-link {% if endpoint.startswith('modules.') %}active{% endif %}" data-testid="desktop-module-switch-link" href="{{ url_for('modules.index') }}"><i class="bi bi-arrow-left-right"></i><span>Đổi phân hệ</span></a></div>
           {% if active_module == 'partners' %}
             {% if current_user.can('partners.view') %}<a class="nav-link {% if endpoint == 'partners.dashboard' %}active{% endif %}" href="{{ url_for('partners.dashboard') }}"><i class="bi bi-grid-1x2"></i><span>Tổng quan đối tác</span></a>
             <a class="nav-link {% if endpoint.startswith('partners.') and endpoint != 'partners.dashboard' %}active{% endif %}" href="{{ url_for('partners.index') }}"><i class="bi bi-person-vcard"></i><span>Đối tác</span></a>{% endif %}
@@ -40,15 +41,6 @@
               <a class="nav-link {% if endpoint.startswith('partner_field_collections.') %}active{% endif %}" href="{{ url_for('partner_field_collections.index') }}"><i class="bi bi-collection"></i><span>Bộ trường dữ liệu</span></a>
             {% endif %}
             {% if current_user.can('partner_relations.view') %}<a class="nav-link {% if endpoint.startswith('partner_relations.') %}active{% endif %}" href="{{ url_for('partner_relations.index') }}"><i class="bi bi-diagram-3"></i><span>Sơ đồ quan hệ</span></a>{% endif %}
-            {% if can_view_admin_users or can_view_roles %}
-              <div class="nav-section">Quản trị</div>
-              {% if can_view_admin_users %}
-              <a class="nav-link {% if endpoint.startswith('admin.users') %}active{% endif %}" href="{{ url_for('admin.users_index') }}"><i class="bi bi-people"></i><span>Người dùng</span></a>
-              {% endif %}
-              {% if can_view_roles %}
-              <a class="nav-link {% if request.path.startswith('/admin/roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>
-              {% endif %}
-            {% endif %}
           {% elif active_module == 'reports' %}
             {% if can_access_reports_module() %}<a class="nav-link {% if endpoint.startswith('dashboard.') %}active{% endif %}" href="{{ url_for('dashboard.index') }}"><i class="bi bi-grid-1x2"></i><span>Bảng điều khiển</span></a>
             <a class="nav-link {% if endpoint.startswith('projects.') %}active{% endif %}" href="{{ url_for('projects.index') }}"><i class="bi bi-building"></i><span>Dự án</span></a>
@@ -58,35 +50,32 @@
           {% elif active_module == 'company_media' %}
             {% if can_access_company_media_module() %}<a class="nav-link active" href="{{ url_for('company_media.index') }}"><i class="bi bi-images"></i><span>Thư viện ảnh/video công ty</span></a>{% endif %}
           {% endif %}
-          {% if active_module != 'partners' %}
-            {% if can_view_report_admin or can_view_roles or can_view_storage_dashboard %}
-              <div class="nav-section">Quản trị</div>
-              {% if can_view_admin_users %}<a class="nav-link {% if endpoint.startswith('admin.users') %}active{% endif %}" href="{{ url_for('admin.users_index') }}"><i class="bi bi-people"></i><span>Người dùng</span></a>{% endif %}
-              {% if can_view_report_admin %}<a class="nav-link {% if endpoint.startswith('admin.projects') or endpoint.startswith('admin.categories') %}active{% endif %}" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-kanban"></i><span>Quản lý dự án</span></a>{% endif %}
-              {% if can_view_storage_dashboard %}<a class="nav-link {% if endpoint.startswith('admin_storage.') %}active{% endif %}" href="{{ url_for('admin_storage.index') }}"><i class="bi bi-device-ssd"></i><span>Dung lượng & băng thông</span></a>{% endif %}
-              {% if can_view_roles %}<a class="nav-link {% if request.path.startswith('/admin/roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>{% endif %}
-            {% endif %}
+          {% if active_module == 'admin' %}
+            {% if can_view_admin_users %}<a class="nav-link" href="{{ url_for('admin.users_index') }}"><i class="bi bi-people"></i><span>Người dùng</span></a>{% endif %}
+            {% if can_view_report_admin %}<a class="nav-link" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-kanban"></i><span>Quản lý dự án</span></a>{% endif %}
+            {% if can_view_storage_dashboard %}<a class="nav-link" href="{{ url_for('admin_storage.index') }}"><i class="bi bi-device-ssd"></i><span>Dung lượng & băng thông</span></a>{% endif %}
+            {% if can_view_roles %}<a class="nav-link {% if request.path.startswith('/admin/roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>{% endif %}
+            {% if current_user.can('settings.branding.view') %}<a class="nav-link" href="{{ url_for('admin.branding') }}"><i class="bi bi-palette"></i><span>Nhận diện hệ thống</span></a>{% endif %}
           {% endif %}
-          <div class="nav-section">Phân hệ</div>
-          <a class="nav-link {% if endpoint.startswith('modules.') %}active{% endif %}" href="{{ url_for('modules.index') }}"><i class="bi bi-arrow-left-right"></i><span>Đổi phân hệ</span></a>
+          <div class="mt-auto pt-3 border-top"><a class="nav-link" href="{{ url_for('account.profile') }}"><i class="bi bi-person-gear"></i><span>Cài đặt cá nhân</span></a></div>
         </nav>
         <div class="sidebar-watermark">Made by Tran Hieu Slayer</div>
       </aside>
 
       <div class="offcanvas offcanvas-start" tabindex="-1" id="mobileSidebar" aria-labelledby="mobileSidebarLabel">
         <div class="offcanvas-header">
-          <div class="brand mb-0" id="mobileSidebarLabel">
-            <div class="brand-mark">SX</div>
+          <a class="brand mb-0 text-decoration-none" id="mobileSidebarLabel" href="{{ url_for('modules.index') }}" aria-label="Mở chọn phân hệ">
+            {% if branding.logo_url %}<img class="brand-mark object-fit-contain" src="{{ branding.logo_url }}" alt="StarX logo">{% else %}<div class="brand-mark">SX</div>{% endif %}
             <div>
               <div class="brand-title">StarX</div>
               <div class="brand-subtitle">{{ active_module|module_label }}</div>
             </div>
-          </div>
+          </a>
           <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Đóng"></button>
         </div>
         <div class="offcanvas-body pt-0">
           <div class="mobile-account-card">
-            <div class="avatar">{{ initials[:2] }}</div>
+            {% if current_user.avatar_storage_object %}<img class="avatar object-fit-cover" src="{{ url_for('account.avatar') }}?v={{ current_user.avatar_storage_object_id }}" alt="Ảnh đại diện">{% else %}<div class="avatar">{{ initials[:2] }}</div>{% endif %}
             <div class="min-w-0">
               <div class="fw-semibold">{{ current_user.full_name }}</div>
               <div class="text-muted small">{{ current_user.role_code|role_label }}</div>
@@ -94,6 +83,7 @@
             </div>
           </div>
           <nav class="nav flex-column gap-1">
+            <div class="module-switch-section"><a class="nav-link module-switch-link {% if endpoint.startswith('modules.') %}active{% endif %}" data-testid="mobile-module-switch-link" href="{{ url_for('modules.index') }}"><i class="bi bi-arrow-left-right"></i><span>Đổi phân hệ</span></a></div>
             {% if active_module == 'partners' %}
               {% if current_user.can('partners.view') %}<a class="nav-link {% if endpoint == 'partners.dashboard' %}active{% endif %}" href="{{ url_for('partners.dashboard') }}"><i class="bi bi-grid-1x2"></i><span>Tổng quan đối tác</span></a>
               <a class="nav-link {% if endpoint.startswith('partners.') and endpoint != 'partners.dashboard' %}active{% endif %}" href="{{ url_for('partners.index') }}"><i class="bi bi-person-vcard"></i><span>Đối tác</span></a>{% endif %}
@@ -103,15 +93,6 @@
                 <a class="nav-link {% if endpoint.startswith('partner_field_collections.') %}active{% endif %}" href="{{ url_for('partner_field_collections.index') }}"><i class="bi bi-collection"></i><span>Bộ trường dữ liệu</span></a>
               {% endif %}
               {% if current_user.can('partner_relations.view') %}<a class="nav-link {% if endpoint.startswith('partner_relations.') %}active{% endif %}" href="{{ url_for('partner_relations.index') }}"><i class="bi bi-diagram-3"></i><span>Sơ đồ quan hệ</span></a>{% endif %}
-              {% if can_view_admin_users or can_view_roles %}
-                <div class="nav-section">Quản trị</div>
-                {% if can_view_admin_users %}
-                <a class="nav-link {% if endpoint.startswith('admin.users') %}active{% endif %}" href="{{ url_for('admin.users_index') }}"><i class="bi bi-people"></i><span>Người dùng</span></a>
-                {% endif %}
-                {% if can_view_roles %}
-                <a class="nav-link {% if request.path.startswith('/admin/roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>
-                {% endif %}
-              {% endif %}
             {% elif active_module == 'reports' %}
               {% if can_access_reports_module() %}<a class="nav-link {% if endpoint.startswith('dashboard.') %}active{% endif %}" href="{{ url_for('dashboard.index') }}"><i class="bi bi-grid-1x2"></i><span>Bảng điều khiển</span></a>
               <a class="nav-link {% if endpoint.startswith('projects.') %}active{% endif %}" href="{{ url_for('projects.index') }}"><i class="bi bi-building"></i><span>Dự án</span></a>
@@ -121,7 +102,7 @@
             {% elif active_module == 'company_media' %}
               {% if can_access_company_media_module() %}<a class="nav-link active" href="{{ url_for('company_media.index') }}"><i class="bi bi-images"></i><span>Thư viện ảnh/video công ty</span></a>{% endif %}
             {% endif %}
-            {% if active_module != 'partners' %}
+            {% if active_module == 'admin' %}
               {% if can_view_report_admin or can_view_roles or can_view_storage_dashboard %}
                 <div class="nav-section">Quản trị</div>
                 {% if can_view_admin_users %}<a class="nav-link {% if endpoint.startswith('admin.users') %}active{% endif %}" href="{{ url_for('admin.users_index') }}"><i class="bi bi-people"></i><span>Người dùng</span></a>{% endif %}
@@ -130,11 +111,8 @@
                 {% if can_view_roles %}<a class="nav-link {% if request.path.startswith('/admin/roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>{% endif %}
               {% endif %}
             {% endif %}
-            <div class="nav-section">Phân hệ</div>
-            <a class="nav-link {% if endpoint.startswith('modules.') %}active{% endif %}" href="{{ url_for('modules.index') }}"><i class="bi bi-arrow-left-right"></i><span>Đổi phân hệ</span></a>
             <div class="nav-section">Tài khoản</div>
-            <button class="nav-link mobile-account-info-button" type="button" data-bs-toggle="modal" data-bs-target="#accountInfoModal"><i class="bi bi-person-circle"></i><span>Thông tin tài khoản</span></button>
-            <a class="nav-link {% if endpoint == 'auth.change_password' %}active{% endif %}" href="{{ url_for('auth.change_password') }}"><i class="bi bi-key"></i><span>Đổi mật khẩu</span></a>
+            <a class="nav-link {% if endpoint.startswith('account.') %}active{% endif %}" data-testid="mobile-account-settings-link" href="{{ url_for('account.profile') }}"><i class="bi bi-person-gear"></i><span>Cài đặt cá nhân</span></a>
             <form method="post" action="{{ url_for('auth.logout') }}" class="mobile-logout-form">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="nav-link mobile-logout-button" type="submit"><i class="bi bi-box-arrow-right"></i><span>Đăng xuất</span></button>
@@ -157,9 +135,9 @@
           </div>
           <div class="topbar-actions mobile-hide">
             <button class="btn icon-btn" type="button" aria-label="Thông báo"><i class="bi bi-bell"></i></button>
-            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('auth.change_password') }}"><i class="bi bi-key me-1"></i>Đổi mật khẩu</a>
+            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('account.profile') }}"><i class="bi bi-person-gear me-1"></i>Cài đặt cá nhân</a>
             <div class="user-chip">
-              <div class="avatar">{{ initials[:2] }}</div>
+              {% if current_user.avatar_storage_object %}<img class="avatar object-fit-cover" src="{{ url_for('account.avatar') }}?v={{ current_user.avatar_storage_object_id }}" alt="Ảnh đại diện">{% else %}<div class="avatar">{{ initials[:2] }}</div>{% endif %}
               <div class="d-none d-sm-block">
                 <div class="fw-semibold">{{ current_user.full_name }}</div>
                 <div class="text-muted small">{{ current_user.role_code|role_label }}</div>
@@ -189,37 +167,6 @@
       </div>
     </div>
 
-    <div class="modal fade" id="accountInfoModal" tabindex="-1" aria-labelledby="accountInfoModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h2 class="modal-title h6" id="accountInfoModalLabel">Thông tin tài khoản</h2>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
-          </div>
-          <div class="modal-body">
-            <div class="d-flex align-items-center gap-3 mb-3">
-              <div class="avatar account-modal-avatar">{{ initials[:2] }}</div>
-              <div class="min-w-0">
-                <div class="fw-bold">{{ current_user.full_name }}</div>
-                <div class="text-muted small">{{ current_user.role_code|role_label }}</div>
-              </div>
-            </div>
-            <dl class="account-info-list mb-0">
-              <dt>Tên đăng nhập</dt>
-              <dd>{{ current_user.username }}</dd>
-              <dt>Email</dt>
-              <dd>{{ current_user.email or '-' }}</dd>
-              <dt>Vai trò</dt>
-              <dd>{{ current_user.role_code|role_label }}</dd>
-            </dl>
-          </div>
-          <div class="modal-footer">
-            <a class="btn btn-outline-secondary" href="{{ url_for('auth.change_password') }}"><i class="bi bi-key me-1"></i>Đổi mật khẩu</a>
-            <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Đóng</button>
-          </div>
-        </div>
-      </div>
-    </div>
     {% else %}
     <main class="auth-shell min-vh-100 d-flex align-items-center justify-content-center p-4">
       <div class="w-100" style="max-width: 420px;">
@@ -254,10 +201,17 @@
         </div>
       </div>
     </div>
+    <div class="modal fade" id="mediaPreviewModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog media-viewer-dialog"><div class="modal-content bg-dark media-viewer-panel"><div class="modal-header border-secondary text-white"><h2 class="modal-title h6 text-truncate" data-media-preview-title>Xem trước</h2><button class="btn-close btn-close-white media-viewer-close" type="button" data-bs-dismiss="modal" aria-label="Đóng"></button></div><div class="modal-body d-flex align-items-center justify-content-center overflow-hidden" data-media-preview-body></div><div class="modal-footer border-secondary justify-content-between"><div class="btn-group d-none" data-media-image-tools><button class="btn btn-outline-light" type="button" data-viewer-zoom-in aria-label="Phóng to">+</button><button class="btn btn-outline-light" type="button" data-viewer-zoom-out aria-label="Thu nhỏ">−</button><button class="btn btn-outline-light" type="button" data-viewer-rotate-left aria-label="Xoay trái">↶</button><button class="btn btn-outline-light" type="button" data-viewer-rotate-right aria-label="Xoay phải">↷</button><button class="btn btn-outline-light" type="button" data-viewer-reset>Đặt lại</button></div><div class="ms-auto d-flex gap-2"><a class="btn btn-light" data-media-preview-download>Tải xuống</a><button class="btn btn-outline-light" type="button" data-bs-dismiss="modal">Đóng</button></div></div></div></div>
+    </div>
+    <div class="modal fade" id="displayImageCropModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 class="h6 mb-0">Cắt ảnh tròn</h2><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body text-center"><canvas width="512" height="512" class="display-crop-canvas"></canvas><input class="form-range mt-3" type="range" min="1" max="3" step=".05" value="1" data-crop-zoom></div><div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-crop-rotate-left aria-label="Xoay trái">↶</button><button class="btn btn-outline-secondary" type="button" data-crop-rotate-right aria-label="Xoay phải">↷</button><button class="btn btn-outline-secondary" type="button" data-crop-reset>Đặt lại</button><button class="btn btn-primary" type="button" data-crop-confirm>Dùng ảnh này</button></div></div></div></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js', v=static_asset_version) }}"></script>
+    <script src="{{ url_for('static', filename='js/display-image-picker.js', v=static_asset_version) }}"></script>
+    <script src="{{ url_for('static', filename='js/report-attachment-picker.js', v=static_asset_version) }}"></script>
+    <script src="{{ url_for('static', filename='js/media-preview-modal.js', v=static_asset_version) }}"></script>
   </body>
 </html>

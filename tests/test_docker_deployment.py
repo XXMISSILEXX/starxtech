@@ -43,10 +43,11 @@ def test_healthz_is_public_and_returns_ok(client):
     assert response.get_json() == {"status": "ok"}
 
 
-def test_security_audit_warns_when_memory_rate_limit_storage_is_used(app):
+def test_security_audit_accepts_isolated_memory_rate_limit_storage_for_tests(app):
     result = app.test_cli_runner().invoke(args=["security-audit"])
 
-    assert "WARN rate-limit-storage: memory:// is per worker and resets when the application restarts" in result.output
+    assert "PASS rate-limit-storage: isolated in-memory storage configured for tests" in result.output
+    assert "WARN rate-limit-storage" not in result.output
 
 
 def test_docker_deployment_files_and_gitignore_are_safe():

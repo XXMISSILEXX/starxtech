@@ -28,11 +28,11 @@
     </div>
     <div class="col-auto">
       <label class="form-label small" for="date_from">Từ ngày</label>
-      <input class="form-control form-control-sm" id="date_from" name="date_from" type="date" value="{{ filters.date_from }}">
+      <input class="form-control form-control-sm" id="date_from" name="date_from" type="text" data-vn-report-date value="{{ filters.date_from }}" placeholder="DD/MM/YYYY">
     </div>
     <div class="col-auto">
       <label class="form-label small" for="date_to">Đến ngày</label>
-      <input class="form-control form-control-sm" id="date_to" name="date_to" type="date" value="{{ filters.date_to }}">
+      <input class="form-control form-control-sm" id="date_to" name="date_to" type="text" data-vn-report-date value="{{ filters.date_to }}" placeholder="DD/MM/YYYY">
     </div>
     <div class="col-auto">
       <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-funnel me-1"></i>Lọc</button>
@@ -61,7 +61,7 @@
     <tbody>
       {% for report in reports %}
         <tr>
-          <td data-label="Ngày"><a href="{{ url_for('reports.detail', report_id=report.id) }}">{{ report.report_date }}</a></td>
+          <td data-label="Ngày"><a href="{{ url_for('reports.detail', report_id=report.id) }}">{{ report.report_date|vn_date }}</a></td>
           <td data-label="Dự án">{{ report.project.code }} - {{ report.project.name }}</td>
           <td data-label="Trạng thái"><span class="badge status-badge status-{{ report.overall_status|lower }}">{{ report.overall_status|status_label }}</span></td>
           <td data-label="Điểm nổi bật" class="text-truncate" style="max-width: 360px;">{{ report.highlight }}</td>

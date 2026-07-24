@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 import shutil
+from flask import current_app
 
 from app.extensions import db
 from app.models import MediaProcessingJob, StorageDerivative, StorageObject
@@ -80,7 +81,14 @@ def enqueue_media_processing_for_storage_object(storage_object_id):
     db.session.add(job)
     storage_object.processing_status = "queued"
     db.session.commit()
-    return _dispatch_media_job(job)
+    if current_app.testing:
+        return job
+    # Upload must remain durable even when the optional async worker/broker is
+    # temporarily unavailable. Reconciliation/retry commands will dispatch it.
+    try:
+        return _dispatch_media_job(job)
+    except Exception:
+        return job
 
 
 def retry_media_jobs(status, dry_run=True):

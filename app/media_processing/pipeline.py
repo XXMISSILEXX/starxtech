@@ -36,8 +36,10 @@ def _save_derivative(obj,job,kind,path,mime,provider):
  # objects carry their module at upload time so derivatives share its prefix.
  module=obj.storage_module or _legacy_object_module(obj)
  key=build_derivative_key(module,obj.id,kind,"webp",__import__('flask').current_app.config["STORAGE_PREFIX"])
- provider.upload_object(obj.bucket,key,path,mime); im=Image.open(path)
- row=StorageDerivative(storage_object_id=obj.id,derivative_type=kind,bucket=obj.bucket,object_key=key,mime_type=mime,file_ext="webp",file_size=path.stat().st_size,width=im.width,height=im.height,created_by_job_id=job.id);db.session.add(row);return row
+ provider.upload_object(obj.bucket,key,path,mime)
+ with Image.open(path) as image:
+  width, height = image.size
+ row=StorageDerivative(storage_object_id=obj.id,derivative_type=kind,bucket=obj.bucket,object_key=key,mime_type=mime,file_ext="webp",file_size=path.stat().st_size,width=width,height=height,created_by_job_id=job.id);db.session.add(row);return row
 
 def _legacy_object_module(obj):
  if ProjectDocumentFile.query.filter_by(storage_object_id=obj.id).first(): return "document-library"
@@ -50,10 +52,15 @@ def _image(obj,job,source,tmp,provider):
  Image.MAX_IMAGE_PIXELS=__import__('flask').current_app.config.get("MEDIA_IMAGE_MAX_PIXELS",100_000_000)
  with Image.open(source) as original:
   original.verify()
- with Image.open(source) as original:
-  original=original.convert("RGB");obj.width, obj.height=original.size
-  for kind,limit in (("thumbnail",__import__('flask').current_app.config["MEDIA_IMAGE_THUMBNAIL_MAX_SIZE"]),("preview",__import__('flask').current_app.config["MEDIA_IMAGE_PREVIEW_MAX_SIZE"])):
-   image=original.copy();image.thumbnail((limit,limit));path=tmp/f"{kind}.webp";image.save(path,"WEBP",quality=82,method=4);_save_derivative(obj,job,kind,path,"image/webp",provider)
+ with Image.open(source) as source_image:
+  with source_image.convert("RGB") as original:
+   obj.width, obj.height=original.size
+   for kind,limit in (("thumbnail",__import__('flask').current_app.config["MEDIA_IMAGE_THUMBNAIL_MAX_SIZE"]),("preview",__import__('flask').current_app.config["MEDIA_IMAGE_PREVIEW_MAX_SIZE"])):
+    with original.copy() as image:
+     image.thumbnail((limit,limit))
+     path=tmp/f"{kind}.webp"
+     image.save(path,"WEBP",quality=82,method=4)
+     _save_derivative(obj,job,kind,path,"image/webp",provider)
 
 def _video(obj,job,source,tmp,provider):
  timeout=__import__('flask').current_app.config["CELERY_TASK_TIME_LIMIT_VIDEO_SECONDS"]

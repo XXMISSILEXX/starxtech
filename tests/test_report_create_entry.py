@@ -28,7 +28,7 @@ def test_reports_page_contains_create_report_entry_for_admin(client):
 def test_projects_create_report_query_shows_flash_message(client):
     login(client, "super")
 
-    response = client.get("/projects?create_report=1")
+    response = client.get("/reports/projects?create_report=1")
 
     assert response.status_code == 200
     assert "Chọn dự án để tạo báo cáo mới".encode() in response.data

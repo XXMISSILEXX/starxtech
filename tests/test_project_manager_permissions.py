@@ -37,10 +37,10 @@ def grant_pm(app, code):
 def test_project_manager_accesses_only_assigned_projects(client):
     login(client, "pm")
 
-    assert client.get("/projects/1/dashboard").status_code == 200
-    assert client.get("/projects/2/dashboard").status_code == 403
-    assert client.get("/projects/1/reports").status_code == 200
-    assert client.get("/projects/2/reports").status_code == 403
+    assert client.get("/reports/projects/1/dashboard").status_code == 200
+    assert client.get("/reports/projects/2/dashboard").status_code == 403
+    assert client.get("/reports/projects/1/reports").status_code == 200
+    assert client.get("/reports/projects/2/reports").status_code == 403
     assert client.get("/admin/users").status_code == 403
 
 
@@ -111,18 +111,18 @@ def test_project_manager_can_manage_issues_only_for_assigned_project(client, app
     grant_pm(app, "issues.delete")
     login(client, "pm")
 
-    created = client.post("/projects/1/issues/create", data=issue_form())
+    created = client.post("/reports/projects/1/issues/create", data=issue_form())
     assert created.status_code == 302
-    blocked = client.post("/projects/2/issues/create", data=issue_form(owner_user_id=""))
+    blocked = client.post("/reports/projects/2/issues/create", data=issue_form(owner_user_id=""))
     assert blocked.status_code == 403
 
     with app.app_context():
         issue = PersistentIssue.query.filter_by(title="PM issue").one()
         issue_id = issue.id
 
-    edited = client.post(f"/issues/{issue_id}/edit", data=issue_form("PM issue updated"))
+    edited = client.post(f"/reports/issues/{issue_id}/edit", data=issue_form("PM issue updated"))
     assert edited.status_code == 302
-    deleted = client.post(f"/issues/{issue_id}/delete")
+    deleted = client.post(f"/reports/issues/{issue_id}/delete")
     assert deleted.status_code == 302
 
     with app.app_context():
@@ -147,4 +147,4 @@ def test_reporter_cannot_delete_persistent_issue(client, app):
         db.session.commit()
 
     login(client, "reporter")
-    assert client.post("/issues/601/delete").status_code == 403
+    assert client.post("/reports/issues/601/delete").status_code == 403

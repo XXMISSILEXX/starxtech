@@ -92,7 +92,7 @@ def test_reporter_dashboard_does_not_leak_unassigned_project_data(client, app):
         seed_dashboard_data()
 
     login(client, "reporter")
-    response = client.get("/dashboard")
+    response = client.get("/reports/dashboard")
 
     assert response.status_code == 200
     assert b"Assigned good report" in response.data
@@ -100,13 +100,13 @@ def test_reporter_dashboard_does_not_leak_unassigned_project_data(client, app):
     assert b"Assigned open issue" in response.data
     assert b"Unassigned open issue" not in response.data
 
-    chart = client.get("/api/dashboard/status-chart")
+    chart = client.get("/api/reports/dashboard/status-chart")
     assert chart.status_code == 200
     payload = chart.get_json()
     counts = dict(zip(payload["labels"], payload["counts"]))
-    assert counts["GOOD"] == 1
-    assert counts["PROCESSING"] == 1
-    assert counts["CRITICAL"] == 0
+    assert counts["Tốt"] == 1
+    assert counts["Đang xử lý"] == 1
+    assert counts["Nghiêm trọng"] == 0
 
 
 def test_viewer_admin_sees_all_but_no_write_buttons(client, app):
@@ -114,20 +114,20 @@ def test_viewer_admin_sees_all_but_no_write_buttons(client, app):
         seed_dashboard_data()
 
     login(client, "viewer")
-    dashboard = client.get("/dashboard")
+    dashboard = client.get("/reports/dashboard")
     assert dashboard.status_code == 200
     assert b"Unassigned critical report" in dashboard.data
     assert b"Unassigned open issue" in dashboard.data
 
-    project_dashboard = client.get("/projects/1/dashboard")
+    project_dashboard = client.get("/reports/projects/1/dashboard")
     assert project_dashboard.status_code == 200
     assert b"Add report" not in project_dashboard.data
 
-    issues = client.get("/projects/1/issues")
+    issues = client.get("/reports/projects/1/issues")
     assert issues.status_code == 200
     assert b"Create issue" not in issues.data
 
-    blocked = client.post("/projects/1/issues/create", data=issue_form())
+    blocked = client.post("/reports/projects/1/issues/create", data=issue_form())
     assert blocked.status_code == 403
 
 
@@ -136,19 +136,19 @@ def test_dashboard_counts_are_correct_for_seed_data(client, app):
         seed_dashboard_data()
 
     login(client, "super")
-    response = client.get("/dashboard")
+    response = client.get("/reports/dashboard")
 
     assert response.status_code == 200
     assert "Tổng báo cáo".encode() in response.data
     assert "Vấn đề đang mở".encode() in response.data
 
-    chart = client.get("/api/dashboard/status-chart")
+    chart = client.get("/api/reports/dashboard/status-chart")
     counts = dict(zip(chart.get_json()["labels"], chart.get_json()["counts"]))
-    assert counts["GOOD"] == 1
-    assert counts["PROCESSING"] == 1
-    assert counts["CRITICAL"] == 1
+    assert counts["Tốt"] == 1
+    assert counts["Đang xử lý"] == 1
+    assert counts["Nghiêm trọng"] == 1
 
-    count_chart = client.get("/api/dashboard/report-count-chart?from_date=2026-07-01&to_date=2026-07-31")
+    count_chart = client.get("/api/reports/dashboard/report-count-chart?from_date=2026-07-01&to_date=2026-07-31")
     assert count_chart.status_code == 200
     assert count_chart.get_json()["counts"] == [1, 1, 1]
 
@@ -156,7 +156,7 @@ def test_dashboard_counts_are_correct_for_seed_data(client, app):
 def test_reporter_cannot_mutate_persistent_issues_by_default(client, app):
     login(client, "reporter")
 
-    created = client.post("/projects/1/issues/create", data=issue_form())
+    created = client.post("/reports/projects/1/issues/create", data=issue_form())
     assert created.status_code == 403
 
     with app.app_context():
@@ -168,6 +168,6 @@ def test_reporter_cannot_access_unassigned_project_issues(client, app):
         seed_dashboard_data()
 
     login(client, "reporter")
-    assert client.get("/projects/2/issues").status_code == 403
-    assert client.get("/issues/203/edit").status_code == 403
-    assert client.post("/issues/203/close").status_code == 403
+    assert client.get("/reports/projects/2/issues").status_code == 403
+    assert client.get("/reports/issues/203/edit").status_code == 403
+    assert client.post("/reports/issues/203/close").status_code == 403

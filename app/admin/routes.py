@@ -58,7 +58,7 @@ def users_new():
 @bp.route("/users/<int:user_id>/edit", methods=["GET", "POST"])
 @permission_required("users.view")
 def users_edit(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
     if request.method == "POST":
         _require_users_manage()
         return _save_user(user)
@@ -73,7 +73,7 @@ def users_edit(user_id):
 @bp.post("/users/<int:user_id>/deactivate")
 @permission_required("users.manage")
 def users_deactivate(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
     ensure_not_last_active_super_admin(user, new_is_active=False)
     old_values = {"is_active": user.is_active}
     user.is_active = False
@@ -86,7 +86,7 @@ def users_deactivate(user_id):
 @bp.post("/users/<int:user_id>/activate")
 @permission_required("users.manage")
 def users_activate(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
     old_values = {"is_active": user.is_active}
     user.is_active = True
     audit("user.activate", "User", user.id, old_values, {"is_active": user.is_active})
@@ -123,7 +123,7 @@ def roles_new():
 @bp.route("/roles/<int:role_id>/edit", methods=["GET", "POST"])
 @permission_required("roles.manage")
 def roles_edit(role_id):
-    role = Role.query.get_or_404(role_id)
+    role = db.get_or_404(Role, role_id)
     if role.is_system:
         abort(403)
     if request.method == "POST":
@@ -142,7 +142,7 @@ def roles_edit(role_id):
 @bp.route("/roles/<int:role_id>/permissions", methods=["GET", "POST"])
 @permission_required("roles.view")
 def role_permissions(role_id):
-    role = Role.query.get_or_404(role_id)
+    role = db.get_or_404(Role, role_id)
     if request.method == "POST":
         if not current_user.can("roles.manage") or role.code == UserRole.SUPER_ADMIN.value:
             abort(403)
@@ -174,7 +174,7 @@ def role_permissions(role_id):
 @bp.post("/roles/<int:role_id>/permissions/reset-defaults")
 @permission_required("roles.manage")
 def role_permissions_reset_defaults(role_id):
-    role = Role.query.get_or_404(role_id)
+    role = db.get_or_404(Role, role_id)
     if role.code == UserRole.SUPER_ADMIN.value:
         abort(400)
     from app.permissions.registry import DEFAULTS
@@ -191,7 +191,7 @@ def role_permissions_reset_defaults(role_id):
 @bp.post("/users/<int:user_id>/reset-password")
 @permission_required("users.manage")
 def users_reset_password(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
     password = temporary_password()
     user.password_hash = generate_password_hash(password)
     audit("user.reset_password", "User", user.id, new_values={"username": user.username})
@@ -223,7 +223,7 @@ def projects_new():
 @bp.route("/projects/<int:project_id>/edit", methods=["GET", "POST"])
 @permission_required("projects.manage")
 def projects_edit(project_id):
-    project = Project.query.get_or_404(project_id)
+    project = db.get_or_404(Project, project_id)
     if request.method == "POST":
         return _save_project(project)
 
@@ -237,7 +237,7 @@ def projects_edit(project_id):
 @bp.post("/projects/<int:project_id>/archive")
 @permission_required("projects.manage")
 def projects_archive(project_id):
-    project = Project.query.get_or_404(project_id)
+    project = db.get_or_404(Project, project_id)
     old_values = {"status": project.status}
     project.status = ProjectStatus.ARCHIVED.value
     audit("project.archive", "Project", project.id, old_values, {"status": project.status})
@@ -251,7 +251,7 @@ def projects_archive(project_id):
 def projects_reporters(project_id):
     if not current_user.can("projects.view"):
         abort(403)
-    project = Project.query.get_or_404(project_id)
+    project = db.get_or_404(Project, project_id)
     memberships = (ProjectUser.query.join(User).filter(ProjectUser.project_id == project.id,
         ProjectUser.is_active.is_(True)).order_by(User.full_name.asc()).all())
     assigned_ids = {item.user_id for item in memberships}
@@ -276,7 +276,7 @@ def projects_reporters(project_id):
 @bp.post("/projects/<int:project_id>/memberships")
 @permission_required("project_assignments.manage")
 def memberships_create(project_id):
-    project = Project.query.get_or_404(project_id)
+    project = db.get_or_404(Project, project_id)
     user_id = request.form.get("user_id", type=int)
     user = db.session.get(User, user_id)
     if not user or not user.is_active or user.deleted_at is not None:
@@ -330,7 +330,7 @@ def _apply_membership_form(membership):
 
 @bp.route("/projects/<int:project_id>/categories", methods=["GET", "POST"])
 def categories_index(project_id):
-    project = Project.query.get_or_404(project_id)
+    project = db.get_or_404(Project, project_id)
     _require_can_view_categories(project.id)
     if request.method == "POST":
         _require_can_manage_categories(project.id)
@@ -354,7 +354,7 @@ def categories_index(project_id):
 
 @bp.route("/projects/<int:project_id>/categories/<int:category_id>/edit", methods=["GET", "POST"])
 def categories_edit(project_id, category_id):
-    project = Project.query.get_or_404(project_id)
+    project = db.get_or_404(Project, project_id)
     _require_can_view_categories(project.id)
     category = ReportCategory.query.filter(
         ReportCategory.id == category_id,
@@ -693,3 +693,28 @@ def _category_snapshot(category):
         "is_active": category.is_active,
         "is_required": category.is_required,
     }
+
+
+@bp.route("/branding", methods=["GET", "POST"])
+def branding():
+    from flask_login import current_user
+    from app.display_images import DisplayImageError, remove_display_image, replace_display_image
+    from app.models import SystemSetting
+    if not current_user.can("settings.branding.view"):
+        abort(403)
+    setting = db.session.get(SystemSetting, "branding") or SystemSetting(key="branding")
+    if request.method == "POST":
+        if not current_user.can("settings.branding.manage"):
+            abort(403)
+        try:
+            if request.form.get("remove_logo"):
+                remove_display_image(setting, attribute="brand_logo_storage_object")
+            elif request.files.get("logo") and request.files["logo"].filename:
+                replace_display_image(setting, request.files["logo"], attribute="brand_logo_storage_object", scope="branding", user=current_user)
+            if db.session.get(SystemSetting, "branding") is None:
+                db.session.add(setting)
+            db.session.commit(); flash("Đã cập nhật nhận diện hệ thống.", "success")
+        except DisplayImageError as exc:
+            db.session.rollback(); flash(str(exc), "danger")
+        return redirect(url_for("admin.branding"))
+    return render_template("admin/branding.html", setting=setting, can_manage=current_user.can("settings.branding.manage"))

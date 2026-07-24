@@ -45,7 +45,7 @@ UPLOAD_ROOT=storage/uploads
 MAX_UPLOAD_MB=10
 MAX_IMAGES_PER_SECTION=3
 APP_ENV=local
-RATELIMIT_STORAGE_URI=memory://
+RATELIMIT_STORAGE_URI=redis://127.0.0.1:6379/2
 RATELIMIT_LOGIN_LIMIT='5 per minute'
 RATELIMIT_EXPORT_LIMIT='10 per hour'
 ```
@@ -78,6 +78,18 @@ flask db upgrade
 ```
 
 The partner management module is included in migration `20260708_0003_partner_module.py`.
+
+### Phase 8: ReportAttachment S3-only
+
+Final schema lưu `ReportAttachment` qua `StorageObject` private S3; không còn
+`file_path`, `stored_filename`, local serving hoặc fallback filesystem. Fresh deploy
+chỉ cần chạy `flask db upgrade` tới head. Với dữ liệu development cũ từ trước Phase 8,
+reset/clear dữ liệu đó trước khi nâng lên `20260723_0021`; final source không còn CLI
+migrate local. Kiểm tra dữ liệu đang chạy bằng:
+
+```bash
+flask assert-report-attachments-s3-only
+```
 After upgrading, users with access to both modules choose between:
 
 - Báo cáo hàng ngày

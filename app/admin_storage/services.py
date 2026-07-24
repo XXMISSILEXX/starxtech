@@ -85,6 +85,8 @@ MODULE_LABELS = {
     "project_documents": "Hồ sơ tài liệu",
     "company-media": "Thư viện ảnh/video công ty",
     "company_media": "Thư viện ảnh/video công ty",
+    "daily-reports": "Báo cáo hàng ngày",
+    "partner-management": "Quản lý đối tác",
 }
 SOURCE_TYPE_LABELS = {
     "original": "Tải file gốc",

@@ -5,7 +5,7 @@
 
 {% block content %}
 {% set form_errors = form_errors if form_errors is defined else {} %}
-{% set report_date_value = form_data.report_date if form_data else (report.report_date or '') %}
+{% set report_date_value = form_data.report_date if form_data else (report.report_date|vn_date if report.report_date else '') %}
 {% set overall_status_value = form_data.overall_status if form_data else report.overall_status %}
 {% set highlight_value = form_data.highlight if form_data else (report.highlight or '') %}
 {% set summary_note_value = form_data.summary_note if form_data else (report.summary_note or '') %}
@@ -15,7 +15,7 @@
   <div class="form-card row g-3 mb-4">
     <div class="col-md-4">
       <label class="form-label" for="report_date">Ngày báo cáo</label>
-      <input class="form-control {% if form_errors.get('report_date') %}is-invalid{% endif %}" id="report_date" name="report_date" type="date" value="{{ report_date_value }}" {% if not can_write %}disabled{% endif %} required>
+      <input class="form-control {% if form_errors.get('report_date') %}is-invalid{% endif %}" id="report_date" name="report_date" type="text" data-vn-report-date value="{{ report_date_value }}" placeholder="DD/MM/YYYY" {% if not can_write %}disabled{% endif %} required>
       {% if form_errors.get('report_date') %}<div class="invalid-feedback">{{ form_errors.get('report_date') }}</div>{% endif %}
     </div>
     <div class="col-md-4">
@@ -100,23 +100,21 @@
             <textarea class="form-control {% if form_errors.get(content_error_key) %}is-invalid{% endif %}" name="sections-{{ section_index }}-content" rows="3" {% if not can_write %}disabled{% endif %} required minlength="1">{{ section.content }}</textarea>
             {% if form_errors.get(content_error_key) %}<div class="invalid-feedback">{{ form_errors.get(content_error_key) }}</div>{% endif %}
           </div>
-          <div class="col-12">
+          <div class="col-12" data-report-attachment-picker>
             <label class="form-label">Ảnh đính kèm</label>
-            <label class="upload-dropzone {% if not can_write %}disabled{% endif %}">
-              <input class="visually-hidden" name="sections-{{ section_index }}-images" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple data-upload-input {% if not can_write %}disabled{% endif %}>
+            <label class="upload-dropzone {% if not can_write %}disabled{% endif %}" for="section-{{ section_index }}-images" role="button" tabindex="0">
+              <input class="visually-hidden" id="section-{{ section_index }}-images" name="sections-{{ section_index }}-images" type="file" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/jpeg,image/png,image/webp,image/heic,image/heif" multiple data-report-attachment-input {% if not can_write %}disabled{% endif %}>
               <span class="upload-title"><i class="bi bi-images me-1"></i>Chọn ảnh đính kèm</span>
               <span class="upload-help">Kéo thả ảnh vào đây hoặc bấm để chọn</span>
             </label>
-            <div class="upload-preview-grid mt-2" data-upload-preview></div>
+            <div class="upload-preview-grid mt-2" data-attachment-preview></div>
           </div>
           {% if section.attachments %}
             <div class="col-12 d-flex flex-wrap gap-2">
               {% for attachment in section.attachments %}
                 {% if not attachment.deleted_at %}
                   <div class="attachment-card">
-                    <a href="{{ url_for('attachments.view', attachment_id=attachment.id) }}" target="_blank" rel="noopener">
-                      <img class="report-thumb" src="{{ url_for('attachments.view', attachment_id=attachment.id) }}" alt="{{ attachment.original_filename }}">
-                    </a>
+                    <button class="btn p-0 border-0 bg-transparent" type="button" data-media-preview-url="{{ url_for('attachments.view', attachment_id=attachment.id) }}" data-media-preview-download="{{ url_for('attachments.download', attachment_id=attachment.id) }}" data-media-preview-name="{{ attachment.original_filename }}"><img class="report-thumb" src="{{ url_for('attachments.view', attachment_id=attachment.id) }}" alt="{{ attachment.original_filename }}"></button>
                     {% if can_delete_attachment %}
                       <button class="btn btn-sm btn-outline-danger mt-2" type="submit" form="delete-attachment-{{ attachment.id }}" data-confirm="Xóa ảnh này?"><i class="bi bi-trash me-1"></i>Xóa</button>
                     {% endif %}

@@ -2,6 +2,7 @@ from flask import abort, flash, jsonify, redirect, render_template, request, url
 from flask_login import current_user
 from markupsafe import Markup
 
+from app.extensions import db
 from app.models import Project, ProjectDocumentFolder, ProjectDocumentFolderPermission, Role, User
 from app.project_documents import bp
 from app.project_documents.permissions import (can_access_project_documents, can_create_project_document_folder,
@@ -71,7 +72,7 @@ def _folder_url(folder_id, *, folder_status=None, source=None):
 
 @bp.get("/folders/<int:folder_id>")
 def folder(folder_id):
-    target = ProjectDocumentFolder.query.get_or_404(folder_id)
+    target = db.get_or_404(ProjectDocumentFolder, folder_id)
     if not can_view_project_document_folder(current_user, target, include_archived=True): abort(403)
     context = _folder_context(request.args)
     children = list_folder_children(current_user, target, context["folder_status"], context["q"])
@@ -106,7 +107,7 @@ def folder(folder_id):
 
 def _document_file_or_404(file_id):
     from app.models import ProjectDocumentFile
-    return ProjectDocumentFile.query.get_or_404(file_id)
+    return db.get_or_404(ProjectDocumentFile, file_id)
 
 
 @bp.post("/folders/<int:folder_id>/files/presign-batch")
@@ -252,14 +253,14 @@ def bulk_download_validate(folder_id):
 
 @bp.get("/bulk-download-jobs/<int:job_id>")
 def bulk_download_status(job_id):
-    job = BulkDownloadJob.query.get_or_404(job_id)
+    job = db.get_or_404(BulkDownloadJob, job_id)
     try:
         return jsonify(ok=True, **serialize_job(current_user, job))
     except PermissionError:
         abort(403)
 
 
-def _folder_or_404(folder_id): return ProjectDocumentFolder.query.get_or_404(folder_id)
+def _folder_or_404(folder_id): return db.get_or_404(ProjectDocumentFolder, folder_id)
 def _fail(exc, redirect_to):
     flash(str(exc), "danger"); return redirect(redirect_to)
 

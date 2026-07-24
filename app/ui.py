@@ -18,14 +18,19 @@ MODULE_LABELS = {
     "partners": "Quản lý đối tác",
     "project_documents": "Hồ sơ tài liệu",
     "company_media": "Thư viện ảnh/video công ty",
+    "admin": "Quản trị hệ thống",
 }
 
-STATUS_LABELS = {
+REPORT_STATUS_LABELS = {
     DailyReportStatus.UPDATED.value: "Cập nhật",
     DailyReportStatus.GOOD.value: "Tốt",
     DailyReportStatus.PROCESSING.value: "Đang xử lý",
     DailyReportStatus.ATTENTION.value: "Cần chú ý",
     DailyReportStatus.CRITICAL.value: "Nghiêm trọng",
+}
+
+STATUS_LABELS = {
+    **REPORT_STATUS_LABELS,
     SectionStatus.INFO.value: "Thông tin",
     IssueStatus.OPEN.value: "Đang mở",
     IssueStatus.RESOLVED.value: "Đã xử lý",
@@ -153,3 +158,4 @@ def register_template_helpers(app):
     app.jinja_env.globals["can_create_partner"] = can_create_partner
     app.jinja_env.globals["can_manage_partner_fields"] = can_manage_partner_fields
     app.jinja_env.globals["can_manage_users"] = can_manage_users
+    app.jinja_env.globals["static_asset_version"] = app.config.get("STATIC_ASSET_VERSION", "1")

@@ -6,12 +6,18 @@ from uuid import uuid4
 
 STORAGE_MODULE_DOCUMENT_LIBRARY = "document-library"
 STORAGE_MODULE_COMPANY_MEDIA = "company-media"
+STORAGE_MODULE_DAILY_REPORTS = "daily-reports"
+STORAGE_MODULE_PARTNER_MANAGEMENT = "partner-management"
 
 _MODULE_ALIASES = {
     "project_documents": STORAGE_MODULE_DOCUMENT_LIBRARY,
     "document-library": STORAGE_MODULE_DOCUMENT_LIBRARY,
     "company_media": STORAGE_MODULE_COMPANY_MEDIA,
     "company-media": STORAGE_MODULE_COMPANY_MEDIA,
+    "daily_reports": STORAGE_MODULE_DAILY_REPORTS,
+    "daily-reports": STORAGE_MODULE_DAILY_REPORTS,
+    "partner_management": STORAGE_MODULE_PARTNER_MANAGEMENT,
+    "partner-management": STORAGE_MODULE_PARTNER_MANAGEMENT,
 }
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._() -]+")
 
@@ -50,6 +56,11 @@ def build_original_key(module, object_id_or_uuid, filename, prefix="", now=None)
     # S3 keys.
     extension = safe_storage_filename(filename, fallback="file").rsplit(".", 1)[-1].lower()
     extension = extension if extension and extension != "file" else "bin"
+    name = safe_storage_filename(filename, fallback=f"file.{extension}")
+    # Daily reports and partner photos deliberately retain a safe display name
+    # in their opaque object namespace; other modules retain legacy behaviour.
+    if storage_module in {STORAGE_MODULE_DAILY_REPORTS, STORAGE_MODULE_PARTNER_MANAGEMENT}:
+        return _join(prefix, storage_module, "originals", f"{now:%Y}", f"{now:%m}", token, name)
     return _join(prefix, storage_module, "originals", f"{now:%Y}", f"{now:%m}", token, f"{uuid4().hex}.{extension}")
 
 
@@ -60,6 +71,25 @@ def build_derivative_key(module, original_object_id, derivative_type, extension=
     kind = safe_storage_filename(derivative_type, fallback="preview").replace(".", "-")
     ext = safe_storage_filename(extension, fallback="webp").lstrip(".") or "webp"
     return _join(prefix, storage_module, "derivatives", f"{now:%Y}", f"{now:%m}", token, f"{kind}.{ext}")
+
+
+def build_partner_photo_key(record_type, filename, prefix="", now=None):
+    """Partner/Company originals have an explicit non-user-controlled scope."""
+    now = now or datetime.now(timezone.utc)
+    if record_type not in {"partners", "companies"}:
+        raise ValueError("Loại ảnh đối tác không hợp lệ.")
+    return _join(prefix, STORAGE_MODULE_PARTNER_MANAGEMENT, "originals", record_type,
+                 f"{now:%Y}", f"{now:%m}", uuid4().hex,
+                 safe_storage_filename(filename, fallback="photo.webp"))
+
+
+def build_display_image_key(scope, prefix="", now=None):
+    """Opaque WebP key for normalised UI images."""
+    now = now or datetime.now(timezone.utc)
+    allowed = {"partner-avatars", "company-logos", "account-profiles", "branding"}
+    if scope not in allowed:
+        raise ValueError("Phạm vi ảnh hiển thị không hợp lệ.")
+    return _join(prefix, "display-images", scope, f"{now:%Y}", f"{now:%m}", f"{uuid4().hex}.webp")
 
 
 def build_bulk_zip_key(module, job_id, filename, prefix="", now=None):

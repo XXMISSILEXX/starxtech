@@ -10,6 +10,7 @@ MODULES = (
     ("partners", "Quản lý đối tác", "Quản lý đối tác, công ty và thông tin mở rộng.", "bi-person-vcard"),
     ("project_documents", "Hồ sơ tài liệu", "Quản lý hồ sơ dự án và tài liệu nội bộ.", "bi-folder2-open"),
     ("company_media", "Thư viện ảnh/video công ty", "Album truyền thông nội bộ.", "bi-images"),
+    ("admin", "Quản trị hệ thống", "Người dùng, phân quyền và cấu hình hệ thống.", "bi-gear"),
 )
 
 
@@ -20,6 +21,7 @@ def get_accessible_modules(user):
         "partners": can_access_partners_module(user),
         "project_documents": can_access_project_documents_module(user),
         "company_media": company_media_permissions.access(user),
+        "admin": any(user.can(code) for code in ("users.view", "roles.view", "projects.view", "storage.dashboard.view", "settings.branding.view")),
     }
     reasons = {
         "company_media": "scoped_acl" if company_media_permissions.has_album_acl(user)
@@ -30,6 +32,7 @@ def get_accessible_modules(user):
         "partners": url_for("modules.select_partners"),
         "project_documents": url_for("project_documents.index"),
         "company_media": url_for("company_media.index"),
+        "admin": url_for("modules.select_admin"),
     }
     return [{"key": key, "label": label, "description": description, "icon": icon,
              "url": urls[key], "reason": reasons.get(key, "role_access")}

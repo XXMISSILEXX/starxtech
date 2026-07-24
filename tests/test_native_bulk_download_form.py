@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from app.extensions import db
 from app.models import (BulkDownloadJob, CompanyMediaAlbum, CompanyMediaFile, DownloadEvent,
@@ -82,7 +83,7 @@ def test_media_preflight_and_native_form_support_form_ids(client, app, tmp_path)
 
 
 def test_bulk_download_script_uses_preflight_and_native_form():
-    source = open("app/static/js/project-document-file-actions.js", encoding="utf-8").read()
+    source = Path("app/static/js/project-document-file-actions.js").read_text(encoding="utf-8")
     assert "bulkDownloadValidateUrl" in source
     assert '"csrf_token"' in source
     assert '"file_ids_json"' in source

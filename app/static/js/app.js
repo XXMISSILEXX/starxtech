@@ -9,6 +9,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initPartnerDynamicFields();
   initDatePickers();
   initDateValidation();
+  initVietnameseReportDates();
   initRequiredFormValidation();
   initPartnerDepartmentSelect();
   initPartnerHeadToggle();
@@ -90,20 +91,19 @@ function initReportSections() {
           <label class="form-label">Nội dung</label>
           <textarea class="form-control" name="sections-${index}-content" rows="3"></textarea>
         </div>
-        <div class="col-12">
+        <div class="col-12" data-report-attachment-picker>
           <label class="form-label">Ảnh đính kèm</label>
-          <label class="upload-dropzone">
-            <input class="visually-hidden" name="sections-${index}-images" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple data-upload-input>
+          <label class="upload-dropzone" for="section-${index}-images" role="button" tabindex="0">
+            <input class="visually-hidden" id="section-${index}-images" name="sections-${index}-images" type="file" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/jpeg,image/png,image/webp,image/heic,image/heif" multiple data-report-attachment-input>
             <span class="upload-title"><i class="bi bi-images me-1"></i>Chọn ảnh đính kèm</span>
             <span class="upload-help">Kéo thả ảnh vào đây hoặc bấm để chọn</span>
           </label>
-          <div class="upload-preview-grid mt-2" data-upload-preview></div>
+          <div class="upload-preview-grid mt-2" data-attachment-preview></div>
         </div>
       </div>
     `;
     container.appendChild(section);
     initCustomSelects(section);
-    initUploadPreviews(section);
   };
 
   container.addEventListener("click", (event) => {
@@ -221,7 +221,8 @@ function initUploadPreviews(root = document) {
     }
     input.dataset.previewReady = "1";
     const dropzone = input.closest(".upload-dropzone");
-    const preview = dropzone ? dropzone.parentElement.querySelector("[data-upload-preview]") : null;
+    const preview = (dropzone ? dropzone.parentElement.querySelector("[data-upload-preview]") : null)
+      || input.parentElement.querySelector("[data-upload-preview]");
     if (!preview) {
       return;
     }
@@ -264,6 +265,12 @@ function renderUploadPreview(input, preview) {
       image.src = URL.createObjectURL(file);
       image.onload = () => URL.revokeObjectURL(image.src);
       media.appendChild(image);
+    } else if (/\.(heic|heif)$/i.test(file.name)) {
+      media.innerHTML = '<span class="small text-muted">Đang tạo xem trước…</span>';
+      previewHeic(file).then((url) => {
+        const image = document.createElement("img"); image.alt = file.name; image.src = url;
+        image.onload = () => URL.revokeObjectURL(url); media.replaceChildren(image);
+      }).catch(() => { media.innerHTML = '<i class="bi bi-file-earmark-image"></i>'; });
     } else {
       media.innerHTML = '<i class="bi bi-file-earmark"></i>';
     }
@@ -285,6 +292,15 @@ function renderUploadPreview(input, preview) {
     item.append(media, name, remove);
     preview.appendChild(item);
   });
+}
+
+async function previewHeic(file) {
+  const data = new FormData(); data.append("image", file);
+  const token = document.querySelector('input[name="csrf_token"]')?.value;
+  if (token) data.append("csrf_token", token);
+  const response = await fetch("/media-display-preview", { method: "POST", body: data, credentials: "same-origin" });
+  if (!response.ok) throw new Error("preview failed");
+  return URL.createObjectURL(await response.blob());
 }
 
 function isPreviewableImage(file) {
@@ -651,6 +667,16 @@ function initDatePickers(root = document) {
       allowInput: true,
     });
     field.dataset.datePickerReady = "1";
+  });
+}
+
+function initVietnameseReportDates(root = document) {
+  root.querySelectorAll("[data-vn-report-date]").forEach((field) => {
+    if (field.dataset.datePickerReady === "1") return;
+    if (typeof flatpickr !== "undefined") {
+      flatpickr(field, { dateFormat: "d/m/Y", allowInput: true });
+      field.dataset.datePickerReady = "1";
+    }
   });
 }
 

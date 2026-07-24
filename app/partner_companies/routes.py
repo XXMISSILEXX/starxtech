@@ -1,4 +1,5 @@
-from flask import abort, flash, redirect, render_template, request, url_for
+from flask import abort, flash, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user
 from sqlalchemy import func, or_
 
 from app.auth.permissions import can_access_partners_module
@@ -69,24 +70,54 @@ def detail(company_id):
                 PartnerRelationship.parent_partner_id.isnot(None),
                 PartnerRelationship.deleted_at.is_(None),
                 PartnerRelationship.is_active.is_(True),
-            )
-            .order_by(PartnerRelationship.department.asc(), PartnerRelationship.display_order.asc())
-            .all()
+            ).order_by(PartnerRelationship.department.asc(), PartnerRelationship.display_order.asc()).all()
         )
     grouped = {}
     for partner in partners:
         grouped.setdefault(_partner_department_name(partner), []).append(partner)
-    return render_template(
-        "partner_companies/detail.html",
-        company=company,
-        departments=_company_departments(company.id),
-        grouped_partners=grouped,
-        relationships=relationships,
+    return render_template("partner_companies/detail.html", company=company,
+        departments=_company_departments(company.id), grouped_partners=grouped, relationships=relationships,
         can_edit=_can("partner_companies.edit") and _is_active(company),
         can_create_department=_can("partner_companies.create") and _is_active(company),
         can_archive=_can("partner_companies.delete") and _is_active(company),
-        can_restore=_can("partner_companies.restore") and not _is_active(company),
-    )
+        can_restore=_can("partner_companies.restore") and not _is_active(company))
+
+
+@bp.post("/<int:company_id>/photo")
+@permission_required("partner_companies.edit")
+def photo(company_id):
+    company = _active_company_or_404(company_id)
+    from app.partner_photos import PartnerPhotoError, replace_photo
+    try: replace_photo(company, request.files.get("photo"), kind="company_photo", user=current_user)
+    except (PartnerPhotoError, AttributeError) as exc: flash(str(exc) or "Vui lòng chọn ảnh.", "danger")
+    else: flash("Đã cập nhật logo công ty.", "success")
+    return redirect(url_for("partner_companies.detail", company_id=company.id))
+
+
+@bp.post("/<int:company_id>/photo/delete")
+@permission_required("partner_companies.edit")
+def photo_delete(company_id):
+    company = _active_company_or_404(company_id)
+    from app.partner_photos import delete_photo
+    delete_photo(company, kind="company_photo"); flash("Đã xóa logo công ty.", "success")
+    return redirect(url_for("partner_companies.detail", company_id=company.id))
+
+
+@bp.post("/<int:company_id>/photo/signed-preview")
+@permission_required("partner_companies.view")
+def photo_signed_preview(company_id):
+    company = _company_or_404(company_id)
+    from app.partner_photos import PartnerPhotoError, signed_preview
+    try: return jsonify({"ok": True, **signed_preview(company, kind="company_photo", user=current_user)})
+    except PartnerPhotoError as exc: return jsonify({"ok": False, "message": str(exc)}), 404
+
+
+@bp.get("/<int:company_id>/photo/preview")
+@permission_required("partner_companies.view")
+def photo_preview(company_id):
+    company = _company_or_404(company_id)
+    from app.partner_photos import signed_preview
+    return redirect(signed_preview(company, kind="company_photo", user=current_user)["url"])
 
 
 @bp.get("/<int:company_id>/departments")
@@ -211,6 +242,12 @@ def _save_company(company, is_new=False):
     company.is_active = request.form.get("is_active", "on") == "on"
     audit("partner_company.create" if is_new else "partner_company.update", "Company", company.id, old_values, _company_snapshot(company))
     db.session.commit()
+    if request.files.get("photo") and request.files["photo"].filename:
+        from app.partner_photos import replace_photo
+        try:
+            replace_photo(company, request.files["photo"], kind="company_photo", user=current_user)
+        except Exception as exc:
+            flash(str(exc), "warning")
     flash("Đã lưu công ty.", "success")
     return redirect(url_for("partner_companies.detail", company_id=company.id))
 

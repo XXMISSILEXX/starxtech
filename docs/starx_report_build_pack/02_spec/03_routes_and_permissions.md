@@ -13,11 +13,10 @@ POST /change-password
 ## 2. Dashboard
 
 ```text
-GET /dashboard
-GET /projects/<project_id>/dashboard
-GET /api/dashboard/summary
-GET /api/dashboard/status-chart
-GET /api/dashboard/report-count-chart
+GET /reports/dashboard
+GET /reports/projects/<project_id>/dashboard
+GET /api/reports/dashboard/status-chart
+GET /api/reports/dashboard/report-count-chart
 ```
 
 Permission:
@@ -72,9 +71,9 @@ Permission: SUPER_ADMIN only.
 
 ```text
 GET  /reports
-GET  /projects/<project_id>/reports
-GET  /projects/<project_id>/reports/create
-POST /projects/<project_id>/reports/create
+GET  /reports/projects/<project_id>/reports
+GET  /reports/projects/<project_id>/reports/create
+POST /reports/projects/<project_id>/reports/create
 GET  /reports/<report_id>
 GET  /reports/<report_id>/edit
 POST /reports/<report_id>/edit
@@ -104,12 +103,13 @@ Permission:
 ## 8. Issues
 
 ```text
-GET  /projects/<project_id>/issues
-POST /projects/<project_id>/issues/create
-GET  /issues/<id>/edit
-POST /issues/<id>/edit
-POST /issues/<id>/close
-POST /issues/<id>/reopen
+GET  /reports/issues
+GET  /reports/projects/<project_id>/issues
+POST /reports/projects/<project_id>/issues/create
+GET  /reports/issues/<id>/edit
+POST /reports/issues/<id>/edit
+POST /reports/issues/<id>/close
+POST /reports/issues/<id>/reopen
 ```
 
 Permission:

@@ -14,8 +14,10 @@ class Company(TimestampMixin, SoftDeleteMixin, db.Model):
     address = db.Column(db.Text, nullable=True)
     notes = db.Column(db.Text, nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True, server_default="true")
+    company_photo_storage_object_id = db.Column(db.BigInteger, db.ForeignKey("storage_objects.id"), nullable=True, index=True)
 
     partners = db.relationship("Partner", back_populates="company")
+    company_photo_storage_object = db.relationship("StorageObject", foreign_keys=[company_photo_storage_object_id])
     departments = db.relationship(
         "CompanyDepartment",
         back_populates="company",
@@ -66,8 +68,10 @@ class Partner(TimestampMixin, SoftDeleteMixin, db.Model):
     is_active = db.Column(db.Boolean, nullable=False, default=True, server_default="true")
     created_by_user_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=True)
     updated_by_user_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=True)
+    profile_photo_storage_object_id = db.Column(db.BigInteger, db.ForeignKey("storage_objects.id"), nullable=True, index=True)
 
     company = db.relationship("Company", back_populates="partners")
+    profile_photo_storage_object = db.relationship("StorageObject", foreign_keys=[profile_photo_storage_object_id])
     company_department = db.relationship("CompanyDepartment")
     field_values = db.relationship(
         "PartnerFieldValue",

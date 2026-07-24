@@ -21,7 +21,14 @@ class User(UserMixin, TimestampMixin, SoftDeleteMixin, db.Model):
     role_id = db.Column(db.BigInteger().with_variant(db.Integer(), "sqlite"), db.ForeignKey("roles.id"), nullable=False, index=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True, server_default="true")
     last_login_at = db.Column(db.DateTime, nullable=True)
+    avatar_storage_object_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("storage_objects.id", name="fk_users_avatar_storage_object_id", ondelete="SET NULL", use_alter=True),
+        nullable=True,
+        index=True,
+    )
     role = db.relationship("Role", back_populates="users")
+    avatar_storage_object = db.relationship("StorageObject", foreign_keys=[avatar_storage_object_id])
 
     project_assignments = db.relationship(
         "ProjectUser",

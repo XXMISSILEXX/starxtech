@@ -13,7 +13,6 @@ from app.auth.permissions import can_access_reports_module
 
 
 @bp.get("")
-@bp.get("/")
 def index():
     if not can_access_reports_module(current_user):
         abort(403)

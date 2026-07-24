@@ -6,14 +6,14 @@ Global `before_request` trong `app/__init__.py` redirect anonymous về login (t
 
 | Path / method | File | Hiện tại | RBAC đề xuất | Risk |
 |---|---|---|---|---|
-| `/dashboard`, `/api/dashboard/*` GET | `dashboard/routes.py` | login global; service tự scope project cho Reporter/PM | `reports.dashboard.view` + project scope | Medium |
-| `/projects/` GET | `projects/routes.py` | query accessible projects | `projects.view` | Low |
-| `/projects/<id>/dashboard`, `/reports`, `/issues` GET | `projects/routes.py` | `can_read_project` | `reports.view`/`issues.view` + project | Low |
-| `/projects/<id>/reports/create` GET/POST | `projects/routes.py` | read GET, `can_write_project` POST | `reports.create` + project | Medium |
+| `/reports/dashboard`, `/api/reports/dashboard/*` GET | `dashboard/routes.py` | login global; service tự scope project cho Reporter/PM | `reports.dashboard.view` + project scope | Medium |
+| `/reports/projects` GET | `projects/routes.py` | query accessible projects | `projects.view` | Low |
+| `/reports/projects/<id>/dashboard`, `/reports`, `/reports/issues` GET | `projects/routes.py` | `can_read_project` | `reports.view`/`issues.view` + project | Low |
+| `/reports/projects/<id>/reports/create` GET/POST | `projects/routes.py` | read GET, `can_write_project` POST | `reports.create` + project | Medium |
 | `/reports/` GET, `/<id>` GET | `reports/routes.py` | accessible query / `can_read_project` | `reports.view` + project | Low |
 | `/reports/<id>/edit` GET/POST | `reports/routes.py` | read GET, project write POST | `reports.edit` + project/own policy | Medium |
 | `/reports/<id>/delete` POST | `reports/routes.py` | `can_manage_project` (ADMIN or assigned PM) | `reports.delete` + project | Medium |
-| `/issues/`, `/issues/new`, `/<id>/edit|close|reopen|delete` | `issues/routes.py` | create PM/admin only; edit project-write; delete manage-project | split `issues.view/create/edit/close/delete` + project | Medium |
+| `/reports/issues`, `/reports/issues/new`, `/<id>/edit|close|reopen|delete` | `issues/routes.py` | create PM/admin only; edit project-write; delete manage-project | split `issues.view/create/edit/close/delete` + project | Medium |
 | `/admin/projects/<id>/categories*` | `admin/routes.py` | view super/viewer or project manager; mutate project manage | `report_categories.view/manage` + project | Medium |
 | `/attachments/<id>` GET; `/<id>/delete` POST | `attachments/routes.py` | project read/write; path containment | `report_attachments.view/delete` + report/project | Low |
 

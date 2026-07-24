@@ -15,7 +15,7 @@ def create_app(config_class=Config):
     app.config.setdefault("RATELIMIT_LOGIN_LIMIT", "5 per minute")
     app.config.setdefault("RATELIMIT_EXPORT_LIMIT", "10 per hour")
     for key, value in {
-        "STORAGE_PROVIDER": "fake", "STORAGE_BUCKET": "starx-local", "STORAGE_PREFIX": "",
+        "STORAGE_PROVIDER": "fake", "STORAGE_BUCKET": "starx-local", "STORAGE_PREFIX": "", "STATIC_ASSET_VERSION": "20260724-83",
         "STORAGE_UPLOAD_URL_TTL_SECONDS": 300, "STORAGE_DOWNLOAD_URL_TTL_SECONDS": 300,
         "STORAGE_MAX_IMAGE_SIZE_MB": 50, "STORAGE_MAX_DOCUMENT_SIZE_MB": 200,
         "STORAGE_MAX_VIDEO_SIZE_MB": 500, "STORAGE_MAX_AUDIO_SIZE_MB": 200,
@@ -66,6 +66,12 @@ def create_app(config_class=Config):
     register_auth_guard(app)
     register_security_headers(app)
     register_template_helpers(app)
+    from app.branding import get_current_branding
+    from app.navigation import get_active_module, get_sidebar_items
+    @app.context_processor
+    def inject_shell_context():
+        return {"branding": get_current_branding(), "nav_active_module": get_active_module(),
+                "sidebar_items": get_sidebar_items(current_user) if current_user.is_authenticated else []}
     register_cli(app)
 
     return app
@@ -73,6 +79,7 @@ def create_app(config_class=Config):
 
 def register_blueprints(app):
     from app.admin import bp as admin_bp
+    from app.account import bp as account_bp
     from app.admin_storage import bp as admin_storage_bp
     from app.attachments import bp as attachments_bp
     from app.auth import bp as auth_bp
@@ -92,6 +99,9 @@ def register_blueprints(app):
     from app.users import bp as users_bp
 
     app.register_blueprint(admin_bp)
+    app.register_blueprint(account_bp)
+    from app.account.routes import media_display_preview
+    app.add_url_rule("/media-display-preview", endpoint="media_display_preview", view_func=media_display_preview, methods=["POST"])
     app.register_blueprint(admin_storage_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(modules_bp)
@@ -130,6 +140,10 @@ def register_auth_guard(app):
 
     @app.before_request
     def require_login():
+        # Let Flask produce a real 404 for removed/unknown routes instead of
+        # turning obsolete URLs into login redirects.
+        if request.endpoint is None:
+            return None
         if request.endpoint in public_endpoints:
             return None
 
@@ -181,8 +195,8 @@ def register_security_headers(app):
     def add_security_headers(response):
         from app.security import storage_connect_source
         connect_sources = ["'self'"]
-        image_sources = ["'self'", "data:"]
-        media_sources = ["'self'"]
+        image_sources = ["'self'", "data:", "blob:"]
+        media_sources = ["'self'", "blob:"]
         frame_sources = ["'self'"]
         storage_origin = storage_connect_source(app.config)
         if storage_origin:

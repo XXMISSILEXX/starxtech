@@ -27,3 +27,11 @@ def select_partners():
     session["active_module"] = "partners"
     flash("Đã chuyển sang phân hệ Quản lý đối tác.", "success")
     return redirect(url_for("partners.dashboard"))
+
+
+@bp.get("/select/admin")
+def select_admin():
+    if not any(current_user.can(code) for code in ("users.view", "roles.view", "projects.view", "storage.dashboard.view", "settings.branding.view")):
+        abort(403)
+    session["active_module"] = "admin"
+    return redirect(url_for("admin.users_index") if current_user.can("users.view") else url_for("admin.branding"))

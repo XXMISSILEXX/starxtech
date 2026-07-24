@@ -1,6 +1,6 @@
-import uuid
+import hashlib
+import tempfile
 from datetime import datetime
-from pathlib import Path
 from types import SimpleNamespace
 
 from flask import current_app, request
@@ -8,6 +8,8 @@ from flask_login import current_user
 from PIL import Image, UnidentifiedImageError
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.admin.services import add_with_sqlite_id, audit
 from app.extensions import db
@@ -20,11 +22,18 @@ from app.models import (
     ReportCategory,
     SectionStatus,
 )
+from app.storage.keys import build_original_key
+from app.storage.providers import get_storage_provider
+from app.storage.quota import ensure_storage_capacity
 from app.project_memberships import accessible_project_ids
 
-ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
-IMAGE_FORMATS = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}
-MAX_IMAGE_WIDTH = 1920
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "heic", "heif"}
+IMAGE_FORMATS = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp", "HEIF": "heic"}
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except ImportError:  # pragma: no cover
+    pass
 
 
 class ReportValidationError(ValueError):
@@ -73,54 +82,106 @@ def categories_for_report(report):
 def parse_report_date(value):
     if not value:
         raise ReportValidationError("Vui lòng chọn ngày báo cáo.", {"report_date": "Vui lòng chọn ngày báo cáo."})
+    for pattern in ("%d/%m/%Y", "%Y-%m-%d"):  # ISO remains accepted for API/backwards compatibility.
+        try:
+            return datetime.strptime(value, pattern).date()
+        except ValueError:
+            pass
     try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
+        raise ValueError(value)
     except ValueError as exc:
-        raise ReportValidationError("Ngày báo cáo phải đúng định dạng YYYY-MM-DD.") from exc
+        raise ReportValidationError("Ngày báo cáo phải đúng định dạng DD/MM/YYYY.", {"report_date": "Ngày báo cáo phải đúng định dạng DD/MM/YYYY."}) from exc
+
+
+def format_report_date(value):
+    return value.strftime("%d/%m/%Y") if value else ""
+
+
+def _duplicate_report_error(report_date, existing_report_id=None):
+    message = f"Dự án này đã có báo cáo cho ngày {format_report_date(report_date)}."
+    errors = {"report_date": message}
+    if existing_report_id is not None:
+        errors["duplicate_report_id"] = existing_report_id
+    return ReportValidationError(message, errors)
+
+
+def _is_daily_report_date_constraint(exc):
+    origin = getattr(exc, "orig", None)
+    diagnostic = getattr(origin, "diag", None)
+    if getattr(diagnostic, "constraint_name", None) == "uq_daily_reports_project_date":
+        return True
+    return "uq_daily_reports_project_date" in str(origin or exc)
+
+
+def _existing_report(project_id, report_date, *, exclude_id=None):
+    statement = select(DailyReport).where(
+        DailyReport.project_id == project_id,
+        DailyReport.report_date == report_date,
+    )
+    if exclude_id is not None:
+        statement = statement.where(DailyReport.id != exclude_id)
+    with db.session.no_autoflush:
+        return db.session.scalar(statement)
 
 
 def create_report(project, form, files):
     validate_report_form(form, project.id)
     report_date = parse_report_date(form.get("report_date", "").strip())
-    existing = DailyReport.query.filter_by(project_id=project.id, report_date=report_date).first()
+    # Keep this in lockstep with the database unique constraint: soft-deleted
+    # rows also reserve their project/date pair.
+    existing = _existing_report(project.id, report_date)
     if existing:
-        return existing, True
+        raise _duplicate_report_error(report_date, existing.id)
 
     report = DailyReport(project_id=project.id, created_by_user_id=current_user.id)
     add_with_sqlite_id(report)
     _assign_report_fields(report, form)
     report.report_date = report_date
-    db.session.flush()
+    try:
+        db.session.flush()
+    except IntegrityError as exc:
+        db.session.rollback()
+        if _is_daily_report_date_constraint(exc):
+            raise _duplicate_report_error(report_date) from exc
+        raise
 
     section_inputs = parse_sections(form)
     _replace_sections(report, section_inputs)
     db.session.flush()
     _save_section_uploads(report, files)
     audit("report.create", "DailyReport", report.id, new_values=report_snapshot(report))
-    db.session.commit()
-    return report, False
+    try:
+        db.session.commit()
+    except IntegrityError as exc:
+        db.session.rollback()
+        if _is_daily_report_date_constraint(exc):
+            raise _duplicate_report_error(report_date) from exc
+        raise
+    return report
 
 
 def update_report(report, form, files):
     validate_report_form(form, report.project_id)
     old_values = report_snapshot(report)
-    report.report_date = parse_report_date(form.get("report_date", "").strip())
-
-    duplicate = DailyReport.query.filter(
-        DailyReport.project_id == report.project_id,
-        DailyReport.report_date == report.report_date,
-        DailyReport.id != report.id,
-    ).first()
+    proposed_date = parse_report_date(form.get("report_date", "").strip())
+    duplicate = _existing_report(report.project_id, proposed_date, exclude_id=report.id)
     if duplicate:
-        raise ReportValidationError("Dự án đã có báo cáo cho ngày này.")
+        raise _duplicate_report_error(proposed_date, duplicate.id)
 
+    report.report_date = proposed_date
     _assign_report_fields(report, form)
     report.updated_by_user_id = current_user.id
-    _replace_sections(report, parse_sections(form))
-    db.session.flush()
-    _save_section_uploads(report, files)
-    audit("report.update", "DailyReport", report.id, old_values, report_snapshot(report))
-    db.session.commit()
+    try:
+        _replace_sections(report, parse_sections(form))
+        db.session.flush()
+        _save_section_uploads(report, files)
+        audit("report.update", "DailyReport", report.id, old_values, report_snapshot(report))
+        db.session.commit()
+    except IntegrityError as exc:
+        db.session.rollback()
+        if _is_daily_report_date_constraint(exc):
+            raise _duplicate_report_error(proposed_date) from exc
+        raise
     return report
 
 
@@ -132,6 +193,9 @@ def delete_report(report):
 
 
 def delete_attachment(attachment):
+    if attachment.storage_object:
+        attachment.storage_object.deleted_at = db.func.now()
+        attachment.storage_object.upload_status = "deleted"
     attachment.deleted_at = db.func.now()
     audit(
         "attachment.delete",
@@ -283,72 +347,55 @@ def _store_attachment(report, section, upload: FileStorage):
     original_filename = secure_filename(upload.filename or "")
     extension = original_filename.rsplit(".", 1)[-1].lower() if "." in original_filename else ""
     if extension not in ALLOWED_EXTENSIONS:
-        raise ReportValidationError("Chỉ cho phép tệp jpg, jpeg, png và webp.")
+        raise ReportValidationError("Chỉ cho phép tệp jpg, jpeg, png, webp, heic và heif.")
 
+    raw = upload.read()
+    if not raw:
+        raise ReportValidationError("Tệp tải lên không phải ảnh hợp lệ.")
+    image = None
     try:
-        image = Image.open(upload.stream)
+        image = Image.open(__import__("io").BytesIO(raw))
         image.verify()
-        upload.stream.seek(0)
-        image = Image.open(upload.stream)
+        image = Image.open(__import__("io").BytesIO(raw))
         image.load()
-    except (UnidentifiedImageError, OSError) as exc:
-        raise ReportValidationError("Tệp tải lên không phải ảnh hợp lệ.") from exc
+    except (UnidentifiedImageError, OSError):
+        if extension not in {"heic", "heif"}:
+            raise ReportValidationError("Tệp tải lên không phải ảnh hợp lệ.")
 
-    image_format = image.format
-    if image_format not in IMAGE_FORMATS:
-        raise ReportValidationError("Chỉ cho phép tệp jpg, jpeg, png và webp.")
-    stored_extension = IMAGE_FORMATS[image_format]
-
-    image = _normalize_image(image, stored_extension)
-    if image.width > MAX_IMAGE_WIDTH:
-        new_height = int(image.height * (MAX_IMAGE_WIDTH / image.width))
-        image = image.resize((MAX_IMAGE_WIDTH, new_height), Image.Resampling.LANCZOS)
-
-    stored_filename = f"{uuid.uuid4().hex}.{stored_extension}"
-    target_dir = _attachment_dir(report, section)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target_path = target_dir / stored_filename
-    save_format = "JPEG" if stored_extension == "jpg" else stored_extension.upper()
-    image.save(target_path, format=save_format, quality=88, optimize=True)
+    image_format = image.format if image else None
+    if image and image_format not in IMAGE_FORMATS:
+        raise ReportValidationError("Chỉ cho phép tệp jpg, jpeg, png, webp, heic và heif.")
+    stored_extension = IMAGE_FORMATS.get(image_format, extension)
+    ensure_storage_capacity(len(raw))
+    object_key = build_original_key("daily-reports", __import__("uuid").uuid4().hex, original_filename, current_app.config["STORAGE_PREFIX"])
+    from app.models import StorageObject
+    storage_object = StorageObject(bucket=current_app.config["STORAGE_BUCKET"], object_key=object_key,
+        storage_module="daily-reports", original_filename=original_filename or upload.filename,
+        mime_type=Image.MIME.get(image_format, "image/heic" if extension in {"heic", "heif"} else f"image/{stored_extension}"), file_ext=stored_extension,
+        file_size=len(raw), checksum_sha256=hashlib.sha256(raw).hexdigest(), width=image.width if image else None,
+        height=image.height if image else None, uploaded_by_id=current_user.id, upload_status="active")
+    db.session.add(storage_object); db.session.flush()
+    with tempfile.NamedTemporaryFile(prefix="daily-report-", suffix=f".{stored_extension}") as temp:
+        temp.write(raw); temp.flush()
+        get_storage_provider().upload_object(storage_object.bucket, storage_object.object_key, temp.name,
+            storage_object.mime_type, {"sha256": storage_object.checksum_sha256})
 
     attachment = ReportAttachment(
         daily_report_section_id=section.id,
         original_filename=original_filename or upload.filename,
-        stored_filename=stored_filename,
-        file_path=str(target_path.relative_to(Path(current_app.config["UPLOAD_ROOT"]))),
-        mime_type=Image.MIME.get(save_format, f"image/{stored_extension}"),
-        file_size=target_path.stat().st_size,
-        image_width=image.width,
-        image_height=image.height,
+        storage_object_id=storage_object.id,
+        mime_type=storage_object.mime_type,
+        file_size=storage_object.file_size,
+        image_width=image.width if image else None,
+        image_height=image.height if image else None,
         uploaded_by_user_id=current_user.id,
     )
     add_with_sqlite_id(attachment)
+    from app.media_processing.services import enqueue_media_processing_for_storage_object
+    # defer dispatch until the current session has a stable attachment row
+    db.session.flush()
+    enqueue_media_processing_for_storage_object(storage_object.id)
     return attachment
-
-
-def _normalize_image(image, stored_extension):
-    if stored_extension == "jpg":
-        if image.mode not in ("RGB", "L"):
-            return image.convert("RGB")
-        return image.copy()
-    if stored_extension == "png":
-        return image.copy()
-    return image.copy()
-
-
-def _attachment_dir(report, section):
-    report_date = report.report_date
-    slug = secure_filename(report.project.code or report.project.name).lower() or str(report.project_id)
-    root = Path(current_app.config["UPLOAD_ROOT"])
-    return (
-        root
-        / f"project_{report.project_id}_{slug}"
-        / f"{report_date:%Y}"
-        / f"{report_date:%m}"
-        / f"{report_date:%d}"
-        / f"report_{report.id}"
-        / f"section_{section.id}"
-    )
 
 
 def validate_report_form(form, project_id):
@@ -361,9 +408,9 @@ def validate_report_form(form, project_id):
         errors["report_date"] = "Vui lòng chọn ngày báo cáo."
     else:
         try:
-            datetime.strptime(report_date_raw, "%Y-%m-%d").date()
-        except ValueError:
-            errors["report_date"] = "Ngày báo cáo phải đúng định dạng YYYY-MM-DD."
+            parse_report_date(report_date_raw)
+        except (ValueError, ReportValidationError):
+            errors["report_date"] = "Ngày báo cáo phải đúng định dạng DD/MM/YYYY."
 
     if overall_status not in [item.value for item in DailyReportStatus]:
         errors["overall_status"] = "Vui lòng chọn trạng thái."

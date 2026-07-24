@@ -4,7 +4,7 @@ from PIL import Image
 from werkzeug.datastructures import MultiDict
 
 from app.extensions import db
-from app.models import AuditLog, DailyReport, ReportAttachment, User
+from app.models import AuditLog, DailyReport, ReportAttachment, StorageObject, User
 
 
 def login(client, username_or_email, password="password123"):
@@ -44,7 +44,7 @@ def test_reporter_creates_report_for_assigned_project(client, app):
     data.add("sections-0-images", image_upload())
 
     response = client.post(
-        "/projects/1/reports/create",
+        "/reports/projects/1/reports/create",
         data=data,
         content_type="multipart/form-data",
     )
@@ -62,21 +62,33 @@ def test_uploaded_image_url_resolves(client, app):
     login(client, "reporter")
     data = report_form()
     data.add("sections-0-images", image_upload())
-    client.post("/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
 
     with app.app_context():
         attachment = ReportAttachment.query.one()
         attachment_id = attachment.id
-        assert not attachment.file_path.startswith("/")
+        assert attachment.storage_object_id is not None
+        assert attachment.storage_object.storage_module == "daily-reports"
+        assert attachment.storage_object.upload_status == "active"
 
     response = client.get(f"/attachments/{attachment_id}")
-    assert response.status_code == 200
-    assert response.mimetype == "image/jpeg"
+    assert response.status_code == 302
+    assert "fake-storage.invalid" in response.headers["Location"]
+
+
+def test_attachment_download_redirects_to_original(client, app):
+    login(client, "reporter")
+    data = report_form(); data.add("sections-0-images", image_upload())
+    client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    with app.app_context(): attachment_id = ReportAttachment.query.one().id
+    response = client.get(f"/attachments/{attachment_id}/download")
+    assert response.status_code == 302
+    assert "fake-storage.invalid" in response.headers["Location"]
 
 
 def test_category_icon_appears_in_report_create_form(client):
     login(client, "reporter")
-    response = client.get("/projects/1/reports/create")
+    response = client.get("/reports/projects/1/reports/create")
 
     assert response.status_code == 200
     assert b"bi-tools" in response.data
@@ -84,7 +96,7 @@ def test_category_icon_appears_in_report_create_form(client):
 
 def test_category_icon_appears_in_report_edit_form(client, app):
     login(client, "reporter")
-    client.post("/projects/1/reports/create", data=report_form())
+    client.post("/reports/projects/1/reports/create", data=report_form())
     with app.app_context():
         report_id = DailyReport.query.one().id
 
@@ -97,18 +109,18 @@ def test_category_icon_appears_in_report_edit_form(client, app):
 def test_reporter_cannot_create_report_for_unassigned_project(client):
     login(client, "reporter")
 
-    response = client.post("/projects/2/reports/create", data=report_form(category_id=3))
+    response = client.post("/reports/projects/2/reports/create", data=report_form(category_id=3))
 
     assert response.status_code == 403
 
 
 def test_viewer_admin_cannot_create_or_edit_report(client, app):
     login(client, "super")
-    client.post("/projects/1/reports/create", data=report_form())
+    client.post("/reports/projects/1/reports/create", data=report_form())
     client.post("/logout")
 
     login(client, "viewer")
-    create_response = client.post("/projects/1/reports/create", data=report_form("1", "2026-07-09"))
+    create_response = client.post("/reports/projects/1/reports/create", data=report_form("1", "2026-07-09"))
     assert create_response.status_code == 403
 
     with app.app_context():
@@ -118,18 +130,41 @@ def test_viewer_admin_cannot_create_or_edit_report(client, app):
     assert edit_response.status_code == 403
 
 
-def test_duplicate_project_date_redirects_to_existing_edit_without_second_row(client, app):
+def test_duplicate_project_date_returns_validation_error_without_second_row(client, app):
     login(client, "reporter")
-    first = client.post("/projects/1/reports/create", data=report_form())
+    first = client.post("/reports/projects/1/reports/create", data=report_form())
     assert first.status_code == 302
 
-    duplicate = client.post("/projects/1/reports/create", data=report_form(content="Second copy."))
+    duplicate = client.post("/reports/projects/1/reports/create", data=report_form(content="Second copy."))
 
-    assert duplicate.status_code == 302
-    assert "/reports/" in duplicate.headers["Location"]
-    assert duplicate.headers["Location"].endswith("/edit")
+    assert duplicate.status_code == 400
+    assert "Dự án này đã có báo cáo cho ngày".encode() in duplicate.data
     with app.app_context():
         assert DailyReport.query.filter_by(project_id=1, report_date="2026-07-08").count() == 1
+
+
+def test_duplicate_report_date_on_edit_returns_validation_error_without_autoflush(client, app):
+    login(client, "reporter")
+    assert client.post("/reports/projects/1/reports/create", data=report_form()).status_code == 302
+    assert client.post(
+        "/reports/projects/1/reports/create",
+        data=report_form(report_date="2026-07-09", content="Second report."),
+    ).status_code == 302
+    with app.app_context():
+        reports = DailyReport.query.filter_by(project_id=1).order_by(DailyReport.report_date).all()
+        first_id, second_id = reports[0].id, reports[1].id
+
+    response = client.post(
+        f"/reports/{second_id}/edit",
+        data=report_form(report_date="2026-07-08", content="Must not overwrite."),
+    )
+
+    assert response.status_code == 400
+    assert "Dự án này đã có báo cáo cho ngày".encode() in response.data
+    with app.app_context():
+        assert DailyReport.query.filter_by(project_id=1, report_date="2026-07-08").count() == 1
+        assert db.session.get(DailyReport, first_id).report_date.isoformat() == "2026-07-08"
+        assert db.session.get(DailyReport, second_id).report_date.isoformat() == "2026-07-09"
 
 
 def test_duplicate_section_category_fails(client):
@@ -139,7 +174,7 @@ def test_duplicate_section_category_fails(client):
     data.add("sections-1-status", "INFO")
     data.add("sections-1-content", "Duplicate category.")
 
-    response = client.post("/projects/1/reports/create", data=data)
+    response = client.post("/reports/projects/1/reports/create", data=data)
 
     assert response.status_code == 400
     assert "Hạng mục không được trùng".encode() in response.data
@@ -152,7 +187,7 @@ def test_upload_more_than_three_images_for_one_section_fails(client):
         data.add("sections-0-images", image_upload(f"photo-{index}.jpg"))
 
     response = client.post(
-        "/projects/1/reports/create",
+        "/reports/projects/1/reports/create",
         data=data,
         content_type="multipart/form-data",
     )
@@ -167,7 +202,7 @@ def test_non_image_upload_fails(client):
     data.add("sections-0-images", (BytesIO(b"not an image"), "bad.jpg"))
 
     response = client.post(
-        "/projects/1/reports/create",
+        "/reports/projects/1/reports/create",
         data=data,
         content_type="multipart/form-data",
     )
@@ -180,7 +215,7 @@ def test_attachment_view_enforces_project_read_permission(client, app):
     login(client, "super")
     data = report_form(category_id=3)
     data.add("sections-0-images", image_upload())
-    client.post("/projects/2/reports/create", data=data, content_type="multipart/form-data")
+    client.post("/reports/projects/2/reports/create", data=data, content_type="multipart/form-data")
 
     with app.app_context():
         attachment_id = ReportAttachment.query.one().id
@@ -196,7 +231,7 @@ def test_attachment_delete_soft_deletes_and_audits(client, app):
     login(client, "reporter")
     data = report_form()
     data.add("sections-0-images", image_upload())
-    client.post("/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
 
     with app.app_context():
         attachment_id = ReportAttachment.query.one().id
@@ -214,7 +249,7 @@ def test_reporter_cannot_delete_attachment_from_another_reporter(client, app):
     login(client, "super")
     data = report_form()
     data.add("sections-0-images", image_upload())
-    client.post("/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
     with app.app_context():
         attachment_id = ReportAttachment.query.one().id
 
@@ -230,7 +265,7 @@ def test_viewer_admin_cannot_delete_report_attachment(client, app):
     login(client, "super")
     data = report_form()
     data.add("sections-0-images", image_upload())
-    client.post("/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
     with app.app_context():
         attachment_id = ReportAttachment.query.one().id
 
@@ -249,7 +284,7 @@ def test_attachment_delete_requires_report_edit_capability(client, app):
     login(client, "reporter")
     data = report_form()
     data.add("sections-0-images", image_upload())
-    client.post("/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
     with app.app_context():
         attachment_id = ReportAttachment.query.one().id
 
@@ -258,7 +293,7 @@ def test_attachment_delete_requires_report_edit_capability(client, app):
 
 def test_report_update_and_delete_write_audit_rows(client, app):
     login(client, "super")
-    client.post("/projects/1/reports/create", data=report_form())
+    client.post("/reports/projects/1/reports/create", data=report_form())
     with app.app_context():
         report_id = DailyReport.query.one().id
 
@@ -278,7 +313,7 @@ def test_report_update_and_delete_write_audit_rows(client, app):
 
 def test_report_edit_post_success_shows_vietnamese_message(client, app):
     login(client, "reporter")
-    client.post("/projects/1/reports/create", data=report_form())
+    client.post("/reports/projects/1/reports/create", data=report_form())
     with app.app_context():
         report_id = DailyReport.query.one().id
 
@@ -297,7 +332,7 @@ def test_report_edit_post_success_shows_vietnamese_message(client, app):
 
 def test_report_edit_validation_error_shows_message(client, app):
     login(client, "reporter")
-    client.post("/projects/1/reports/create", data=report_form())
+    client.post("/reports/projects/1/reports/create", data=report_form())
     with app.app_context():
         report_id = DailyReport.query.one().id
 
@@ -318,7 +353,7 @@ def test_report_create_missing_section_content_preserves_entered_data(client):
     data.add("sections-1-status", "ATTENTION")
     data.add("sections-1-content", "Nội dung section khác vẫn còn.")
 
-    response = client.post("/projects/1/reports/create", data=data)
+    response = client.post("/reports/projects/1/reports/create", data=data)
 
     assert response.status_code == 400
     assert "Mỗi phần báo cáo phải có nội dung.".encode() in response.data
@@ -333,7 +368,7 @@ def test_report_edit_validation_fail_keeps_existing_attachment(client, app):
     login(client, "reporter")
     data = report_form()
     data.add("sections-0-images", image_upload())
-    client.post("/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
     with app.app_context():
         report_id = DailyReport.query.one().id
         attachment_id = ReportAttachment.query.one().id

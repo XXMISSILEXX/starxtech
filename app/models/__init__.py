@@ -27,6 +27,7 @@ from app.models.media_processing import StorageDerivative, MediaProcessingJob
 from app.models.project_document import ProjectDocumentFile, ProjectDocumentFolder, ProjectDocumentFolderPermission
 from app.models.company_media import CompanyMediaAlbum, CompanyMediaFile, CompanyMediaAlbumPermission
 from app.models.bulk_download import BulkDownloadJob
+from app.models.system_setting import SystemSetting
 
 __all__ = [
     "AuditLog",
@@ -63,4 +64,5 @@ __all__ = [
     "ProjectDocumentFolder", "ProjectDocumentFile", "ProjectDocumentFolderPermission",
     "CompanyMediaAlbum", "CompanyMediaFile", "CompanyMediaAlbumPermission",
     "BulkDownloadJob",
+    "SystemSetting",
 ]

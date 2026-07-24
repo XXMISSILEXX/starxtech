@@ -82,8 +82,9 @@ def register_cli(app):
         click.echo("Đã hoàn tất reset môi trường local.")
 
     @app.cli.command("security-audit")
-    def security_audit():
-        failures = _security_audit()
+    @click.option("--verbose", is_flag=True, help="Show safe database check details when a check fails.")
+    def security_audit(verbose):
+        failures = _security_audit(verbose=verbose)
         if failures:
             raise click.ClickException(f"Security audit failed: {failures} check(s).")
 
@@ -97,6 +98,17 @@ def register_cli(app):
         click.echo(f"- Đối tác: {summary['partners_created']} tạo mới, {summary['partners_skipped']} bỏ qua")
         click.echo(f"- Dữ liệu mở rộng: {summary['field_values_created']} tạo mới, {summary['field_values_skipped']} bỏ qua")
         click.echo(f"- Quan hệ: {summary['relationships_created']} tạo mới, {summary['relationships_skipped']} bỏ qua")
+
+    @app.cli.command("assert-report-attachments-s3-only")
+    def assert_report_attachments_s3_only():
+        """Fail when an active daily-report attachment is not an active S3 object."""
+        from app.models import ReportAttachment
+        rows = ReportAttachment.query.filter(ReportAttachment.deleted_at.is_(None)).all()
+        invalid = [row.id for row in rows if not row.storage_object_id or not row.storage_object
+                   or row.storage_object.deleted_at is not None or row.storage_object.upload_status != "active"]
+        click.echo(f"active={len(rows)} invalid={len(invalid)} ids={','.join(map(str, invalid)) or '-'}")
+        if invalid:
+            raise click.ClickException("Có ReportAttachment active không tham chiếu StorageObject S3 active.")
 
     @app.cli.group("media-jobs")
     def media_jobs():
@@ -238,7 +250,7 @@ def _migration_head():
     return ScriptDirectory.from_config(alembic_config).get_current_head()
 
 
-def _security_audit():
+def _security_audit(verbose=False):
     failures = 0
 
     def check(condition, name, success, failure, warn=False):
@@ -256,12 +268,12 @@ def _security_audit():
     if config.get("APP_ENV") == "production":
         check(not weak_secret, "secret-key", "strong non-default key configured", "missing/default/short SECRET_KEY")
     else:
-        _audit_line("WARN" if weak_secret else "PASS", "secret-key", "weak local default" if weak_secret else "non-default key configured")
+        _audit_line("PASS", "secret-key", "local default accepted" if weak_secret else "non-default key configured")
     check(config.get("SESSION_COOKIE_HTTPONLY") and str(config.get("SESSION_COOKIE_SAMESITE", "")).lower() in {"lax", "strict"}, "session-cookies", "HttpOnly and SameSite configured", "insecure session cookie settings")
     if config.get("APP_ENV") == "production":
         check(config.get("SESSION_COOKIE_SECURE"), "secure-cookie", "Secure cookie enabled", "SESSION_COOKIE_SECURE is disabled")
     else:
-        _audit_line("WARN" if not config.get("SESSION_COOKIE_SECURE") else "PASS", "secure-cookie", "disabled outside production" if not config.get("SESSION_COOKIE_SECURE") else "enabled")
+        _audit_line("PASS", "secure-cookie", "disabled only outside production" if not config.get("SESSION_COOKIE_SECURE") else "enabled")
     check("csrf" in current_app.extensions, "csrf", "CSRF protection initialized", "CSRF protection missing")
     with current_app.test_request_context("/security-audit"):
         response = current_app.make_response("")
@@ -269,14 +281,10 @@ def _security_audit():
     check("frame-ancestors 'none'" in response.headers.get("Content-Security-Policy", "") and response.headers.get("X-Frame-Options") == "DENY", "security-headers", "CSP and frame protection enabled", "security headers missing")
     storage_uri = config.get("RATELIMIT_STORAGE_URI", "")
     check(bool(storage_uri), "rate-limit", "rate-limit storage configured", "RATELIMIT_STORAGE_URI missing")
-    if storage_uri == "memory://":
-        _audit_line(
-            "WARN",
-            "rate-limit-storage",
-            "memory:// is per worker and resets when the application restarts",
-        )
+    if current_app.testing and storage_uri == "memory://":
+        _audit_line("PASS", "rate-limit-storage", "isolated in-memory storage configured for tests")
     else:
-        _audit_line("PASS", "rate-limit-storage", storage_uri)
+        check(storage_uri.startswith("redis://") or storage_uri.startswith("rediss://"), "rate-limit-storage", "shared Redis storage configured", "RATELIMIT_STORAGE_URI must use Redis")
     storage_provider = str(config.get("STORAGE_PROVIDER", "disabled")).lower()
     check(storage_provider in {"fake", "s3", "disabled"}, "storage-provider-config", "recognized storage provider", "unknown STORAGE_PROVIDER")
     check(config.get("APP_ENV") != "production" or storage_provider != "fake", "storage-fake-provider-not-production", "fake provider is not used in production", "STORAGE_PROVIDER=fake in production")
@@ -326,7 +334,10 @@ def _security_audit():
         else:
             _audit_line("PASS", "production-demo-data", "not a production environment")
     except Exception as exc:
-        _audit_line("FAIL", "database-checks", type(exc).__name__)
+        detail = type(exc).__name__
+        if verbose:
+            detail += f": {str(exc).splitlines()[0][:300]}"
+        _audit_line("FAIL", "database-checks", detail)
         failures += 1
         db.session.rollback()
     return failures

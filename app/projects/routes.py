@@ -31,11 +31,11 @@ from app.reports.services import (
     build_report_form_data,
     categories_for_create,
     create_report,
+    parse_report_date,
     reports_query,
 )
 
 
-@bp.get("/")
 @bp.get("")
 def index():
     if not can_access_reports_module(current_user):
@@ -76,10 +76,13 @@ def reports(project_id):
     date_to = request.args.get("date_to", "").strip()
     if status:
         query = query.filter(DailyReport.overall_status == status)
-    if date_from:
-        query = query.filter(DailyReport.report_date >= date_from)
-    if date_to:
-        query = query.filter(DailyReport.report_date <= date_to)
+    try:
+        if date_from:
+            query = query.filter(DailyReport.report_date >= parse_report_date(date_from))
+        if date_to:
+            query = query.filter(DailyReport.report_date <= parse_report_date(date_to))
+    except ReportValidationError:
+        flash("Ngày lọc phải đúng định dạng DD/MM/YYYY.", "warning")
 
     reports = query.order_by(DailyReport.report_date.desc(), DailyReport.id.desc()).all()
     return render_template(
@@ -113,7 +116,7 @@ def reports_create(project_id):
         if not can_create_report(current_user, project.id):
             abort(403)
         try:
-            report, duplicate = create_report(project, request.form, request.files)
+            report = create_report(project, request.form, request.files)
         except ReportValidationError as exc:
             db.session.rollback()
             flash(str(exc), "danger")
@@ -124,9 +127,6 @@ def reports_create(project_id):
                 form_data=build_report_form_data(request.form),
                 form_errors=exc.errors,
             ), 400
-        if duplicate:
-            flash("Dự án đã có báo cáo cho ngày này.", "warning")
-            return redirect(url_for("reports.edit", report_id=report.id))
         flash("Đã tạo báo cáo.", "success")
         return redirect(url_for("reports.detail", report_id=report.id))
 

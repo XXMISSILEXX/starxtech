@@ -253,6 +253,9 @@ def test_bulk_file_routes_apply_acl_and_never_delete_storage(client, app):
     downloads = client.post(f"/project-documents/folders/{root_id}/files/bulk-signed-download", json={"file_ids": ids})
     assert downloads.status_code == 200 and downloads.mimetype == "application/zip"
     assert downloads.get_json(silent=True) is None
+    # ``send_file`` keeps the ZIP stream open until the response lifecycle is
+    # closed.  Explicitly close this streaming test response.
+    downloads.close()
     client.post("/logout", data={})
     client.post("/login", data={"username_or_email": "viewer", "password": "password123"})
     assert client.post(f"/project-documents/folders/{root_id}/files/bulk-archive", json={"file_ids": ids}).status_code == 403

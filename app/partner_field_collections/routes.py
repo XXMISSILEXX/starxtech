@@ -45,7 +45,7 @@ def new():
 @bp.route("/<int:collection_id>/edit", methods=["GET", "POST"])
 @permission_required("partner_field_collections.manage")
 def edit(collection_id):
-    collection = PartnerFieldCollection.query.get_or_404(collection_id)
+    collection = db.get_or_404(PartnerFieldCollection, collection_id)
     if request.method == "POST":
         return _save_collection(collection)
     return _render_form(collection, {})
@@ -54,7 +54,7 @@ def edit(collection_id):
 @bp.post("/<int:collection_id>/deactivate")
 @permission_required("partner_field_collections.manage")
 def deactivate(collection_id):
-    collection = PartnerFieldCollection.query.get_or_404(collection_id)
+    collection = db.get_or_404(PartnerFieldCollection, collection_id)
     old_values = _snapshot(collection)
     collection.is_active = False
     audit("partner_field_collection.deactivate", "PartnerFieldCollection", collection.id, old_values, _snapshot(collection))

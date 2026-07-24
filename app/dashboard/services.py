@@ -103,9 +103,10 @@ def project_dashboard_context(project):
 
 
 def status_chart_data(filters):
+    from app.ui import REPORT_STATUS_LABELS
     counts = _status_counts(filtered_reports_query(filters))
-    labels = [status.value for status in DailyReportStatus]
-    return {"labels": labels, "counts": [counts.get(label, 0) for label in labels]}
+    statuses = [status.value for status in DailyReportStatus]
+    return {"labels": [REPORT_STATUS_LABELS[status] for status in statuses], "counts": [counts.get(status, 0) for status in statuses]}
 
 
 def report_count_chart_data(filters):

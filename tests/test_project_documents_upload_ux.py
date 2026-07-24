@@ -42,7 +42,11 @@ def test_file_grid_select_all_only_targets_rendered_files(client, app):
     assert page.count(b"data-file-select") == 1
     assert f'data-file-id="{visible_id}"'.encode() in page
     assert f'data-file-id="{hidden_id}"'.encode() not in page
-    assert b"data-bulk-bar" in page and b"document-file-card.is-selected" in client.get("/static/css/app.css").data
+    stylesheet = client.get("/static/css/app.css")
+    try:
+        assert b"data-bulk-bar" in page and b"document-file-card.is-selected" in stylesheet.data
+    finally:
+        stylesheet.close()
 
 
 def test_folder_share_links_are_rendered_only_for_share_permission(client, app):

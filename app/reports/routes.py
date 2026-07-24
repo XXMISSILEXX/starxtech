@@ -13,11 +13,12 @@ from app.reports.services import (
     delete_report,
     reports_query,
     update_report,
+    parse_report_date,
+    format_report_date,
 )
 
 
 @bp.get("")
-@bp.get("/")
 def index():
     if not can_access_reports_module(current_user):
         abort(403)
@@ -33,10 +34,13 @@ def index():
         query = query.filter(DailyReport.project_id == project_id)
     if status:
         query = query.filter(DailyReport.overall_status == status)
-    if date_from:
-        query = query.filter(DailyReport.report_date >= date_from)
-    if date_to:
-        query = query.filter(DailyReport.report_date <= date_to)
+    try:
+        if date_from:
+            query = query.filter(DailyReport.report_date >= parse_report_date(date_from))
+        if date_to:
+            query = query.filter(DailyReport.report_date <= parse_report_date(date_to))
+    except ReportValidationError:
+        flash("Ngày lọc phải đúng định dạng DD/MM/YYYY.", "warning")
 
     reports = query.order_by(DailyReport.report_date.desc(), DailyReport.id.desc()).all()
     return render_template(
