@@ -15,7 +15,7 @@ def create_app(config_class=Config):
     app.config.setdefault("RATELIMIT_LOGIN_LIMIT", "5 per minute")
     app.config.setdefault("RATELIMIT_EXPORT_LIMIT", "10 per hour")
     for key, value in {
-        "STORAGE_PROVIDER": "fake", "STORAGE_BUCKET": "starx-local", "STORAGE_PREFIX": "", "STATIC_ASSET_VERSION": "20260724-83",
+        "STORAGE_PROVIDER": "fake", "STORAGE_BUCKET": "starx-local", "STORAGE_PREFIX": "", "STATIC_ASSET_VERSION": "20260725-8106",
         "STORAGE_UPLOAD_URL_TTL_SECONDS": 300, "STORAGE_DOWNLOAD_URL_TTL_SECONDS": 300,
         "STORAGE_MAX_IMAGE_SIZE_MB": 50, "STORAGE_MAX_DOCUMENT_SIZE_MB": 200,
         "STORAGE_MAX_VIDEO_SIZE_MB": 500, "STORAGE_MAX_AUDIO_SIZE_MB": 200,
@@ -219,6 +219,7 @@ def register_security_headers(app):
             "script-src 'self' https://cdn.jsdelivr.net; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
             "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; "
+            "worker-src 'self' blob:; "
             "img-src " + " ".join(image_sources) + "; "
             "media-src " + " ".join(media_sources) + "; "
             "frame-src " + " ".join(frame_sources) + "; "

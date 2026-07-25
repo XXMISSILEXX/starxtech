@@ -1,6 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   if (!document.querySelector("[data-daily-report-create-v2]")) initReportSections();
   initCustomSelects();
+  initStatusBadges();
   initUploadPreviews();
   initIconChoices();
   initReportFormValidation();
@@ -58,10 +59,10 @@ function initReportSections() {
         const value = typeof item === "object" ? String(item.id) : String(item);
         const label = typeof item === "object" ? item.name : item;
         const icon = typeof item === "object" ? item.icon || "" : "";
-        const iconClass = typeof item === "object" ? item.icon_class || "" : "";
+        const iconKey = typeof item === "object" ? item.icon_key || "" : "";
         const tone = typeof item === "object" ? item.tone || "" : "";
         const selected = value === String(selectedValue) ? " selected" : "";
-        return `<option value="${escapeHtml(value)}" data-icon="${escapeHtml(icon)}" data-icon-class="${escapeHtml(iconClass)}" data-tone="${escapeHtml(tone)}"${selected}>${escapeHtml(label)}</option>`;
+        return `<option value="${escapeHtml(value)}" data-icon="${escapeHtml(icon)}" data-icon-key="${escapeHtml(iconKey)}" data-tone="${escapeHtml(tone)}"${selected}>${escapeHtml(label)}</option>`;
       })
       .join("");
 
@@ -167,10 +168,19 @@ function initCustomSelects(root = document) {
       item.setAttribute("role", "option");
       item.setAttribute("aria-selected", String(option.selected));
       item.innerHTML = optionMarkup(option, select.dataset.customSelect);
-      item.addEventListener("click", () => {
+      const choose = () => {
         select.value = option.value;
         select.dispatchEvent(new Event("change", { bubbles: true }));
         closeCustomSelects();
+        button.focus();
+      };
+      item.addEventListener("click", choose);
+      item.addEventListener("keydown", (event) => {
+        const choices = [...menu.querySelectorAll(".custom-select-option")];
+        const index = choices.indexOf(item);
+        if (["Enter", " "].includes(event.key)) { event.preventDefault(); choose(); }
+        else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) { event.preventDefault(); const next = event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + choices.length) % choices.length; choices[next]?.focus(); }
+        else if (event.key === "Escape") { closeCustomSelects(); button.focus(); }
       });
       menu.appendChild(item);
     });
@@ -226,10 +236,25 @@ function updateCustomSelect(select, button, menu) {
 
 function optionMarkup(option, type) {
   const label = option.textContent || "Chọn";
-  const iconClass = option.dataset.iconClass || "";
   const tone = option.dataset.tone || "";
-  const iconHtml = type === "status" ? `<i class="${escapeHtml(iconClass || "bi bi-info-circle")} status-control-icon status-dot-${escapeHtml(tone || "info")}" aria-hidden="true"></i>` : renderCategoryIcon(option.dataset.icon || "");
-  return `<span class="custom-select-label">${iconHtml}<span>${escapeHtml(label)}</span></span>`;
+  const iconHtml = type === "status" ? `<span class="status-icon-chip status-dot-${escapeHtml(tone || "info")}">${statusIconMarkup(option.dataset.iconKey || "info-circle-fill")}</span>` : renderCategoryIcon(option.dataset.icon || "");
+  const selected = type === "status" ? '<span class="custom-select-check" aria-hidden="true">✓</span>' : "";
+  return `<span class="custom-select-label">${iconHtml}<span>${escapeHtml(label)}</span></span>${selected}`;
+}
+
+function statusIconMarkup(iconKey) {
+  const sprite = document.documentElement.dataset.statusIconSprite || "";
+  const safeKey = /^[a-z0-9-]+$/.test(iconKey) ? iconKey : "info-circle-fill";
+  if (sprite) return `<svg class="status-svg" aria-hidden="true" focusable="false"><use href="${escapeHtml(sprite)}#${safeKey}"></use></svg>`;
+  return '<svg class="status-svg" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="7"></circle><path d="M8 4.5v.1M8 7v4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg>';
+}
+
+function initStatusBadges(root = document) {
+  root.querySelectorAll("[data-status-icon-key]").forEach((badge) => {
+    if (badge.dataset.statusIconReady === "1") return;
+    badge.dataset.statusIconReady = "1";
+    badge.insertAdjacentHTML("afterbegin", `${statusIconMarkup(badge.dataset.statusIconKey)} `);
+  });
 }
 
 function renderCategoryIcon(icon) {

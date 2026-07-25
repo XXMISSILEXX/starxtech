@@ -40,21 +40,13 @@ STATUS_LABELS = {
     IssueSeverity.HIGH.value: "Cao",
 }
 
-STATUS_ICONS = {
-    DailyReportStatus.UPDATED.value: "bi-info-circle-fill",
-    DailyReportStatus.GOOD.value: "bi-check-circle-fill",
-    DailyReportStatus.PROCESSING.value: "bi-arrow-repeat",
-    DailyReportStatus.ATTENTION.value: "bi-exclamation-triangle-fill",
-    DailyReportStatus.CRITICAL.value: "bi-x-octagon-fill",
-    SectionStatus.INFO.value: "bi-info-circle-fill",
-    IssueStatus.OPEN.value: "ℹ️",
-    IssueStatus.PROCESSING.value: "⚠️",
-    IssueStatus.RESOLVED.value: "✅",
-    IssueStatus.CLOSED.value: "✅",
-    IssueSeverity.LOW.value: "ℹ️",
-    IssueSeverity.MEDIUM.value: "⚠️",
-    IssueSeverity.HIGH.value: "⚠️",
-    IssueSeverity.CRITICAL.value: "🔴",
+STATUS_ICON_KEYS = {
+    DailyReportStatus.UPDATED.value: "info-circle-fill",
+    DailyReportStatus.GOOD.value: "check-circle-fill",
+    DailyReportStatus.PROCESSING.value: "arrow-repeat",
+    DailyReportStatus.ATTENTION.value: "exclamation-triangle-fill",
+    DailyReportStatus.CRITICAL.value: "x-octagon-fill",
+    SectionStatus.INFO.value: "info-circle-fill",
 }
 
 
@@ -63,6 +55,13 @@ ISSUE_SEVERITY_ICONS = {
     IssueSeverity.MEDIUM.value: "🟡",
     IssueSeverity.HIGH.value: "🟠",
     IssueSeverity.CRITICAL.value: "🔴",
+}
+
+ISSUE_SEVERITY_LABELS = {
+    IssueSeverity.LOW.value: "Thấp",
+    IssueSeverity.MEDIUM.value: "Trung bình",
+    IssueSeverity.HIGH.value: "Cao",
+    IssueSeverity.CRITICAL.value: "Nghiêm trọng",
 }
 
 ISSUE_STATUS_ICONS = {
@@ -87,7 +86,8 @@ STATUS_PRESENTATION = {
     value: {
         "value": value,
         "label": STATUS_LABELS[value],
-        "icon_class": f"bi {STATUS_ICONS[value]}",
+        "tone": STATUS_TONES[value],
+        "icon_key": STATUS_ICON_KEYS[value],
         "color_class": f"status-color-{STATUS_TONES[value]}",
         "background_class": f"status-bg-{STATUS_TONES[value]}",
         "css_class": f"status-{STATUS_TONES[value]}",
@@ -117,7 +117,7 @@ def status_label(value):
 
 
 def status_icon(value):
-    return STATUS_ICONS.get(value, "ℹ️")
+    return STATUS_ICON_KEYS.get(value, "info-circle-fill")
 
 
 def status_tone(value):
@@ -125,11 +125,11 @@ def status_tone(value):
 
 
 def status_presentation(value):
-    return STATUS_PRESENTATION.get(value, {"value": value, "label": status_label(value), "icon_class": "bi bi-info-circle", "color_class": "status-color-muted", "background_class": "status-bg-muted", "css_class": "status-muted", "order": 999})
+    return STATUS_PRESENTATION.get(value, {"value": value, "label": status_label(value), "tone": "muted", "icon_key": "info-circle-fill", "color_class": "status-color-muted", "background_class": "status-bg-muted", "css_class": "status-muted", "order": 999})
 
 
 def issue_severity_label(value):
-    return f"{ISSUE_SEVERITY_ICONS.get(value, 'ℹ️')} {status_label(value)}"
+    return f"{ISSUE_SEVERITY_ICONS.get(value, 'ℹ️')} {ISSUE_SEVERITY_LABELS.get(value, value or '-') }"
 
 
 def issue_status_label(value):

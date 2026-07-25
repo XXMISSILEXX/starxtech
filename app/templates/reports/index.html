@@ -63,7 +63,7 @@
         <tr>
           <td data-label="Ngày"><a href="{{ url_for('reports.detail', report_id=report.id) }}">{{ report.report_date|vn_date }}</a></td>
           <td data-label="Dự án">{{ report.project.code }} - {{ report.project.name }}</td>
-          {% set report_status = status_presentation(report.overall_status) %}<td data-label="Trạng thái"><span class="badge status-badge {{ report_status.css_class }}"><i class="{{ report_status.icon_class }} me-1" aria-hidden="true"></i>{{ report_status.label }}</span></td>
+          {% set report_status = status_presentation(report.overall_status) %}<td data-label="Trạng thái"><span class="badge status-badge {{ report_status.css_class }}" data-status-icon-key="{{ report_status.icon_key }}">{{ report_status.label }}</span></td>
           <td data-label="Điểm nổi bật" class="text-truncate" style="max-width: 360px;">{{ report.highlight }}</td>
           <td data-label="Người tạo">{{ report.created_by.full_name }}</td>
           <td data-label="Cập nhật">{{ report.updated_at.strftime('%Y-%m-%d %H:%M') if report.updated_at else '-' }}</td>
