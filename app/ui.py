@@ -41,12 +41,12 @@ STATUS_LABELS = {
 }
 
 STATUS_ICONS = {
-    DailyReportStatus.UPDATED.value: "ℹ️",
-    DailyReportStatus.GOOD.value: "✅",
-    DailyReportStatus.PROCESSING.value: "⚠️",
-    DailyReportStatus.ATTENTION.value: "⚠️",
-    DailyReportStatus.CRITICAL.value: "🔴",
-    SectionStatus.INFO.value: "ℹ️",
+    DailyReportStatus.UPDATED.value: "bi-info-circle-fill",
+    DailyReportStatus.GOOD.value: "bi-check-circle-fill",
+    DailyReportStatus.PROCESSING.value: "bi-arrow-repeat",
+    DailyReportStatus.ATTENTION.value: "bi-exclamation-triangle-fill",
+    DailyReportStatus.CRITICAL.value: "bi-exclamation-octagon-fill",
+    SectionStatus.INFO.value: "bi-info-circle-fill",
     IssueStatus.OPEN.value: "ℹ️",
     IssueStatus.PROCESSING.value: "⚠️",
     IssueStatus.RESOLVED.value: "✅",
@@ -56,6 +56,7 @@ STATUS_ICONS = {
     IssueSeverity.HIGH.value: "⚠️",
     IssueSeverity.CRITICAL.value: "🔴",
 }
+
 
 ISSUE_SEVERITY_ICONS = {
     IssueSeverity.LOW.value: "🟢",
@@ -80,6 +81,11 @@ STATUS_TONES = {
     SectionStatus.INFO.value: "info",
 }
 
+STATUS_PRESENTATION = {
+    value: {"value": value, "label": STATUS_LABELS[value], "icon": icon, "css_class": f"status-{STATUS_TONES.get(value, 'muted')}"}
+    for value, icon in STATUS_ICONS.items() if value in STATUS_LABELS
+}
+
 
 def role_label(role):
     return ROLE_LABELS.get(role, role or "-")
@@ -99,6 +105,10 @@ def status_icon(value):
 
 def status_tone(value):
     return STATUS_TONES.get(value, (value or "muted").lower())
+
+
+def status_presentation(value):
+    return STATUS_PRESENTATION.get(value, {"value": value, "label": status_label(value), "icon": "bi-info-circle", "css_class": "status-muted"})
 
 
 def issue_severity_label(value):
@@ -150,6 +160,7 @@ def register_template_helpers(app):
     app.jinja_env.globals["category_icon"] = category_icon
     app.jinja_env.globals["status_icon"] = status_icon
     app.jinja_env.globals["status_tone"] = status_tone
+    app.jinja_env.globals["status_presentation"] = status_presentation
     app.jinja_env.globals["module_label"] = module_label
     app.jinja_env.globals["can_access_reports_module"] = can_access_reports_module
     app.jinja_env.globals["can_access_partners_module"] = can_access_partners_module

@@ -7,7 +7,7 @@
 <div class="d-flex justify-content-between align-items-start mb-4">
   <div>
     <div class="text-muted">{{ report.project.name }}</div>
-    <div class="mt-2"><span class="badge status-badge status-{{ report.overall_status|lower }}">{{ report.overall_status|status_label }}</span></div>
+    {% set report_status = status_presentation(report.overall_status) %}<div class="mt-2"><span class="badge status-badge {{ report_status.css_class }}"><i class="bi {{ report_status.icon }} me-1" aria-hidden="true"></i>{{ report_status.label }}</span></div>
   </div>
   <div class="d-flex gap-2">
     {% if can_write %}
@@ -22,28 +22,24 @@
   </div>
 </div>
 
-<section class="card mb-4">
-  <div class="card-body">
-  <h2 class="h6">Điểm nổi bật</h2>
-  <p class="mb-0">{{ report.highlight }}</p>
+<section class="report-summary-card mb-4"><div class="row g-3">
+  <div class="col-md-{% if report.summary_note %}6{% else %}12{% endif %}"><div class="report-highlight-block"><h2 class="h6"><i class="bi bi-star-fill me-2" aria-hidden="true"></i>Điểm nổi bật</h2><p class="mb-0 report-user-text">{{ report.highlight }}</p></div></div>
   {% if report.summary_note %}
-    <h2 class="h6 mt-3">Ghi chú tổng hợp</h2>
-    <p class="mb-0">{{ report.summary_note }}</p>
+    <div class="col-md-6"><div class="report-note-block"><h2 class="h6"><i class="bi bi-journal-text me-2" aria-hidden="true"></i>Ghi chú tổng hợp</h2><p class="mb-0 report-user-text">{{ report.summary_note }}</p></div></div>
   {% endif %}
-  </div>
-</section>
+</div></section>
 
 <div class="row g-3">
   {% for section in report.sections|sort(attribute='sort_order') %}
     {% if not section.deleted_at %}
       <div class="col-12">
-        <article class="card">
+        {% set section_status = status_presentation(section.status) %}<article class="card report-detail-section {{ section_status.css_class }}">
           <div class="card-body">
             <div class="d-flex justify-content-between align-items-start mb-2">
-              <h2 class="h6 mb-0">{{ category_icon(section.report_category.icon) }} {{ section.report_category.name }}</h2>
-              <span class="badge status-badge status-{{ section.status|lower }}">{{ section.status|status_label }}</span>
+              <h2 class="h6 mb-0">{{ category_icon(section.report_category.icon) }} <span class="ms-1">{{ section.report_category.name }}</span></h2>
+              <span class="badge status-badge {{ section_status.css_class }}"><i class="bi {{ section_status.icon }} me-1" aria-hidden="true"></i>{{ section_status.label }}</span>
             </div>
-            <p class="mb-3">{{ section.content }}</p>
+            <p class="mb-3 report-user-text">{{ section.content }}</p>
             <div class="image-gallery d-flex flex-wrap gap-2">
               {% for attachment in section.attachments %}
                 {% if not attachment.deleted_at %}

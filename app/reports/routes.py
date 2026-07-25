@@ -122,6 +122,7 @@ def delete(report_id):
 
 
 def _render_form(report, form_data=None, form_errors=None):
+    from app.ui import status_presentation
     return render_template(
         "reports/form.html",
         report=report,
@@ -131,6 +132,7 @@ def _render_form(report, form_data=None, form_errors=None):
         categories=categories_for_report(report),
         statuses=[status.value for status in DailyReportStatus],
         section_statuses=[status.value for status in SectionStatus],
+        status_metadata=[status_presentation(status.value) for status in {*DailyReportStatus, *SectionStatus}],
         can_write=can_edit_report(current_user, report),
         can_delete_attachment=current_user.can("report_attachments.delete") and can_edit_report(current_user, report),
         direct_upload_limits=_direct_upload_limits(),

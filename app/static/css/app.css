@@ -1023,6 +1023,18 @@ a:hover {
   box-shadow: var(--sx-shadow-sm);
 }
 
+.report-user-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.report-summary-card { padding: 1rem; background: #fff; border: 1px solid var(--sx-border); border-radius: var(--sx-radius); box-shadow: var(--sx-shadow-sm); }
+.report-highlight-block, .report-note-block { height: 100%; padding: 1rem; border-radius: var(--sx-radius-sm); }
+.report-highlight-block { background: #fffbeb; border-left: 4px solid #f59e0b; }
+.report-note-block { background: #f8fafc; border-left: 4px solid #94a3b8; }
+.report-detail-section { border-left: 4px solid #94a3b8; }
+.report-detail-section.status-good { border-left-color: #22c55e; }
+.report-detail-section.status-processing { border-left-color: #0ea5e9; }
+.report-detail-section.status-attention { border-left-color: #f59e0b; }
+.report-detail-section.status-critical { border-left-color: #ef4444; }
+.report-detail-section.status-info { border-left-color: #6366f1; }
+
 .report-thumb {
   width: 120px;
   height: 90px;

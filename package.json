@@ -1,5 +1,12 @@
 {
   "private": true,
-  "scripts": {"test": "node --test tests_js/**/*.test.js"},
-  "devDependencies": {"jsdom": "^24.1.1"}
+  "scripts": {
+    "test": "node --test tests_js/**/*.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.1"
+  },
+  "dependencies": {
+    "heic2any": "^0.0.4"
+  }
 }

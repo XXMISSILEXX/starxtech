@@ -233,6 +233,7 @@ def issues_create(project_id):
 
 def _render_create_form(project, report, form_data=None, form_errors=None):
     from flask import current_app
+    from app.ui import status_presentation
     return render_template(
         "reports/form.html",
         project=project,
@@ -242,6 +243,7 @@ def _render_create_form(project, report, form_data=None, form_errors=None):
         categories=categories_for_create(project.id),
         statuses=[status.value for status in DailyReportStatus],
         section_statuses=[status.value for status in SectionStatus],
+        status_metadata=[status_presentation(status.value) for status in {*DailyReportStatus, *SectionStatus}],
         can_write=can_create_report(current_user, project.id),
         can_delete_attachment=False,
         direct_upload_limits={"enabled": current_app.config["DAILY_REPORT_DIRECT_UPLOAD_ENABLED"], "max_files": current_app.config["DAILY_REPORT_MAX_FILES"], "max_files_per_section": current_app.config["DAILY_REPORT_MAX_FILES_PER_SECTION"], "max_file_bytes": current_app.config["DAILY_REPORT_MAX_FILE_BYTES"], "max_total_bytes": current_app.config["DAILY_REPORT_MAX_TOTAL_BYTES"], "concurrency": current_app.config["DAILY_REPORT_UPLOAD_CONCURRENCY"]},

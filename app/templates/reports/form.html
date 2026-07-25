@@ -9,7 +9,7 @@
 {% set overall_status_value = form_data.overall_status if form_data else report.overall_status %}
 {% set highlight_value = form_data.highlight if form_data else (report.highlight or '') %}
 {% set summary_note_value = form_data.summary_note if form_data else (report.summary_note or '') %}
-<form method="post" {% if daily_report_create_v2_enabled|default(false) %}data-daily-report-create-v2 data-api-base="{{ create_v2_api_base }}"{% else %}data-report-direct-upload{% endif %}
+<form method="post" {% if daily_report_create_v2_enabled|default(false) %}data-daily-report-create-v2 data-api-base="{{ create_v2_api_base }}" data-status-metadata='{{ status_metadata|tojson }}'{% else %}data-report-direct-upload{% endif %}
       data-session-url="{{ url_for('projects.report_upload_session_create', project_id=project.id) }}"
       data-session-state-url="{{ url_for('projects.report_upload_session_state', project_id=project.id, session_id=0) }}"
       data-presign-url="{{ url_for('projects.report_upload_session_presign', project_id=project.id, session_id=0) }}"
@@ -66,7 +66,7 @@
       <div class="d-flex justify-content-between align-items-center mb-3"><h3 class="h6 mb-0" data-section-number></h3><button class="btn btn-outline-danger btn-sm" type="button" data-remove-section><i class="bi bi-trash me-1"></i>Xóa phần</button></div>
       <div class="row g-3">
         <div class="col-md-5"><label class="form-label">Hạng mục</label><select class="form-select" data-section-category required><option value="">Chọn hạng mục</option>{% for category in categories %}<option value="{{ category.id }}">{{ category_icon(category.icon) }} {{ category.name }}</option>{% endfor %}</select><div class="invalid-feedback" data-category-error></div></div>
-        <div class="col-md-4"><label class="form-label">Trạng thái</label><select class="form-select" data-section-status required>{% for status in section_statuses %}<option value="{{ status }}" {% if status == 'INFO' %}selected{% endif %}>{{ status|status_label }}</option>{% endfor %}</select></div>
+        <div class="col-md-4"><label class="form-label">Trạng thái</label><div class="d-flex align-items-center gap-2"><i class="bi bi-info-circle-fill" data-section-status-icon aria-hidden="true"></i><select class="form-select" data-section-status required>{% for status in section_statuses %}<option value="{{ status }}" {% if status == 'INFO' %}selected{% endif %}>{{ status|status_label }}</option>{% endfor %}</select></div></div>
         <div class="col-12"><label class="form-label">Nội dung</label><textarea class="form-control" rows="3" data-section-content required minlength="1"></textarea><div class="invalid-feedback" data-content-error></div></div>
         <div class="col-12" data-report-attachment-picker><label class="form-label">Ảnh đính kèm</label><label class="upload-dropzone" role="button" tabindex="0"><input class="visually-hidden" type="file" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/jpeg,image/png,image/webp,image/heic,image/heif" multiple data-report-attachment-input><span class="upload-title"><i class="bi bi-images me-1"></i>Chọn ảnh đính kèm</span><span class="upload-help">Kéo thả ảnh vào đây hoặc bấm để chọn</span></label><div class="upload-preview-grid mt-2" data-attachment-preview></div></div>
       </div>
@@ -163,14 +163,14 @@
     </div>
   {% endif %}
 </form>
-<div class="report-save-overlay" data-report-save-overlay role="dialog" aria-modal="true" aria-live="polite" aria-label="Đang lưu báo cáo" hidden>
+<div class="report-save-overlay" data-report-save-overlay role="dialog" aria-modal="true" aria-live="polite" aria-label="Đang lưu báo cáo" aria-busy="false" hidden>
   <div class="report-save-overlay__panel">
     <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Đang xử lý</span></div>
-    <h2 class="h5 mt-3">Đang lưu báo cáo...</h2>
+    <i class="bi bi-cloud-arrow-up-fill fs-1 text-primary" data-save-icon aria-hidden="true"></i><h2 class="h5 mt-3" data-save-title>Đang lưu báo cáo...</h2>
     <p class="mb-2" data-save-message>Đang kiểm tra dữ liệu...</p>
-    <div class="d-flex justify-content-between small text-muted"><span data-save-count>0/0 ảnh</span><span data-save-bytes></span></div>
+    <div class="d-flex justify-content-between small text-muted"><span data-save-uploaded>Đã tải: 0/0</span><span data-save-verified>Đã xác minh: 0/0</span></div><div class="d-flex justify-content-between small text-muted"><span data-save-failed></span><span data-save-bytes></span></div><p class="small text-muted mb-2" data-save-filename></p>
     <div class="progress mt-2" role="progressbar" aria-label="Tiến độ tải ảnh"><div class="progress-bar" data-save-progress style="width: 0%"></div></div>
-    <div class="d-flex justify-content-center gap-2 mt-3"><button class="btn btn-primary" type="button" data-save-retry hidden>Thử lại</button><button class="btn btn-outline-secondary" type="button" data-save-cancel hidden>Hủy</button></div>
+    <div class="d-flex justify-content-center gap-2 mt-3"><button class="btn btn-primary" type="button" data-save-retry hidden>Thử lại</button><button class="btn btn-outline-secondary" type="button" data-save-cancel hidden>Quay lại biểu mẫu</button></div>
   </div>
 </div>
 {% if can_delete_attachment and report.id %}
