@@ -70,6 +70,7 @@ function initReportSections() {
     section.className = "report-section p-3 mb-3";
     section.dataset.sectionRow = "";
     section.innerHTML = `
+      <input type="hidden" name="sections-${index}-client-section-id" value="" data-client-section-id>
       <div class="row g-3">
         <div class="col-md-5">
           <label class="form-label">Hạng mục</label>
@@ -104,6 +105,7 @@ function initReportSections() {
     `;
     container.appendChild(section);
     initCustomSelects(section);
+    document.dispatchEvent(new CustomEvent("starx:report-section-added", { detail: section }));
   };
 
   container.addEventListener("click", (event) => {
@@ -113,7 +115,9 @@ function initReportSections() {
     }
     const row = removeButton.closest("[data-section-row]");
     if (row) {
+      const clientSectionId = row.querySelector("[data-client-section-id]")?.value || "";
       row.remove();
+      document.dispatchEvent(new CustomEvent("starx:report-section-removed", { detail: clientSectionId }));
     }
   });
 

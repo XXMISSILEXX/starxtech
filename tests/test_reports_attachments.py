@@ -1,10 +1,12 @@
 from io import BytesIO
 
 from PIL import Image
+from sqlalchemy import select
 from werkzeug.datastructures import MultiDict
 
 from app.extensions import db
-from app.models import AuditLog, DailyReport, ReportAttachment, StorageObject, User
+from app.models import AuditLog, DailyReport, MediaProcessingJob, ReportAttachment, StorageDerivative, StorageObject, UploadBatchItem, User
+from tests.helpers.report_direct_upload import ReportUploadFile, submit_report_with_direct_upload
 
 
 def login(client, username_or_email, password="password123"):
@@ -24,6 +26,19 @@ def image_upload(name="photo.jpg", image_format="JPEG"):
     return stream, name
 
 
+def image_bytes(image_format="JPEG"):
+    stream, _ = image_upload(image_format=image_format)
+    return stream.read()
+
+
+def direct_report(client, app, *, project_id=1, category_id=None, form=None, files=None, submit_url=None):
+    return submit_report_with_direct_upload(
+        client, app, project_id=project_id,
+        form=form or report_form(category_id=category_id or (3 if project_id == 2 else 1)),
+        files=files or [ReportUploadFile(image_bytes())], submit_url=submit_url,
+    )
+
+
 def report_form(category_id=1, report_date="2026-07-08", content="Concrete poured."):
     return MultiDict(
         [
@@ -40,29 +55,101 @@ def report_form(category_id=1, report_date="2026-07-08", content="Concrete poure
 
 def test_reporter_creates_report_for_assigned_project(client, app):
     login(client, "reporter")
-    data = report_form()
-    data.add("sections-0-images", image_upload())
-
-    response = client.post(
-        "/reports/projects/1/reports/create",
-        data=data,
-        content_type="multipart/form-data",
-    )
+    result = direct_report(client, app)
+    response = result["response"]
 
     assert response.status_code == 302
     with app.app_context():
         report = DailyReport.query.filter_by(project_id=1).one()
         assert report.sections[0].content == "Concrete poured."
         assert len(report.sections[0].attachments) == 1
+        assert result["upload_session"].status == "finalized"
+        assert result["upload_items"][0].finalized_at is not None
         assert AuditLog.query.filter_by(action="report.create", entity_id=report.id).count() == 1
         assert AuditLog.query.filter_by(action="attachment.create").count() == 1
 
 
-def test_uploaded_image_url_resolves(client, app):
+def test_legacy_multipart_files_are_rejected_without_side_effects(client, app):
+    login(client, "reporter")
+    data = report_form(); data.add("sections-0-images", image_upload())
+    response = client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    assert response.status_code == 400
+    assert "trình tải ảnh của hệ thống".encode() in response.data
+    with app.app_context():
+        assert db.session.scalar(select(DailyReport)) is None
+        assert db.session.scalar(select(StorageObject)) is None
+        assert db.session.scalar(select(MediaProcessingJob)) is None
+        assert "storage_provider" not in app.extensions
+
+
+def test_legacy_multipart_json_error_is_explicit(client, app):
+    login(client, "reporter")
+    data = report_form(); data.add("sections-0-images", image_upload())
+    response = client.post("/reports/projects/1/reports/create", data=data,
+        content_type="multipart/form-data", headers={"Accept": "application/json"})
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "ok": False,
+        "error": "legacy_multipart_upload_not_supported",
+        "message": "Ảnh đính kèm phải được tải lên bằng trình tải ảnh của hệ thống.",
+    }
+
+
+def test_text_only_multipart_submission_still_creates_report(client, app):
+    login(client, "reporter")
+    response = client.post("/reports/projects/1/reports/create", data=report_form(), content_type="multipart/form-data")
+    assert response.status_code == 302
+    with app.app_context():
+        assert db.session.scalar(select(DailyReport)) is not None
+
+
+def test_canonical_empty_manifest_creates_no_image_report_json(client, app):
     login(client, "reporter")
     data = report_form()
-    data.add("sections-0-images", image_upload())
-    client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    data.add("attachment_manifest", '{"upload_session_id":null,"attachments":[]}')
+    data.add("direct_upload_expected", "0")
+    data.add("direct_upload_selected_count", "0")
+    response = client.post(
+        "/reports/projects/1/reports/create", data=data,
+        headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+    )
+    assert response.status_code == 200
+    assert response.get_json()["ok"] is True
+    assert response.get_json()["redirect_url"]
+    with app.app_context():
+        assert DailyReport.query.count() == 1
+        assert ReportAttachment.query.count() == 0
+        assert StorageObject.query.count() == 0
+        assert MediaProcessingJob.query.count() == 0
+
+
+def test_direct_upload_marker_without_complete_manifest_never_creates_report(client, app):
+    login(client, "reporter")
+    data = report_form()
+    data.add("direct_upload_expected", "1")
+    response = client.post("/reports/projects/1/reports/create", data=data)
+    assert response.status_code == 400
+    assert "chưa được tải lên hoàn tất".encode() in response.data
+    with app.app_context():
+        assert db.session.scalar(select(DailyReport)) is None
+
+
+def test_direct_upload_rejects_unsupported_metadata_without_creating_item_or_object(client, app):
+    login(client, "reporter")
+    session = client.post("/reports/projects/1/reports/upload-sessions", json={"file_count": 1, "total_size_bytes": 3}).get_json()
+    response = client.post(f"/reports/projects/1/reports/upload-sessions/{session['upload_session_id']}/presign", json={"files": [{
+        "client_file_id": "bad-file", "client_section_id": "section-0", "filename": "bad.txt",
+        "mime_type": "text/plain", "size": 3,
+    }]})
+    assert response.status_code == 400
+    with app.app_context():
+        assert db.session.scalar(select(UploadBatchItem)) is None
+        assert db.session.scalar(select(StorageObject)) is None
+
+
+def test_uploaded_image_url_resolves(client, app):
+    login(client, "reporter")
+    direct_report(client, app)
 
     with app.app_context():
         attachment = ReportAttachment.query.one()
@@ -73,13 +160,12 @@ def test_uploaded_image_url_resolves(client, app):
 
     response = client.get(f"/attachments/{attachment_id}")
     assert response.status_code == 302
-    assert "fake-storage.invalid" in response.headers["Location"]
+    assert response.headers["Location"].endswith("/static/img/attachment-processing.svg")
 
 
 def test_attachment_download_redirects_to_original(client, app):
     login(client, "reporter")
-    data = report_form(); data.add("sections-0-images", image_upload())
-    client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    direct_report(client, app)
     with app.app_context(): attachment_id = ReportAttachment.query.one().id
     response = client.get(f"/attachments/{attachment_id}/download")
     assert response.status_code == 302
@@ -180,42 +266,31 @@ def test_duplicate_section_category_fails(client):
     assert "Hạng mục không được trùng".encode() in response.data
 
 
-def test_upload_more_than_three_images_for_one_section_fails(client):
+def test_upload_more_than_three_images_for_one_section_fails(client, app):
     login(client, "reporter")
-    data = report_form()
-    for index in range(4):
-        data.add("sections-0-images", image_upload(f"photo-{index}.jpg"))
-
-    response = client.post(
-        "/reports/projects/1/reports/create",
-        data=data,
-        content_type="multipart/form-data",
-    )
-
-    assert response.status_code == 400
-    assert "tối đa 3 ảnh".encode() in response.data
+    files = [ReportUploadFile(image_bytes(), filename=f"photo-{index}.jpg") for index in range(4)]
+    result = direct_report(client, app, files=files)
+    assert result["response"].status_code == 400
+    assert "tối đa 3 ảnh".encode() in result["response"].data
+    with app.app_context():
+        assert db.session.scalar(select(DailyReport)) is None
+        assert result["upload_session"].status == "ready"
 
 
-def test_non_image_upload_fails(client):
+def test_non_image_upload_fails(client, app):
     login(client, "reporter")
     data = report_form()
     data.add("sections-0-images", (BytesIO(b"not an image"), "bad.jpg"))
-
-    response = client.post(
-        "/reports/projects/1/reports/create",
-        data=data,
-        content_type="multipart/form-data",
-    )
-
+    response = client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
     assert response.status_code == 400
-    assert "không phải ảnh hợp lệ".encode() in response.data
+    assert "trình tải ảnh của hệ thống".encode() in response.data
+    with app.app_context():
+        assert db.session.scalar(select(DailyReport)) is None
 
 
 def test_attachment_view_enforces_project_read_permission(client, app):
     login(client, "super")
-    data = report_form(category_id=3)
-    data.add("sections-0-images", image_upload())
-    client.post("/reports/projects/2/reports/create", data=data, content_type="multipart/form-data")
+    direct_report(client, app, project_id=2, category_id=3)
 
     with app.app_context():
         attachment_id = ReportAttachment.query.one().id
@@ -227,29 +302,37 @@ def test_attachment_view_enforces_project_read_permission(client, app):
     assert response.status_code == 403
 
 
-def test_attachment_delete_soft_deletes_and_audits(client, app):
+def test_attachment_delete_hard_deletes_storage_and_audits(client, app):
     login(client, "reporter")
-    data = report_form()
-    data.add("sections-0-images", image_upload())
-    client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    direct_report(client, app)
 
     with app.app_context():
         attachment_id = ReportAttachment.query.one().id
+        storage = db.session.get(StorageObject, ReportAttachment.query.one().storage_object_id)
+        derivative = StorageDerivative(storage_object_id=storage.id, derivative_type="preview", bucket=storage.bucket,
+            object_key="daily-reports/derivatives/delete-preview.webp", mime_type="image/webp", file_ext="webp", file_size=1)
+        job = MediaProcessingJob.query.filter_by(storage_object_id=storage.id, job_type="image_derivatives").one()
+        db.session.add(derivative); db.session.commit()
+        provider = app.extensions["storage_provider"]
+        provider.put_bytes(derivative.bucket, derivative.object_key, b"preview", derivative.mime_type)
+        storage_id, derivative_id, job_id = storage.id, derivative.id, job.id
 
     response = client.post(f"/attachments/{attachment_id}/delete")
 
     assert response.status_code == 302
     with app.app_context():
-        attachment = db.session.get(ReportAttachment, attachment_id)
-        assert attachment.deleted_at is not None
+        assert db.session.get(ReportAttachment, attachment_id) is None
+        assert db.session.get(StorageDerivative, derivative_id) is None
+        assert db.session.get(MediaProcessingJob, job_id) is None
+        assert db.session.get(StorageObject, storage_id) is None
+        assert (storage.bucket, storage.object_key) in provider.deleted
+        assert (derivative.bucket, derivative.object_key) in provider.deleted
         assert AuditLog.query.filter_by(action="attachment.delete", entity_id=attachment_id).count() == 1
 
 
 def test_reporter_cannot_delete_attachment_from_another_reporter(client, app):
     login(client, "super")
-    data = report_form()
-    data.add("sections-0-images", image_upload())
-    client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    direct_report(client, app)
     with app.app_context():
         attachment_id = ReportAttachment.query.one().id
 
@@ -258,14 +341,12 @@ def test_reporter_cannot_delete_attachment_from_another_reporter(client, app):
     assert client.post(f"/attachments/{attachment_id}/delete").status_code == 403
 
     with app.app_context():
-        assert db.session.get(ReportAttachment, attachment_id).deleted_at is None
+        assert db.session.get(ReportAttachment, attachment_id) is not None
 
 
 def test_viewer_admin_cannot_delete_report_attachment(client, app):
     login(client, "super")
-    data = report_form()
-    data.add("sections-0-images", image_upload())
-    client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    direct_report(client, app)
     with app.app_context():
         attachment_id = ReportAttachment.query.one().id
 
@@ -282,9 +363,7 @@ def test_attachment_delete_requires_report_edit_capability(client, app):
         db.session.commit()
 
     login(client, "reporter")
-    data = report_form()
-    data.add("sections-0-images", image_upload())
-    client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    direct_report(client, app)
     with app.app_context():
         attachment_id = ReportAttachment.query.one().id
 
@@ -305,10 +384,40 @@ def test_report_update_and_delete_write_audit_rows(client, app):
     deleted = client.post(f"/reports/{report_id}/delete")
     assert deleted.status_code == 302
     with app.app_context():
-        report = db.session.get(DailyReport, report_id)
-        assert report.deleted_at is not None
+        assert db.session.get(DailyReport, report_id) is None
         assert AuditLog.query.filter_by(action="report.update", entity_id=report_id).count() == 1
         assert AuditLog.query.filter_by(action="report.delete", entity_id=report_id).count() == 1
+
+
+def test_report_delete_hard_deletes_attachments_storage_and_allows_same_date(client, app):
+    login(client, "reporter")
+    assert direct_report(client, app)["response"].status_code == 302
+    with app.app_context():
+        attachment = ReportAttachment.query.one()
+        report_id, attachment_id, object_id = attachment.section.daily_report_id, attachment.id, attachment.storage_object_id
+        obj = db.session.get(StorageObject, object_id)
+        derivative = StorageDerivative(storage_object_id=obj.id, derivative_type="preview", bucket=obj.bucket,
+            object_key="daily-reports/derivatives/report-delete-preview.webp", mime_type="image/webp",
+            file_ext="webp", file_size=1)
+        db.session.add(derivative); db.session.commit()
+        derivative_id = derivative.id
+        provider = app.extensions["storage_provider"]
+        provider.put_bytes(obj.bucket, obj.object_key, b"original", obj.mime_type)
+        provider.put_bytes(derivative.bucket, derivative.object_key, b"preview", derivative.mime_type)
+        deleted_keys = {(obj.bucket, obj.object_key), (derivative.bucket, derivative.object_key)}
+
+    client.post("/logout")
+    login(client, "super")
+    assert client.post(f"/reports/{report_id}/delete").status_code == 302
+    with app.app_context():
+        assert db.session.get(DailyReport, report_id) is None
+        assert db.session.get(ReportAttachment, attachment_id) is None
+        assert db.session.get(StorageDerivative, derivative_id) is None
+        assert db.session.get(StorageObject, object_id) is None
+    assert deleted_keys <= set(provider.deleted)
+    client.post("/logout")
+    login(client, "reporter")
+    assert client.post("/reports/projects/1/reports/create", data=report_form()).status_code == 302
 
 
 def test_report_edit_post_success_shows_vietnamese_message(client, app):
@@ -366,9 +475,7 @@ def test_report_create_missing_section_content_preserves_entered_data(client):
 
 def test_report_edit_validation_fail_keeps_existing_attachment(client, app):
     login(client, "reporter")
-    data = report_form()
-    data.add("sections-0-images", image_upload())
-    client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
+    direct_report(client, app)
     with app.app_context():
         report_id = DailyReport.query.one().id
         attachment_id = ReportAttachment.query.one().id

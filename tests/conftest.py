@@ -20,6 +20,7 @@ class TestConfig:
     UPLOAD_ROOT = "/tmp/starx-test-uploads"
     MAX_UPLOAD_MB = 10
     MAX_IMAGES_PER_SECTION = 3
+    DAILY_REPORT_MAX_FILES_PER_SECTION = 3
 
 
 @pytest.fixture

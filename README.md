@@ -147,6 +147,16 @@ Trên production, reset bị từ chối nếu không có `--allow-production`. 
 
 ```bash
 flask security-audit
+
+# Preview cleanup of expired direct Daily Report upload sessions
+flask cleanup-expired-report-upload-sessions --dry-run
+
+Daily Report attachments are uploaded directly to S3/MinIO with presigned PUT
+URLs. Configure the bucket CORS rule with your application origins from
+`STORAGE_CORS_ALLOWED_ORIGINS` (the local default is
+`http://192.168.1.159:5666`), methods `PUT, HEAD`, and request headers
+`Content-Type, x-amz-meta-sha256`. Do not use `*` for credentialed origins;
+the browser does not send StarX application cookies to object storage.
 ```
 
 `memory://` là rate-limit storage mặc định cho local/internal. Redis là tuỳ chọn, nhưng nên dùng storage chia sẻ khi chạy nhiều worker production. Xem checklist chi tiết tại [SECURITY_AUDIT_CHECKLIST.md](SECURITY_AUDIT_CHECKLIST.md).
@@ -178,6 +188,21 @@ User.query.count()
 ```
 
 ## Production Operations
+
+### Media worker
+
+Load the same environment used by Flask, then verify the worker identity and
+start the prefork media worker:
+
+```bash
+flask worker-config-check
+scripts/start-media-worker.sh
+```
+
+The wrapper requires `DATABASE_URL`, `CELERY_BROKER_URL`, and a valid
+`STORAGE_PROVIDER`; it starts queues `media_image`, `media_video`,
+`storage_cleanup`, and `bulk_download`. Recover committed jobs after a broker
+outage with `flask reconcile-media-jobs --module daily-reports --apply`.
 
 - Ubuntu deployment guide: [DEPLOY_UBUNTU.md](DEPLOY_UBUNTU.md)
 - Docker Compose + Cloudflared: [DOCKER_DEPLOY.md](DOCKER_DEPLOY.md)

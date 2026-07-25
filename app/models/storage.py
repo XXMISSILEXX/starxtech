@@ -9,7 +9,7 @@ class StorageObject(CreatedAtMixin, SoftDeleteMixin, db.Model):
     __tablename__ = "storage_objects"
     __table_args__ = (
         db.UniqueConstraint("bucket", "object_key", name="uq_storage_objects_bucket_key"),
-        db.CheckConstraint("upload_status IN ('pending', 'active', 'failed', 'deleted')", name="ck_storage_objects_upload_status"),
+        db.CheckConstraint("upload_status IN ('pending', 'uploaded', 'active', 'failed', 'deleted')", name="ck_storage_objects_upload_status"),
         db.CheckConstraint("processing_status IN ('none', 'queued', 'processing', 'completed', 'failed')", name="ck_storage_objects_processing_status"),
         db.Index("idx_storage_objects_upload_status_created", "upload_status", "created_at"),
         db.Index("idx_storage_objects_processing_status_created", "processing_status", "created_at"),
@@ -41,8 +41,8 @@ class StorageObject(CreatedAtMixin, SoftDeleteMixin, db.Model):
 class UploadBatch(CreatedAtMixin, db.Model):
     __tablename__ = "upload_batches"
     __table_args__ = (
-        db.CheckConstraint("module_type IN ('project_documents', 'company_media')", name="ck_upload_batches_module_type"),
-        db.CheckConstraint("target_type IN ('folder', 'album')", name="ck_upload_batches_target_type"),
+        db.CheckConstraint("module_type IN ('project_documents', 'company_media', 'daily_reports')", name="ck_upload_batches_module_type"),
+        db.CheckConstraint("target_type IN ('folder', 'album', 'project')", name="ck_upload_batches_target_type"),
         db.CheckConstraint("status IN ('pending', 'uploading', 'completed', 'partial_failed', 'failed')", name="ck_upload_batches_status"),
         db.Index("idx_upload_batches_creator_status", "created_by_id", "status"),
         db.Index("idx_upload_batches_target", "module_type", "target_type", "target_id"),
@@ -67,10 +67,11 @@ class UploadBatch(CreatedAtMixin, db.Model):
 
 class UploadSelectionSession(TimestampMixin, db.Model):
     __tablename__ = "upload_selection_sessions"
-    __table_args__ = (db.CheckConstraint("module_type IN ('project_documents', 'company_media')", name="ck_upload_selection_module"),
-                      db.CheckConstraint("target_type IN ('folder', 'album')", name="ck_upload_selection_target"),
-                      db.CheckConstraint("status IN ('pending', 'completed', 'expired')", name="ck_upload_selection_status"),
-                      db.Index("idx_upload_selection_owner_expiry", "created_by_id", "expires_at"))
+    __table_args__ = (db.CheckConstraint("module_type IN ('project_documents', 'company_media', 'daily_reports')", name="ck_upload_selection_module"),
+                      db.CheckConstraint("target_type IN ('folder', 'album', 'project')", name="ck_upload_selection_target"),
+                      db.CheckConstraint("status IN ('pending', 'uploading', 'ready', 'completed', 'finalized', 'cancelled', 'expired')", name="ck_upload_selection_status"),
+                      db.Index("idx_upload_selection_owner_expiry", "created_by_id", "expires_at"),
+                      db.Index("idx_upload_selection_project_status_expiry", "target_id", "status", "expires_at"))
     id = db.Column(STORAGE_ID, primary_key=True)
     module_type = db.Column(db.String(40), nullable=False); target_type = db.Column(db.String(20), nullable=False)
     target_id = db.Column(db.BigInteger, nullable=False); created_by_id = db.Column(STORAGE_ID, db.ForeignKey("users.id"), nullable=False)
@@ -102,17 +103,22 @@ class UploadBatchItem(TimestampMixin, db.Model):
         db.CheckConstraint("status IN ('accepted', 'rejected', 'uploading', 'completed', 'failed', 'cancelled')", name="ck_upload_batch_items_status"),
         db.Index("idx_upload_batch_items_batch_status", "upload_batch_id", "status"),
         db.Index("idx_upload_batch_items_storage_object", "storage_object_id"),
+        db.Index("idx_upload_batch_items_client_section", "upload_batch_id", "client_section_id"),
     )
 
     id = db.Column(STORAGE_ID, primary_key=True)
     upload_batch_id = db.Column(STORAGE_ID, db.ForeignKey("upload_batches.id", ondelete="CASCADE"), nullable=False)
     storage_object_id = db.Column(STORAGE_ID, db.ForeignKey("storage_objects.id"), nullable=True)
     client_file_id = db.Column(db.String(255), nullable=False)
+    client_section_id = db.Column(db.String(80), nullable=True)
     original_filename = db.Column(db.String(255), nullable=False)
     mime_type = db.Column(db.String(255), nullable=False)
     file_size = db.Column(db.BigInteger, nullable=False)
     status = db.Column(db.String(20), nullable=False)
     error_message = db.Column(db.Text, nullable=True)
+    # An item remains `completed` after it is consumed so the upload audit trail
+    # stays truthful; this timestamp prevents it being attached twice.
+    finalized_at = db.Column(db.DateTime, nullable=True)
 
     upload_batch = db.relationship("UploadBatch", back_populates="items")
     storage_object = db.relationship("StorageObject", back_populates="batch_items")

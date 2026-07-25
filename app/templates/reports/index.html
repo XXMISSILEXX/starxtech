@@ -76,7 +76,7 @@
               {% if can_delete_by_report.get(report.id) %}
                 <form method="post" action="{{ url_for('reports.delete', report_id=report.id) }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button class="btn btn-sm btn-outline-danger btn-action-mobile" type="submit" data-confirm="Xóa báo cáo này?" aria-label="Xóa" title="Xóa"><i class="bi bi-trash"></i><span class="action-label">Xóa</span></button>
+                  <button class="btn btn-sm btn-outline-danger btn-action-mobile" type="submit" data-confirm="Báo cáo và toàn bộ ảnh đính kèm sẽ bị xóa vĩnh viễn. Thao tác này không thể hoàn tác." aria-label="Xóa vĩnh viễn" title="Xóa vĩnh viễn"><i class="bi bi-trash"></i><span class="action-label">Xóa vĩnh viễn</span></button>
                 </form>
               {% endif %}
             </div>

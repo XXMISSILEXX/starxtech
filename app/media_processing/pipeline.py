@@ -1,7 +1,7 @@
 import json, shutil, subprocess, tempfile
 from datetime import datetime
 from pathlib import Path
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 try:
  import pillow_heif
  pillow_heif.register_heif_opener()
@@ -16,6 +16,8 @@ def process_job(job_id):
  job=db.session.get(MediaProcessingJob,job_id)
  if not job or job.status in {"succeeded","cancelled"}: return job
  obj=job.storage_object
+ if not obj:
+  job.status="failed";job.finished_at=datetime.utcnow();job.error_code="storage_object_missing";job.error_message="Storage object không còn tồn tại.";db.session.commit();return job
  if obj.upload_status!="active": job.status="cancelled";db.session.commit();return job
  job.status="processing";job.attempts+=1;job.started_at=datetime.utcnow();obj.processing_status="processing";db.session.commit()
  root=Path(__import__('flask').current_app.config["MEDIA_TEMP_ROOT"]);root.mkdir(parents=True,exist_ok=True);tmp=Path(tempfile.mkdtemp(dir=root));provider=get_storage_provider()
@@ -53,14 +55,16 @@ def _image(obj,job,source,tmp,provider):
  with Image.open(source) as original:
   original.verify()
  with Image.open(source) as source_image:
-  with source_image.convert("RGB") as original:
-   obj.width, obj.height=original.size
-   for kind,limit in (("thumbnail",__import__('flask').current_app.config["MEDIA_IMAGE_THUMBNAIL_MAX_SIZE"]),("preview",__import__('flask').current_app.config["MEDIA_IMAGE_PREVIEW_MAX_SIZE"])):
-    with original.copy() as image:
-     image.thumbnail((limit,limit))
-     path=tmp/f"{kind}.webp"
-     image.save(path,"WEBP",quality=82,method=4)
-     _save_derivative(obj,job,kind,path,"image/webp",provider)
+  with ImageOps.exif_transpose(source_image) as transposed:
+   with transposed.convert("RGB") as original:
+    obj.width, obj.height=original.size
+    limits = (("thumbnail", 400), ("preview", 1600)) if obj.storage_module == "daily-reports" else (("thumbnail",__import__('flask').current_app.config["MEDIA_IMAGE_THUMBNAIL_MAX_SIZE"]),("preview",__import__('flask').current_app.config["MEDIA_IMAGE_PREVIEW_MAX_SIZE"]))
+    for kind,limit in limits:
+     with original.copy() as image:
+      image.thumbnail((limit,limit))
+      path=tmp/f"{kind}.webp"
+      image.save(path,"WEBP",quality=80 if kind == "thumbnail" else 85,method=4)
+      _save_derivative(obj,job,kind,path,"image/webp",provider)
 
 def _video(obj,job,source,tmp,provider):
  timeout=__import__('flask').current_app.config["CELERY_TASK_TIME_LIMIT_VIDEO_SECONDS"]

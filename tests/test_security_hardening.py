@@ -3,12 +3,14 @@ from io import BytesIO
 
 import pytest
 from PIL import Image
+from sqlalchemy import select
 from werkzeug.security import check_password_hash
 
 from app import create_app
 from app.extensions import db
-from app.models import DownloadEvent, ReportAttachment, Role, User, UserRole
+from app.models import DownloadEvent, ReportAttachment, Role, StorageDerivative, User, UserRole
 from app.security import password_policy_errors
+from tests.helpers.report_direct_upload import ReportUploadFile, submit_report_with_direct_upload
 
 
 def test_password_policy_requires_length_and_character_groups():
@@ -54,14 +56,14 @@ def _login(client, username):
 
 
 def _report_attachment(client, app, project_id=1):
-    stream = BytesIO(); Image.new("RGB", (16, 16), "navy").save(stream, "JPEG"); stream.seek(0)
-    response = client.post(f"/reports/projects/{project_id}/reports/create", data={
+    stream = BytesIO(); Image.new("RGB", (16, 16), "navy").save(stream, "JPEG")
+    result = submit_report_with_direct_upload(client, app, project_id=project_id, form={
         "report_date": "2026-07-23", "overall_status": "UPDATED", "highlight": "Secure storage",
         "sections-0-category_id": "1" if project_id == 1 else "3", "sections-0-status": "GOOD",
-        "sections-0-content": "Attachment", "sections-0-images": (stream, "safe.jpg"),
-    }, content_type="multipart/form-data")
-    assert response.status_code == 302
-    with app.app_context(): return ReportAttachment.query.one().id
+        "sections-0-content": "Attachment",
+    }, files=[ReportUploadFile(stream.getvalue(), filename="safe.jpg")])
+    assert result["response"].status_code == 302
+    with app.app_context(): return db.session.scalar(select(ReportAttachment.id))
 
 
 def test_attachment_preview_is_authorized_signed_redirect_without_local_runtime(client, app):
@@ -71,10 +73,17 @@ def test_attachment_preview_is_authorized_signed_redirect_without_local_runtime(
         attachment = db.session.get(ReportAttachment, attachment_id)
         object_key = attachment.storage_object.object_key
         report_id = attachment.section.daily_report_id
+        derivative = StorageDerivative(storage_object_id=attachment.storage_object_id, derivative_type="preview",
+            bucket=attachment.storage_object.bucket, object_key="daily-reports/derivatives/security-preview.webp",
+            mime_type="image/webp", file_ext="webp", file_size=4)
+        db.session.add(derivative); db.session.commit()
+        app.extensions["storage_provider"].put_bytes(derivative.bucket, derivative.object_key, b"webp", derivative.mime_type)
+        derivative_key = derivative.object_key
     response = client.get(f"/attachments/{attachment_id}")
     assert response.status_code == 302
     assert "fake-storage.invalid" in response.headers["Location"]
-    assert object_key in response.headers["Location"]  # signed provider URL, not rendered HTML
+    assert derivative_key in response.headers["Location"]  # derivative URL, not rendered HTML
+    assert object_key not in response.headers["Location"]
     detail = client.get(f"/reports/{report_id}")
     assert object_key.encode() not in detail.data
     import app.attachments.routes as routes

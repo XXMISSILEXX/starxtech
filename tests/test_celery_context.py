@@ -1,6 +1,9 @@
 import json
 from types import SimpleNamespace
 
+import pytest
+from celery.exceptions import Retry
+
 from flask import has_app_context
 
 from app.celery_app import celery_app
@@ -38,16 +41,13 @@ def test_media_tasks_are_registered_with_expected_routes(app, monkeypatch):
         assert json.loads(json.dumps(result)) == result
 
 
-def test_media_task_returns_json_safe_not_found_result(app, monkeypatch):
+def test_media_task_retries_missing_job_instead_of_returning_success(app, monkeypatch):
     from app.media_processing import tasks
 
     monkeypatch.setattr("app.media_processing.pipeline.process_job", lambda job_id: None)
 
-    result = tasks.process_image_derivatives.apply(args=[999]).get()
-
-    assert result["status"] == "not_found"
-    assert result["ok"] is False
-    assert json.loads(json.dumps(result)) == result
+    with pytest.raises(Retry):
+        tasks.process_image_derivatives.apply(args=[999]).get()
 
 
 def test_reconcile_task_returns_json_safe_summary(app, monkeypatch):

@@ -136,7 +136,7 @@ def report_count_chart_data(filters):
 
 
 def filtered_reports_query(filters):
-    query = DailyReport.query.filter(DailyReport.deleted_at.is_(None)).join(DailyReport.project)
+    query = DailyReport.query.join(DailyReport.project)
     query = _apply_project_scope(query)
     if filters.get("project_id"):
         query = query.filter(DailyReport.project_id == filters["project_id"])

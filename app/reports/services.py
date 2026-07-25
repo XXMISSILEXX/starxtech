@@ -8,7 +8,7 @@ from flask_login import current_user
 from PIL import Image, UnidentifiedImageError
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.admin.services import add_with_sqlite_id, audit
@@ -21,9 +21,17 @@ from app.models import (
     ReportAttachment,
     ReportCategory,
     SectionStatus,
+    StorageDerivative,
+    StorageObject,
+    MediaProcessingJob,
+    DownloadEvent,
+    UploadBatchItem,
+    ProjectDocumentFile,
+    CompanyMediaFile,
 )
 from app.storage.keys import build_original_key
 from app.storage.providers import get_storage_provider
+from app.storage.exceptions import StorageNotFoundError
 from app.storage.quota import ensure_storage_capacity
 from app.project_memberships import accessible_project_ids
 
@@ -51,7 +59,7 @@ def accessible_projects_query():
 
 
 def reports_query():
-    query = DailyReport.query.filter(DailyReport.deleted_at.is_(None)).join(DailyReport.project)
+    query = DailyReport.query.join(DailyReport.project)
     ids = accessible_project_ids(current_user, ("can_view_reports",))
     if ids is not None:
         query = query.filter(DailyReport.project_id.in_(ids or [0]))
@@ -124,7 +132,7 @@ def _existing_report(project_id, report_date, *, exclude_id=None):
         return db.session.scalar(statement)
 
 
-def create_report(project, form, files):
+def create_report(project, form, files=None):
     validate_report_form(form, project.id)
     report_date = parse_report_date(form.get("report_date", "").strip())
     # Keep this in lockstep with the database unique constraint: soft-deleted
@@ -133,6 +141,8 @@ def create_report(project, form, files):
     if existing:
         raise _duplicate_report_error(report_date, existing.id)
 
+    section_inputs = parse_sections(form)
+    prepared_upload = _prepare_direct_uploads(project.id, form, section_inputs)
     report = DailyReport(project_id=project.id, created_by_user_id=current_user.id)
     add_with_sqlite_id(report)
     _assign_report_fields(report, form)
@@ -145,10 +155,9 @@ def create_report(project, form, files):
             raise _duplicate_report_error(report_date) from exc
         raise
 
-    section_inputs = parse_sections(form)
     _replace_sections(report, section_inputs)
     db.session.flush()
-    _save_section_uploads(report, files)
+    job_ids = _attach_direct_uploads(report, section_inputs, prepared_upload)
     audit("report.create", "DailyReport", report.id, new_values=report_snapshot(report))
     try:
         db.session.commit()
@@ -157,10 +166,11 @@ def create_report(project, form, files):
         if _is_daily_report_date_constraint(exc):
             raise _duplicate_report_error(report_date) from exc
         raise
+    _dispatch_derivatives_after_commit(job_ids)
     return report
 
 
-def update_report(report, form, files):
+def update_report(report, form, files=None):
     validate_report_form(form, report.project_id)
     old_values = report_snapshot(report)
     proposed_date = parse_report_date(form.get("report_date", "").strip())
@@ -168,13 +178,15 @@ def update_report(report, form, files):
     if duplicate:
         raise _duplicate_report_error(proposed_date, duplicate.id)
 
-    report.report_date = proposed_date
-    _assign_report_fields(report, form)
-    report.updated_by_user_id = current_user.id
     try:
-        _replace_sections(report, parse_sections(form))
+        section_inputs = parse_sections(form)
+        prepared_upload = _prepare_direct_uploads(report.project_id, form, section_inputs)
+        report.report_date = proposed_date
+        _assign_report_fields(report, form)
+        report.updated_by_user_id = current_user.id
+        _replace_sections(report, section_inputs)
         db.session.flush()
-        _save_section_uploads(report, files)
+        job_ids = _attach_direct_uploads(report, section_inputs, prepared_upload)
         audit("report.update", "DailyReport", report.id, old_values, report_snapshot(report))
         db.session.commit()
     except IntegrityError as exc:
@@ -182,21 +194,167 @@ def update_report(report, form, files):
         if _is_daily_report_date_constraint(exc):
             raise _duplicate_report_error(proposed_date) from exc
         raise
+    _dispatch_derivatives_after_commit(job_ids)
     return report
 
 
+class ReportDeletionError(RuntimeError):
+    pass
+
+
+def _delete_storage_objects(storage_objects, derivatives):
+    """Delete only collected report bytes; missing objects are idempotent."""
+    provider = get_storage_provider()
+    failures = []
+    for item in [*derivatives, *storage_objects]:
+        try:
+            provider.delete_object(item.bucket, item.object_key)
+        except StorageNotFoundError:
+            # A prior failed purge may already have removed bytes while its DB
+            # transaction rolled back.  Metadata cleanup must be retry-safe.
+            continue
+        except Exception as exc:
+            failures.append(f"{item.bucket}/{item.object_key}: {exc}")
+    if failures:
+        raise ReportDeletionError("Không thể xóa toàn bộ tệp S3: " + "; ".join(failures))
+    return None
+
+
+def hard_delete_reports(reports, *, dry_run=False):
+    """Permanently remove reports and every Daily Reports storage artifact."""
+    reports = list(reports)
+    report_ids = [report.id for report in reports]
+    sections = DailyReportSection.query.filter(DailyReportSection.daily_report_id.in_(report_ids)).all() if report_ids else []
+    section_ids = [section.id for section in sections]
+    attachments = ReportAttachment.query.filter(ReportAttachment.daily_report_section_id.in_(section_ids)).all() if section_ids else []
+    storage_ids = sorted({attachment.storage_object_id for attachment in attachments if attachment.storage_object_id})
+    storage_objects = StorageObject.query.filter(StorageObject.id.in_(storage_ids)).all() if storage_ids else []
+    derivatives = StorageDerivative.query.filter(StorageDerivative.storage_object_id.in_(storage_ids)).all() if storage_ids else []
+    summary = {
+        "reports": len(reports), "sections": len(sections), "attachments": len(attachments),
+        "storage_objects": len(storage_objects), "storage_derivatives": len(derivatives),
+        "storage_objects_to_delete": len(storage_objects) + len(derivatives),
+    }
+    if dry_run or not reports:
+        return summary
+
+    _delete_storage_objects(storage_objects, derivatives)
+    derivative_ids = [item.id for item in derivatives]
+    # Only jobs belonging to these storage objects are candidates.  A corrupt
+    # derivative provenance reference must never cause an unrelated job delete.
+    job_ids = [row[0] for row in db.session.execute(select(MediaProcessingJob.id).where(
+        MediaProcessingJob.storage_object_id.in_(storage_ids)
+    )).all()] if storage_ids else []
+    try:
+        if derivative_ids:
+            db.session.execute(update(DownloadEvent).where(
+                DownloadEvent.derivative_id.in_(derivative_ids)
+            ).values(derivative_id=None))
+            # Must precede MediaProcessingJob: derivatives retain provenance
+            # through storage_derivatives.created_by_job_id.
+            db.session.execute(delete(StorageDerivative).where(
+                StorageDerivative.id.in_(derivative_ids)
+            ))
+            db.session.flush()
+        if job_ids:
+            db.session.execute(delete(MediaProcessingJob).where(
+                MediaProcessingJob.id.in_(job_ids),
+                MediaProcessingJob.storage_object_id.in_(storage_ids),
+            ))
+        if storage_ids:
+            db.session.execute(update(DownloadEvent).where(
+                DownloadEvent.storage_object_id.in_(storage_ids)
+            ).values(storage_object_id=None))
+            # Finalized direct-upload items retain their audit/session record,
+            # but must not retain a foreign-key reference to a purged object.
+            db.session.execute(update(UploadBatchItem).where(
+                UploadBatchItem.storage_object_id.in_(storage_ids)
+            ).values(storage_object_id=None))
+        if attachments:
+            db.session.execute(delete(ReportAttachment).where(
+                ReportAttachment.id.in_([attachment.id for attachment in attachments])
+            ))
+        if section_ids:
+            db.session.execute(delete(DailyReportSection).where(DailyReportSection.id.in_(section_ids)))
+        for report in reports:
+            audit("report.delete", "DailyReport", report.id, old_values=report_snapshot(report), new_values={"deleted": "permanent"})
+        if report_ids:
+            db.session.execute(delete(DailyReport).where(DailyReport.id.in_(report_ids)))
+        db.session.flush()
+        if storage_ids:
+            db.session.execute(delete(StorageObject).where(StorageObject.id.in_(storage_ids)))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    return summary
+
+
 def delete_report(report):
-    old_values = report_snapshot(report)
-    report.deleted_at = db.func.now()
-    audit("report.delete", "DailyReport", report.id, old_values, {"deleted_at": True})
-    db.session.commit()
+    return hard_delete_reports([report])
 
 
 def delete_attachment(attachment):
-    if attachment.storage_object:
-        attachment.storage_object.deleted_at = db.func.now()
-        attachment.storage_object.upload_status = "deleted"
-    attachment.deleted_at = db.func.now()
+    """Permanently remove an attachment and its unshared storage artifacts."""
+    storage_object = attachment.storage_object
+    storage_id = attachment.storage_object_id
+    derivatives = StorageDerivative.query.filter_by(storage_object_id=storage_id).all() if storage_id else []
+    if storage_object and _storage_object_has_other_references(storage_id, attachment.id):
+        storage_object = None
+        derivatives = []
+    if storage_object:
+        _delete_storage_objects([storage_object], derivatives)
+    derivative_ids = [row.id for row in derivatives]
+    try:
+        if derivative_ids:
+            db.session.execute(update(DownloadEvent).where(
+                DownloadEvent.derivative_id.in_(derivative_ids)
+            ).values(derivative_id=None))
+            db.session.execute(delete(StorageDerivative).where(
+                StorageDerivative.id.in_(derivative_ids)
+            ))
+        if storage_id and storage_object:
+            db.session.execute(delete(MediaProcessingJob).where(
+                MediaProcessingJob.storage_object_id == storage_id
+            ))
+            db.session.execute(update(DownloadEvent).where(
+                DownloadEvent.storage_object_id == storage_id
+            ).values(storage_object_id=None))
+            db.session.execute(update(UploadBatchItem).where(
+                UploadBatchItem.storage_object_id == storage_id
+            ).values(storage_object_id=None))
+        attachment_id = attachment.id
+        db.session.delete(attachment)
+        db.session.flush()
+        if storage_id and storage_object:
+            db.session.execute(delete(StorageObject).where(StorageObject.id == storage_id))
+        audit(
+            "attachment.delete",
+            "ReportAttachment",
+            attachment_id,
+            old_values={"daily_report_section_id": attachment.daily_report_section_id},
+            new_values={"deleted": "permanent"},
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+def _storage_object_has_other_references(storage_object_id, attachment_id):
+    """Avoid deleting a byte object if a different module still owns it."""
+    if db.session.scalar(select(ReportAttachment.id).where(
+        ReportAttachment.storage_object_id == storage_object_id,
+        ReportAttachment.id != attachment_id,
+    ).limit(1)):
+        return True
+    if db.session.scalar(select(ProjectDocumentFile.id).where(
+        ProjectDocumentFile.storage_object_id == storage_object_id,
+    ).limit(1)):
+        return True
+    return bool(db.session.scalar(select(CompanyMediaFile.id).where(
+        CompanyMediaFile.storage_object_id == storage_object_id,
+    ).limit(1)))
     audit(
         "attachment.delete",
         "ReportAttachment",
@@ -243,6 +401,7 @@ def parse_sections(form):
                 "status": status,
                 "content": content,
                 "sort_order": len(sections),
+                "client_section_id": form.get(f"sections-{index}-client-section-id", "").strip(),
             }
         )
     return sections
@@ -341,6 +500,68 @@ def _save_section_uploads(report, files):
                 attachment.id,
                 new_values={"daily_report_section_id": section.id},
             )
+
+
+def _prepare_direct_uploads(project_id, form, section_inputs):
+    """Validate direct-upload state before any DailyReport rows are inserted."""
+    session_id = form.get("upload_session_id", type=int) if hasattr(form, "get") else None
+    from app.reports.direct_uploads import parse_report_attachment_manifest
+    from app.storage.exceptions import StorageAuthorizationError, StorageValidationError
+    try:
+        return parse_report_attachment_manifest(
+            user=current_user, project_id=project_id, section_inputs=section_inputs,
+            form=form,
+        )
+    except (StorageAuthorizationError, StorageValidationError) as exc:
+        raise ReportValidationError(str(exc)) from exc
+
+
+def _attach_direct_uploads(report, section_inputs, prepared_upload):
+    """Attach verified direct uploads; browser files are deliberately ignored."""
+    from app.reports.direct_uploads import CompletedUpload
+    if not isinstance(prepared_upload, CompletedUpload):
+        return []
+    from app.reports.direct_uploads import finalize_session
+    session, items, mapping = prepared_upload.session, prepared_upload.items, prepared_upload.mapping
+    section_by_index = {int(section._form_index): section for section in report.sections if section.deleted_at is None and hasattr(section, "_form_index")}
+    existing = [attachment for section in section_by_index.values() for attachment in active_attachments(section)]
+    if len(existing) + len(items) > int(current_app.config["DAILY_REPORT_MAX_FILES"]):
+        raise ReportValidationError("Báo cáo chỉ được có tối đa 30 ảnh.")
+    if sum(attachment.file_size for attachment in existing) + sum(item.file_size for item in items) > int(current_app.config["DAILY_REPORT_MAX_TOTAL_BYTES"]):
+        raise ReportValidationError("Tổng dung lượng ảnh của báo cáo vượt giới hạn.")
+    additions_by_section = {}
+    for item in items:
+        additions_by_section[mapping[item.id]["index"]] = additions_by_section.get(mapping[item.id]["index"], 0) + 1
+    if any(len(active_attachments(section_by_index[index])) + count > int(current_app.config["DAILY_REPORT_MAX_FILES_PER_SECTION"])
+           for index, count in additions_by_section.items()):
+        raise ReportValidationError("Mỗi phần chỉ được có tối đa 3 ảnh đang hoạt động.")
+    objects = []
+    for item in items:
+        section = section_by_index[mapping[item.id]["index"]]
+        attachment = ReportAttachment(daily_report_section_id=section.id, original_filename=item.original_filename,
+            storage_object_id=item.storage_object_id, mime_type=item.mime_type, file_size=item.file_size,
+            uploaded_by_user_id=current_user.id)
+        add_with_sqlite_id(attachment)
+        item.storage_object.upload_status = "active"
+        objects.append(item.storage_object)
+        item.finalized_at = datetime.utcnow()
+        audit("attachment.create", "ReportAttachment", attachment.id, new_values={"daily_report_section_id": section.id})
+    finalize_session(session)
+    from app.media_processing.services import stage_media_processing_jobs
+    return stage_media_processing_jobs(objects)
+
+
+def _dispatch_derivatives_after_commit(job_ids):
+    if not job_ids:
+        return
+    from app.media_processing.services import dispatch_media_processing_job
+    for job_id in job_ids:
+        try:
+            dispatch_media_processing_job(job_id)
+        except Exception:
+            # The committed pending job is reconciled later; report creation is
+            # deliberately never rolled back because a broker is unavailable.
+            current_app.logger.exception("daily_report.media_dispatch_failed job_id=%s", job_id)
 
 
 def _store_attachment(report, section, upload: FileStorage):

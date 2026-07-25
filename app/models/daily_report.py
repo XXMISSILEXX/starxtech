@@ -3,7 +3,7 @@ from app.models.enums import DailyReportStatus, SectionStatus
 from app.models.mixins import CreatedAtMixin, SoftDeleteMixin, TimestampMixin
 
 
-class DailyReport(TimestampMixin, SoftDeleteMixin, db.Model):
+class DailyReport(TimestampMixin, db.Model):
     __tablename__ = "daily_reports"
     __table_args__ = (
         db.UniqueConstraint("project_id", "report_date", name="uq_daily_reports_project_date"),

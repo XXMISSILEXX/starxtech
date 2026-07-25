@@ -2,6 +2,10 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from importlib import metadata
 from pathlib import Path
+import os
+import socket
+import sys
+from urllib.parse import urlparse
 
 import click
 from alembic.config import Config as AlembicConfig
@@ -88,6 +92,55 @@ def register_cli(app):
         if failures:
             raise click.ClickException(f"Security audit failed: {failures} check(s).")
 
+    @app.cli.command("worker-config-check")
+    def worker_config_check():
+        """Verify the runtime identity used by the Flask-aware Celery worker."""
+        required = ("DATABASE_URL", "CELERY_BROKER_URL", "STORAGE_PROVIDER")
+        missing = [name for name in required if not str(os.environ.get(name, "")).strip()]
+        if missing and not current_app.testing:
+            raise click.ClickException("Missing required worker environment: " + ", ".join(missing))
+        try:
+            if db.engine.dialect.name == "postgresql":
+                database, user = db.session.execute(text("SELECT current_database(), current_user")).one()
+            else:
+                database, user = db.engine.url.database or ":memory:", "sqlite"
+            current_revision = db.session.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        except Exception as exc:
+            raise click.ClickException("Database connectivity/migration check failed.") from exc
+        script = ScriptDirectory.from_config(_alembic_config())
+        heads = set(script.get_heads())
+        if current_revision not in heads:
+            raise click.ClickException("Database migration is not at Alembic head.")
+        broker = urlparse(current_app.config["CELERY_BROKER_URL"])
+        if not broker.hostname:
+            raise click.ClickException("CELERY_BROKER_URL is invalid.")
+        try:
+            with socket.create_connection((broker.hostname, broker.port or 6379), timeout=3):
+                pass
+        except OSError as exc:
+            raise click.ClickException("Celery broker is unreachable.") from exc
+        from app.storage.providers import get_storage_provider
+        try:
+            get_storage_provider()
+            media_temp = Path(current_app.config["MEDIA_TEMP_ROOT"]); media_temp.mkdir(parents=True, exist_ok=True)
+            probe = media_temp / ".worker-write-check"; probe.touch(); probe.unlink()
+        except Exception as exc:
+            raise click.ClickException("Storage or media temporary directory is invalid.") from exc
+        try:
+            import pillow_heif  # noqa: F401
+            heic = "available"
+        except ImportError:
+            heic = "unavailable"
+        click.echo("app_env={env} database={database} database_user={user} revision={revision} "
+                   "storage_provider={provider} storage_bucket={bucket} broker_host={broker} "
+                   "python={python} prefix={prefix} project_root={root} heic={heic}".format(
+                       env=current_app.config["APP_ENV"], database=database, user=user,
+                       revision=current_revision, provider=current_app.config["STORAGE_PROVIDER"],
+                       bucket=current_app.config["STORAGE_BUCKET"], broker=broker.hostname,
+                       python=sys.executable, prefix=sys.prefix,
+                       root=Path(current_app.root_path).parent, heic=heic,
+                   ))
+
     @app.cli.command("seed-partner-demo")
     def seed_partner_demo():
         summary = seed_partner_demo_data()
@@ -109,6 +162,60 @@ def register_cli(app):
         click.echo(f"active={len(rows)} invalid={len(invalid)} ids={','.join(map(str, invalid)) or '-'}")
         if invalid:
             raise click.ClickException("Có ReportAttachment active không tham chiếu StorageObject S3 active.")
+
+    @app.cli.command("cleanup-expired-report-upload-sessions")
+    @click.option("--dry-run/--apply", "dry_run", default=True,
+                  help="Preview cleanup or delete expired, non-finalized Daily Report uploads.")
+    def cleanup_expired_report_upload_sessions(dry_run):
+        from app.reports.direct_uploads import cleanup_expired_sessions
+        summary = cleanup_expired_sessions(dry_run=dry_run)
+        click.echo("mode={mode} matched={matched} cleaned={cleaned}".format(
+            mode="dry-run" if dry_run else "apply", **summary))
+
+    @app.cli.command("reconcile-media-jobs")
+    @click.option("--module", "module_name", default=None,
+                  type=click.Choice(["daily-reports", "document-library", "company-media"]),
+                  help="Restrict reconciliation to one storage module.")
+    @click.option("--dry-run/--apply", "dry_run", default=True)
+    def reconcile_media_jobs_command(module_name, dry_run):
+        from app.media_processing.services import reconcile_media_jobs
+        summary = reconcile_media_jobs(dry_run=dry_run, module=module_name)
+        click.echo(
+            "mode={mode} module={module} matched={matched} eligible={eligible} dispatched={dispatched} "
+            "skipped={skipped} failed_to_dispatch={failed_to_enqueue}".format(
+                mode="dry-run" if dry_run else "apply", module=module_name or "all", **summary
+            )
+        )
+
+    @app.cli.command("dev-purge-deleted-reports")
+    @click.option("--apply/--dry-run", "apply_changes", default=False,
+                  help="Preview or permanently purge soft-deleted Daily Reports.")
+    @click.option("--confirm", default="", help='Required with --apply: "PURGE DELETED REPORTS".')
+    def dev_purge_deleted_reports(apply_changes, confirm):
+        """One-time cleanup required before removing daily_reports.deleted_at."""
+        if current_app.config.get("APP_ENV") == "production":
+            raise click.UsageError("Refusing to purge deleted reports in production.")
+        if apply_changes and confirm != "PURGE DELETED REPORTS":
+            raise click.UsageError('Pass --confirm "PURGE DELETED REPORTS" exactly with --apply.')
+        # The command intentionally uses SQL so it still works during the
+        # transition after the ORM model has dropped ``deleted_at``.
+        from app.models import DailyReport
+        from app.reports.services import hard_delete_reports
+        if "deleted_at" not in {column["name"] for column in inspect(db.engine).get_columns("daily_reports")}:
+            click.echo("mode={mode} reports=0 sections=0 attachments=0 storage_objects=0 "
+                       "storage_derivatives=0 s3_objects=0 (daily_reports.deleted_at already removed)".format(
+                           mode="apply" if apply_changes else "dry-run"
+                       ))
+            return
+        ids = [row[0] for row in db.session.execute(text(
+            "SELECT id FROM daily_reports WHERE deleted_at IS NOT NULL ORDER BY id"
+        )).all()]
+        reports = [db.session.get(DailyReport, report_id) for report_id in ids]
+        summary = hard_delete_reports([report for report in reports if report is not None], dry_run=not apply_changes)
+        mode = "apply" if apply_changes else "dry-run"
+        click.echo("mode={mode} reports={reports} sections={sections} attachments={attachments} "
+                   "storage_objects={storage_objects} storage_derivatives={storage_derivatives} "
+                   "s3_objects={storage_objects_to_delete}".format(mode=mode, **summary))
 
     @app.cli.group("media-jobs")
     def media_jobs():
@@ -244,9 +351,14 @@ def _audit_line(status, name, detail):
     click.echo(f"{status:<4} {name}: {detail}")
 
 
-def _migration_head():
+def _alembic_config():
     alembic_config = AlembicConfig(str(Path(current_app.root_path).parent / "migrations" / "alembic.ini"))
     alembic_config.set_main_option("script_location", str(Path(current_app.root_path).parent / "migrations"))
+    return alembic_config
+
+
+def _migration_head():
+    alembic_config = _alembic_config()
     return ScriptDirectory.from_config(alembic_config).get_current_head()
 
 
@@ -290,6 +402,10 @@ def _security_audit(verbose=False):
     check(config.get("APP_ENV") != "production" or storage_provider != "fake", "storage-fake-provider-not-production", "fake provider is not used in production", "STORAGE_PROVIDER=fake in production")
     upload_limits = ("STORAGE_MAX_IMAGE_SIZE_MB", "STORAGE_MAX_DOCUMENT_SIZE_MB", "STORAGE_MAX_VIDEO_SIZE_MB", "STORAGE_MAX_AUDIO_SIZE_MB", "STORAGE_MAX_FILES_PER_BATCH", "STORAGE_MAX_BATCH_SIZE_MB")
     check(all(int(config.get(name, 0)) > 0 for name in upload_limits), "storage-upload-limits-configured", "storage upload limits configured", "one or more storage limits are invalid")
+    report_upload_limits = ("MAX_CONTENT_LENGTH", "MAX_FORM_PARTS", "DAILY_REPORT_MAX_FILES", "DAILY_REPORT_MAX_FILE_BYTES", "DAILY_REPORT_MAX_TOTAL_BYTES", "DAILY_REPORT_UPLOAD_CONCURRENCY", "DAILY_REPORT_PRESIGN_TTL_SECONDS", "DAILY_REPORT_SESSION_TTL_SECONDS")
+    check(bool(config.get("DAILY_REPORT_DIRECT_UPLOAD_ENABLED")) and all(int(config.get(name, 0)) > 0 for name in report_upload_limits), "daily-report-direct-upload", "daily report direct upload limits configured", "direct upload disabled or limits are invalid")
+    origins = tuple(config.get("STORAGE_CORS_ALLOWED_ORIGINS") or ())
+    check(bool(origins) and all("*" not in origin for origin in origins), "storage-cors-origins", "explicit storage CORS origins configured", "missing or wildcard storage CORS origin")
     check(bool(config.get("CELERY_BROKER_URL")) and bool(config.get("CELERY_RESULT_BACKEND")), "celery-config-present", "Celery broker/result configured", "Celery broker/result missing")
     check(config.get("APP_ENV") != "production" or not config.get("CELERY_TASK_ALWAYS_EAGER"), "celery-eager-not-production", "Celery eager disabled in production", "CELERY_TASK_ALWAYS_EAGER enabled in production")
     check(bool(config.get("MEDIA_TEMP_ROOT")), "media-temp-root-configured", "media temp root configured", "MEDIA_TEMP_ROOT missing")

@@ -9,6 +9,9 @@ class StorageProvider:
     def create_presigned_upload(self, bucket, object_key, mime_type, file_size, expires_in, metadata=None):
         raise NotImplementedError
 
+    def create_presigned_put(self, bucket, object_key, mime_type, file_size, expires_in, metadata=None):
+        raise NotImplementedError
+
     def create_presigned_download(self, bucket, object_key, expires_in, disposition="inline", filename=None):
         raise NotImplementedError
 
@@ -29,6 +32,9 @@ class FakeStorageProvider(StorageProvider):
 
     def create_presigned_upload(self, bucket, object_key, mime_type, file_size, expires_in, metadata=None):
         return {"method": "POST", "url": f"https://fake-storage.invalid/{bucket}", "fields": {"key": object_key, "Content-Type": mime_type}, "expires_at": _expires_at(expires_in)}
+
+    def create_presigned_put(self, bucket, object_key, mime_type, file_size, expires_in, metadata=None):
+        return {"method": "PUT", "url": f"https://fake-storage.invalid/{bucket}/{object_key}?signature=fake", "headers": {"Content-Type": mime_type, **({"x-amz-meta-sha256": metadata["sha256"]} if metadata and metadata.get("sha256") else {})}, "expires_at": _expires_at(expires_in)}
 
     def create_presigned_download(self, bucket, object_key, expires_in, disposition="inline", filename=None):
         return {"url": f"https://fake-storage.invalid/{bucket}/{object_key}?signature=fake", "expires_at": _expires_at(expires_in)}
@@ -58,7 +64,7 @@ class FakeStorageProvider(StorageProvider):
 class DisabledStorageProvider(StorageProvider):
     def _disabled(self):
         raise StorageConfigurationError("Storage provider đang bị tắt.")
-    create_presigned_upload = create_presigned_download = head_object = delete_object = lambda self, *args, **kwargs: self._disabled()
+    create_presigned_upload = create_presigned_put = create_presigned_download = head_object = delete_object = lambda self, *args, **kwargs: self._disabled()
 
 
 class S3StorageProvider(StorageProvider):
@@ -74,6 +80,12 @@ class S3StorageProvider(StorageProvider):
     def create_presigned_upload(self, bucket, object_key, mime_type, file_size, expires_in, metadata=None):
         result = self.client.generate_presigned_post(bucket, object_key, Fields={"Content-Type": mime_type}, Conditions=[["content-length-range", file_size, file_size], {"Content-Type": mime_type}], ExpiresIn=expires_in)
         return {"method": "POST", "url": result["url"], "fields": result["fields"], "expires_at": _expires_at(expires_in)}
+
+    def create_presigned_put(self, bucket, object_key, mime_type, file_size, expires_in, metadata=None):
+        params = {"Bucket": bucket, "Key": object_key, "ContentType": mime_type}
+        if metadata and metadata.get("sha256"):
+            params["Metadata"] = {"sha256": metadata["sha256"]}
+        return {"method": "PUT", "url": self.client.generate_presigned_url("put_object", Params=params, ExpiresIn=expires_in, HttpMethod="PUT"), "headers": {"Content-Type": mime_type, **({"x-amz-meta-sha256": metadata["sha256"]} if metadata and metadata.get("sha256") else {})}, "expires_at": _expires_at(expires_in)}
 
     def create_presigned_download(self, bucket, object_key, expires_in, disposition="inline", filename=None):
         params = {"Bucket": bucket, "Key": object_key, "ResponseContentDisposition": f'{disposition}; filename="{filename or "download"}"'}

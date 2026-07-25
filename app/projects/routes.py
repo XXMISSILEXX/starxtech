@@ -1,4 +1,4 @@
-from flask import abort, flash, redirect, render_template, request, url_for
+from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from app.auth.permissions import (
@@ -34,6 +34,9 @@ from app.reports.services import (
     parse_report_date,
     reports_query,
 )
+from app.reports.direct_uploads import create_session as create_report_upload_session, presign as presign_report_uploads, complete as complete_report_upload, session_payload as report_upload_session_payload, _session as report_upload_session, cleanup_expired_sessions
+from app.storage.exceptions import StorageAuthorizationError, StorageNotFoundError, StorageValidationError
+from app.extensions import limiter
 
 
 @bp.get("")
@@ -115,22 +118,89 @@ def reports_create(project_id):
     if request.method == "POST":
         if not can_create_report(current_user, project.id):
             abort(403)
+        legacy_response = _reject_legacy_multipart_files(project=project, report=report)
+        if legacy_response is not None:
+            return legacy_response
         try:
-            report = create_report(project, request.form, request.files)
+            report = create_report(project, request.form)
         except ReportValidationError as exc:
             db.session.rollback()
+            if _wants_json():
+                return jsonify(ok=False, error="validation_error", message=str(exc), field_errors=exc.errors), 422
             flash(str(exc), "danger")
-            _flash_reselect_images_if_needed(request.files)
             return _render_create_form(
                 project,
                 report,
                 form_data=build_report_form_data(request.form),
                 form_errors=exc.errors,
             ), 400
+        redirect_url = url_for("reports.detail", report_id=report.id)
+        if _wants_json():
+            flash("Đã tạo báo cáo.", "success")
+            return jsonify(ok=True, report_id=report.id, redirect_url=redirect_url)
         flash("Đã tạo báo cáo.", "success")
-        return redirect(url_for("reports.detail", report_id=report.id))
+        return redirect(redirect_url)
 
     return _render_create_form(project, report)
+
+
+@bp.post("/<int:project_id>/reports/upload-sessions")
+@limiter.limit("30 per minute")
+def report_upload_session_create(project_id):
+    project = _project_or_404(project_id)
+    if not can_create_report(current_user, project.id): abort(403)
+    payload = request.get_json(silent=True) or {}
+    try:
+        return jsonify(create_report_upload_session(user=current_user, project_id=project.id,
+            declared_files=payload.get("file_count"), declared_size_bytes=payload.get("total_size_bytes")))
+    except StorageValidationError as exc: return jsonify(error=str(exc)), 400
+
+
+@bp.get("/<int:project_id>/reports/upload-sessions/<int:session_id>")
+def report_upload_session_state(project_id, session_id):
+    project = _project_or_404(project_id)
+    if not can_create_report(current_user, project.id): abort(403)
+    try: return jsonify(report_upload_session_payload(report_upload_session(current_user, project.id, session_id, allow_finalized=True)))
+    except StorageAuthorizationError: abort(403)
+    except StorageValidationError as exc: return jsonify(error=str(exc)), 400
+
+
+@bp.post("/<int:project_id>/reports/upload-sessions/<int:session_id>/presign")
+@limiter.limit("60 per minute")
+def report_upload_session_presign(project_id, session_id):
+    project = _project_or_404(project_id)
+    if not can_create_report(current_user, project.id): abort(403)
+    try: return jsonify(presign_report_uploads(user=current_user, project_id=project.id, session_id=session_id, files=(request.get_json(silent=True) or {}).get("files", [])))
+    except StorageAuthorizationError: abort(403)
+    except StorageValidationError as exc: return jsonify(error=str(exc)), 400
+
+
+@bp.post("/<int:project_id>/reports/upload-sessions/<int:session_id>/complete")
+@limiter.limit("120 per minute")
+def report_upload_session_complete(project_id, session_id):
+    project = _project_or_404(project_id)
+    if not can_create_report(current_user, project.id): abort(403)
+    payload = request.get_json(silent=True) or {}
+    try: item_id = int(payload.get("upload_batch_item_id"))
+    except (TypeError, ValueError): return jsonify(error="upload_batch_item_id không hợp lệ."), 400
+    try: return jsonify(complete_report_upload(user=current_user, project_id=project.id, session_id=session_id, item_id=item_id, checksum_sha256=payload.get("checksum_sha256")))
+    except StorageAuthorizationError: abort(403)
+    except (StorageValidationError, StorageNotFoundError) as exc: return jsonify(error=str(exc)), 400
+
+
+@bp.post("/<int:project_id>/reports/upload-sessions/<int:session_id>/cancel")
+def report_upload_session_cancel(project_id, session_id):
+    project = _project_or_404(project_id)
+    if not can_create_report(current_user, project.id): abort(403)
+    try:
+        session = report_upload_session(current_user, project.id, session_id)
+        session.status = "cancelled"; db.session.commit()
+        # Cancellation is intentionally eager; the cleanup routine is
+        # idempotent and treats an S3 NotFound as already removed.
+        cleanup_expired_sessions(dry_run=False)
+        return jsonify(upload_session_id=session.id, status=session.status)
+    except StorageAuthorizationError: abort(403)
+    except StorageValidationError as exc: return jsonify(error=str(exc)), 400
 
 
 @bp.get("/<int:project_id>/issues")
@@ -181,6 +251,7 @@ def issues_create(project_id):
 
 
 def _render_create_form(project, report, form_data=None, form_errors=None):
+    from flask import current_app
     return render_template(
         "reports/form.html",
         project=project,
@@ -192,7 +263,22 @@ def _render_create_form(project, report, form_data=None, form_errors=None):
         section_statuses=[status.value for status in SectionStatus],
         can_write=can_create_report(current_user, project.id),
         can_delete_attachment=False,
+        direct_upload_limits={"enabled": current_app.config["DAILY_REPORT_DIRECT_UPLOAD_ENABLED"], "max_files": current_app.config["DAILY_REPORT_MAX_FILES"], "max_files_per_section": current_app.config["DAILY_REPORT_MAX_FILES_PER_SECTION"], "max_file_bytes": current_app.config["DAILY_REPORT_MAX_FILE_BYTES"], "max_total_bytes": current_app.config["DAILY_REPORT_MAX_TOTAL_BYTES"], "concurrency": current_app.config["DAILY_REPORT_UPLOAD_CONCURRENCY"]},
     )
+
+
+def _reject_legacy_multipart_files(*, project, report):
+    from flask import current_app
+
+    if not current_app.config["DAILY_REPORT_DIRECT_UPLOAD_ENABLED"]:
+        return None
+    if not any(file and file.filename for key in request.files for file in request.files.getlist(key)):
+        return None
+    message = "Ảnh đính kèm phải được tải lên bằng trình tải ảnh của hệ thống."
+    if _wants_json():
+        return jsonify(ok=False, error="legacy_multipart_upload_not_supported", message=message), 400
+    flash(message + " Vui lòng tải lại trang và thử lại.", "danger")
+    return _render_create_form(project, report, form_data=build_report_form_data(request.form)), 400
 
 
 def _render_issue_form(project, issue, form_errors=None):
@@ -238,3 +324,7 @@ def _apply_issue_filters(query):
 def _flash_reselect_images_if_needed(files):
     if any(file and file.filename for key in files for file in files.getlist(key)):
         flash("Vui lòng chọn lại ảnh đính kèm sau khi sửa lỗi.", "warning")
+
+
+def _wants_json():
+    return request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.accept_mimetypes.best == "application/json"

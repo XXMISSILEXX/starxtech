@@ -27,6 +27,12 @@ def create_app(config_class=Config):
         "STORAGE_WARN_RATIO": .70, "STORAGE_SOFT_RATIO": .85, "STORAGE_HARD_RATIO": .95,
         "DOWNLOAD_WARN_RATIO": .70, "DOWNLOAD_SOFT_RATIO": .85, "DOWNLOAD_HARD_RATIO": .95,
         "STORAGE_PENDING_UPLOAD_HOURS": 24,
+        "DAILY_REPORT_DIRECT_UPLOAD_ENABLED": True, "DAILY_REPORT_MAX_FILES": 30,
+        "DAILY_REPORT_MAX_FILES_PER_SECTION": 3,
+        "DAILY_REPORT_MAX_FILE_BYTES": 25 * 1024 * 1024, "DAILY_REPORT_MAX_TOTAL_BYTES": 300 * 1024 * 1024,
+        "DAILY_REPORT_UPLOAD_CONCURRENCY": 3, "DAILY_REPORT_PRESIGN_TTL_SECONDS": 900,
+        "DAILY_REPORT_SESSION_TTL_SECONDS": 86400, "MAX_FORM_PARTS": 1000,
+        "STORAGE_CORS_ALLOWED_ORIGINS": ("http://192.168.1.159:5666",),
         "BULK_DOWNLOAD_MAX_FILES": 100, "BULK_DOWNLOAD_MAX_TOTAL_BYTES": 300 * 1024 * 1024,
         "BULK_DOWNLOAD_ZIP_TTL_SECONDS": 86400, "BULK_DOWNLOAD_TEMP_ROOT": "/tmp/starx-bulk-downloads",
         "CELERY_BROKER_URL": "redis://localhost:6379/0", "CELERY_RESULT_BACKEND": "redis://localhost:6379/1", "CELERY_TASK_ALWAYS_EAGER": False, "CELERY_TASK_EAGER_PROPAGATES": True, "CELERY_RESULT_EXPIRES_SECONDS": 3600, "CELERY_WORKER_PREFETCH_MULTIPLIER": 1, "CELERY_TASK_ACKS_LATE": True,
@@ -65,6 +71,7 @@ def create_app(config_class=Config):
     register_trusted_host_guard(app)
     register_auth_guard(app)
     register_security_headers(app)
+    register_upload_error_handlers(app)
     register_template_helpers(app)
     from app.branding import get_current_branding
     from app.navigation import get_active_module, get_sidebar_items
@@ -218,4 +225,17 @@ def register_security_headers(app):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("X-Frame-Options", "DENY")
+        return response
+
+
+def register_upload_error_handlers(app):
+    from werkzeug.exceptions import RequestEntityTooLarge
+    @app.errorhandler(RequestEntityTooLarge)
+    def too_large(_error):
+        message = "Yêu cầu quá lớn. Vui lòng dùng trình tải ảnh của hệ thống."
+        if request.accept_mimetypes.best == "application/json" or request.path.endswith(("/presign", "/complete")):
+            response = jsonify(error=message); response.status_code = 413
+        else:
+            response = app.make_response((message, 413))
+        response.headers["Cache-Control"] = "no-store"
         return response

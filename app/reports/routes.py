@@ -1,4 +1,4 @@
-from flask import abort, flash, redirect, render_template, request, url_for
+from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from app.auth.permissions import can_access_reports_module, can_create_report, can_delete_report, can_edit_report, can_view_report
@@ -11,6 +11,7 @@ from app.reports.services import (
     build_report_form_data,
     categories_for_report,
     delete_report,
+    ReportDeletionError,
     reports_query,
     update_report,
     parse_report_date,
@@ -80,19 +81,27 @@ def edit(report_id):
 
     if request.method == "POST":
         _require_can_write(report)
+        legacy_response = _reject_legacy_multipart_files(report=report)
+        if legacy_response is not None:
+            return legacy_response
         try:
-            update_report(report, request.form, request.files)
+            update_report(report, request.form)
         except ReportValidationError as exc:
             db.session.rollback()
+            if _wants_json():
+                return jsonify(ok=False, error="validation_error", message=str(exc), field_errors=exc.errors), 422
             flash(str(exc), "danger")
-            _flash_reselect_images_if_needed(request.files)
             return _render_form(
                 report,
                 form_data=build_report_form_data(request.form, report),
                 form_errors=exc.errors,
             ), 400
+        redirect_url = url_for("reports.detail", report_id=report.id)
+        if _wants_json():
+            flash("Đã cập nhật báo cáo thành công.", "success")
+            return jsonify(ok=True, report_id=report.id, redirect_url=redirect_url)
         flash("Đã cập nhật báo cáo thành công.", "success")
-        return redirect(url_for("reports.detail", report_id=report.id))
+        return redirect(redirect_url)
 
     return _render_form(report)
 
@@ -102,8 +111,13 @@ def delete(report_id):
     report = _report_or_404(report_id)
     if not _can_delete_report(report):
         abort(403)
-    delete_report(report)
-    flash("Đã xóa báo cáo.", "success")
+    try:
+        delete_report(report)
+    except ReportDeletionError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+        return redirect(url_for("reports.detail", report_id=report.id))
+    flash("Đã xóa vĩnh viễn báo cáo và toàn bộ ảnh đính kèm.", "success")
     return redirect(url_for("reports.index"))
 
 
@@ -119,14 +133,12 @@ def _render_form(report, form_data=None, form_errors=None):
         section_statuses=[status.value for status in SectionStatus],
         can_write=can_edit_report(current_user, report),
         can_delete_attachment=current_user.can("report_attachments.delete") and can_edit_report(current_user, report),
+        direct_upload_limits=_direct_upload_limits(),
     )
 
 
 def _report_or_404(report_id):
-    return DailyReport.query.filter(
-        DailyReport.id == report_id,
-        DailyReport.deleted_at.is_(None),
-    ).first_or_404()
+    return db.get_or_404(DailyReport, report_id)
 
 
 def _require_can_read(report):
@@ -147,3 +159,27 @@ def _can_delete_report(report):
 def _flash_reselect_images_if_needed(files):
     if any(file and file.filename for key in files for file in files.getlist(key)):
         flash("Vui lòng chọn lại ảnh đính kèm sau khi sửa lỗi.", "warning")
+
+
+def _direct_upload_limits():
+    from flask import current_app
+    return {"enabled": current_app.config["DAILY_REPORT_DIRECT_UPLOAD_ENABLED"], "max_files": current_app.config["DAILY_REPORT_MAX_FILES"], "max_files_per_section": current_app.config["DAILY_REPORT_MAX_FILES_PER_SECTION"], "max_file_bytes": current_app.config["DAILY_REPORT_MAX_FILE_BYTES"], "max_total_bytes": current_app.config["DAILY_REPORT_MAX_TOTAL_BYTES"], "concurrency": current_app.config["DAILY_REPORT_UPLOAD_CONCURRENCY"]}
+
+
+def _reject_legacy_multipart_files(*, report):
+    """Reject browser file parts before the report service can mutate state."""
+    from flask import current_app
+
+    if not current_app.config["DAILY_REPORT_DIRECT_UPLOAD_ENABLED"]:
+        return None
+    if not any(file and file.filename for key in request.files for file in request.files.getlist(key)):
+        return None
+    message = "Ảnh đính kèm phải được tải lên bằng trình tải ảnh của hệ thống."
+    if _wants_json():
+        return jsonify(ok=False, error="legacy_multipart_upload_not_supported", message=message), 400
+    flash(message + " Vui lòng tải lại trang và thử lại.", "danger")
+    return _render_form(report, form_data=build_report_form_data(request.form, report)), 400
+
+
+def _wants_json():
+    return request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.accept_mimetypes.best == "application/json"

@@ -50,55 +50,80 @@ def _dispatch_media_job(job):
     return job
 
 
+def stage_media_processing_jobs(storage_objects):
+    """Create durable pending jobs in the caller's open transaction.
+
+    This function intentionally does not commit or touch Celery.  Daily Report
+    finalization uses it so attachment ownership and job rows become durable
+    atomically before any external task is sent.
+    """
+    job_ids = []
+    for storage_object in storage_objects:
+        if not storage_object or storage_object.upload_status != "active":
+            continue
+        job_type = media_job_type_for_storage_object(storage_object)
+        if not job_type:
+            storage_object.processing_status = "none"
+            continue
+        if has_ready_derivatives(storage_object):
+            storage_object.processing_status = "completed"
+            continue
+        job = MediaProcessingJob.query.filter_by(
+            storage_object_id=storage_object.id, job_type=job_type,
+        ).filter(MediaProcessingJob.status.in_(["pending", "processing", "succeeded"])).first()
+        if job is None:
+            job = MediaProcessingJob(
+                storage_object_id=storage_object.id, job_type=job_type,
+                status="pending", max_attempts=3,
+            )
+            db.session.add(job)
+            db.session.flush()
+        storage_object.processing_status = "queued"
+        job_ids.append(job.id)
+    return job_ids
+
+
+def dispatch_media_processing_job(job_id):
+    """Dispatch a job only after its owning transaction has committed."""
+    job = db.session.get(MediaProcessingJob, job_id)
+    if not job or job.status != "pending":
+        return job
+    if current_app.testing:
+        return job
+    return _dispatch_media_job(job)
+
+
 def enqueue_media_processing_for_storage_object(storage_object_id):
     storage_object = db.session.get(StorageObject, storage_object_id)
     if not storage_object or storage_object.upload_status != "active":
         return None
 
-    job_type = media_job_type_for_storage_object(storage_object)
-    if not job_type:
-        storage_object.processing_status = "none"
-        db.session.commit()
-        return None
-    if has_ready_derivatives(storage_object):
-        storage_object.processing_status = "completed"
-        db.session.commit()
-        return None
-
-    job = MediaProcessingJob.query.filter_by(
-        storage_object_id=storage_object.id,
-        job_type=job_type,
-    ).filter(MediaProcessingJob.status.in_(["pending", "processing", "succeeded"])).first()
-    if job:
-        return job
-
-    job = MediaProcessingJob(
-        storage_object_id=storage_object.id,
-        job_type=job_type,
-        status="pending",
-        max_attempts=3,
-    )
-    db.session.add(job)
-    storage_object.processing_status = "queued"
+    job_ids = stage_media_processing_jobs([storage_object])
     db.session.commit()
-    if current_app.testing:
-        return job
+    if not job_ids:
+        return None
+    job = db.session.get(MediaProcessingJob, job_ids[0])
     # Upload must remain durable even when the optional async worker/broker is
     # temporarily unavailable. Reconciliation/retry commands will dispatch it.
     try:
-        return _dispatch_media_job(job)
+        return dispatch_media_processing_job(job.id)
     except Exception:
         return job
 
 
-def retry_media_jobs(status, dry_run=True):
+def retry_media_jobs(status, dry_run=True, module=None):
     if status not in {"pending", "failed"}:
         raise ValueError("Chỉ có thể retry job pending hoặc failed.")
 
-    jobs = MediaProcessingJob.query.filter_by(status=status).order_by(MediaProcessingJob.id).all()
+    query = MediaProcessingJob.query.join(StorageObject).filter(MediaProcessingJob.status == status)
+    if module:
+        query = query.filter(StorageObject.storage_module == module)
+    jobs = query.order_by(MediaProcessingJob.id).all()
     summary = {
         "status": status,
         "matched": len(jobs),
+        "eligible": 0,
+        "dispatched": 0,
         "re_enqueued": 0,
         "skipped": 0,
         "failed_to_enqueue": 0,
@@ -118,8 +143,11 @@ def retry_media_jobs(status, dry_run=True):
         eligible.append(job)
 
     if dry_run:
+        summary["eligible"] = len(eligible)
         summary["re_enqueued"] = len(eligible)
         return summary
+
+    summary["eligible"] = len(eligible)
 
     for job in eligible:
         storage_object = job.storage_object
@@ -141,6 +169,7 @@ def retry_media_jobs(status, dry_run=True):
             summary["failed_to_enqueue"] += 1
         else:
             summary["re_enqueued"] += 1
+            summary["dispatched"] += 1
     return summary
 
 
@@ -159,8 +188,8 @@ def media_jobs_status():
     }
 
 
-def reconcile_media_jobs(dry_run=True):
-    return retry_media_jobs("pending", dry_run=dry_run)
+def reconcile_media_jobs(dry_run=True, module=None):
+    return retry_media_jobs("pending", dry_run=dry_run, module=module)
 
 
 def cleanup_media_temp(dry_run=True, older_than_hours=24):

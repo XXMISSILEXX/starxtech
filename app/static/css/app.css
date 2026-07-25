@@ -119,6 +119,13 @@ a:hover {
   font-size: 1.05rem;
 }
 
+.report-save-overlay { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 1rem; background: rgb(15 23 42 / .6); }
+.report-save-overlay[hidden] { display: none; }
+.report-save-overlay__panel { width: min(100%, 28rem); padding: 1.5rem; text-align: center; border-radius: var(--sx-radius, .75rem); background: #fff; box-shadow: 0 1rem 3rem rgb(0 0 0 / .25); }
+.report-save-locked { pointer-events: none; }
+.report-save-locked .report-save-overlay { pointer-events: auto; }
+@media (prefers-reduced-motion: reduce) { .report-save-overlay *, .report-save-overlay { transition: none !important; animation: none !important; } }
+
 .nav-link:hover,
 .nav-link.active {
   background: #eff6ff;
@@ -1040,6 +1047,8 @@ a:hover {
   padding: 0.5rem;
   background: #f8fafc;
 }
+
+.attachment-kebab { min-height: 40px; min-width: 40px; }
 
 .list-group-item {
   border-color: var(--sx-border);

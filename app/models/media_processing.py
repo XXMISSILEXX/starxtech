@@ -14,7 +14,7 @@ class StorageDerivative(CreatedAtMixin, SoftDeleteMixin, db.Model):
 
 class MediaProcessingJob(TimestampMixin, db.Model):
     __tablename__ = "media_processing_jobs"
-    __table_args__ = (db.CheckConstraint("job_type IN ('image_derivatives','video_derivatives')", name="ck_media_jobs_type"), db.CheckConstraint("status IN ('pending','processing','succeeded','failed','cancelled')", name="ck_media_jobs_status"), db.Index("idx_media_jobs_status_created", "status", "created_at"), db.Index("idx_media_jobs_object_type", "storage_object_id", "job_type"))
+    __table_args__ = (db.UniqueConstraint("storage_object_id", "job_type", name="uq_media_jobs_storage_object_type"), db.CheckConstraint("job_type IN ('image_derivatives','video_derivatives')", name="ck_media_jobs_type"), db.CheckConstraint("status IN ('pending','processing','succeeded','failed','cancelled')", name="ck_media_jobs_status"), db.Index("idx_media_jobs_status_created", "status", "created_at"), db.Index("idx_media_jobs_object_type", "storage_object_id", "job_type"))
     id = db.Column(STORAGE_ID, primary_key=True); storage_object_id = db.Column(STORAGE_ID, db.ForeignKey("storage_objects.id"), nullable=False)
     job_type = db.Column(db.String(40), nullable=False); status = db.Column(db.String(20), nullable=False, default="pending"); celery_task_id = db.Column(db.String(255))
     attempts = db.Column(db.Integer, nullable=False, default=0); max_attempts = db.Column(db.Integer, nullable=False, default=3)

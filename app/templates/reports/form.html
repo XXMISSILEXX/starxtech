@@ -9,7 +9,14 @@
 {% set overall_status_value = form_data.overall_status if form_data else report.overall_status %}
 {% set highlight_value = form_data.highlight if form_data else (report.highlight or '') %}
 {% set summary_note_value = form_data.summary_note if form_data else (report.summary_note or '') %}
-<form method="post" enctype="multipart/form-data">
+<form method="post" data-report-direct-upload
+      data-session-url="{{ url_for('projects.report_upload_session_create', project_id=project.id) }}"
+      data-session-state-url="{{ url_for('projects.report_upload_session_state', project_id=project.id, session_id=0) }}"
+      data-presign-url="{{ url_for('projects.report_upload_session_presign', project_id=project.id, session_id=0) }}"
+      data-complete-url="{{ url_for('projects.report_upload_session_complete', project_id=project.id, session_id=0) }}"
+      data-cancel-url="{{ url_for('projects.report_upload_session_cancel', project_id=project.id, session_id=0) }}"
+      data-csrf-token="{{ csrf_token() }}" data-project-id="{{ project.id }}"
+      data-upload-limits='{{ direct_upload_limits|default({})|tojson }}'>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
   <div class="form-card row g-3 mb-4">
@@ -62,6 +69,7 @@
     {% for section in active_sections %}
       {% set section_index = section.form_index if form_data else loop.index0 %}
       <div class="report-section p-3 mb-3" data-section-row>
+        <input type="hidden" name="sections-{{ section_index }}-client-section-id" value="section-{{ section_index }}" data-client-section-id>
         <div class="row g-3">
           <div class="col-md-5">
             <label class="form-label">Hạng mục</label>
@@ -130,11 +138,25 @@
 
   {% if can_write %}
     <div class="d-flex gap-2">
-      <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>Lưu báo cáo</button>
+      <input type="hidden" name="upload_session_id" data-upload-session-id>
+      <input type="hidden" name="attachment_manifest" data-attachment-manifest>
+      <input type="hidden" name="direct_upload_expected" data-direct-upload-expected>
+      <input type="hidden" name="direct_upload_selected_count" data-direct-upload-selected-count value="0">
+      <button class="btn btn-primary" type="submit" data-report-submit><i class="bi bi-check2 me-1"></i>Lưu báo cáo</button>
       <a class="btn btn-outline-secondary" href="{{ url_for('projects.reports', project_id=project.id) }}">Hủy</a>
     </div>
   {% endif %}
 </form>
+<div class="report-save-overlay" data-report-save-overlay role="dialog" aria-modal="true" aria-live="polite" aria-label="Đang lưu báo cáo" hidden>
+  <div class="report-save-overlay__panel">
+    <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Đang xử lý</span></div>
+    <h2 class="h5 mt-3">Đang lưu báo cáo...</h2>
+    <p class="mb-2" data-save-message>Đang kiểm tra dữ liệu...</p>
+    <div class="d-flex justify-content-between small text-muted"><span data-save-count>0/0 ảnh</span><span data-save-bytes></span></div>
+    <div class="progress mt-2" role="progressbar" aria-label="Tiến độ tải ảnh"><div class="progress-bar" data-save-progress style="width: 0%"></div></div>
+    <div class="d-flex justify-content-center gap-2 mt-3"><button class="btn btn-primary" type="button" data-save-retry hidden>Thử lại</button><button class="btn btn-outline-secondary" type="button" data-save-cancel hidden>Hủy</button></div>
+  </div>
+</div>
 {% if can_delete_attachment and report.id %}
   {% for section in report.sections|selectattr('deleted_at', 'none')|list %}
     {% for attachment in section.attachments %}
