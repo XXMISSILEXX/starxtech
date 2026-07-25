@@ -7,7 +7,7 @@
 <div class="d-flex justify-content-between align-items-start mb-4">
   <div>
     <div class="text-muted">{{ report.project.name }}</div>
-    {% set report_status = status_presentation(report.overall_status) %}<div class="mt-2"><span class="badge status-badge {{ report_status.css_class }}"><i class="{{ report_status.icon_class }} me-1" aria-hidden="true"></i>{{ report_status.label }}</span></div>
+    {% set report_status = status_presentation(report.overall_status) %}<div class="mt-2"><span class="badge status-badge {{ report_status.css_class }}" data-status-icon-key="{{ report_status.icon_key }}">{{ report_status.label }}</span></div>
   </div>
   <div class="d-flex gap-2">
     {% if can_write %}
@@ -37,7 +37,7 @@
           <div class="card-body">
             <div class="d-flex justify-content-between align-items-start mb-2">
               <h2 class="h6 mb-0">{{ category_icon(section.report_category.icon) }} <span class="ms-1">{{ section.report_category.name }}</span></h2>
-              <span class="badge status-badge {{ section_status.css_class }}"><i class="{{ section_status.icon_class }} me-1" aria-hidden="true"></i>{{ section_status.label }}</span>
+              <span class="badge status-badge {{ section_status.css_class }}" data-status-icon-key="{{ section_status.icon_key }}">{{ section_status.label }}</span>
             </div>
             <p class="mb-3 report-user-text">{{ section.content }}</p>
             <div class="image-gallery d-flex flex-wrap gap-2">

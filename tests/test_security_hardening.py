@@ -48,6 +48,9 @@ def test_csp_allows_only_valid_configured_s3_endpoint_origin(client, app):
     assert csp["connect-src"] == {"'self'"}
     assert csp["img-src"] == {"'self'", "data:", "blob:"}
     assert csp["media-src"] == {"'self'", "blob:"}
+    assert csp["worker-src"] == {"'self'", "blob:"}
+    assert "blob:" not in csp["script-src"]
+    assert "'unsafe-eval'" not in csp["script-src"]
     assert "fake-storage.invalid" not in csp
 
 

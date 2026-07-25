@@ -3,6 +3,8 @@ from uuid import uuid4
 from app.extensions import db
 from app.models import DailyReport
 from app.models import UploadSelectionSession, StorageObject
+from app.models import DailyReportStatus, SectionStatus
+from app.ui import status_presentation
 from tests.helpers.daily_report_create_v2 import DailyReportV2UploadFile, submit_daily_report_create_v2
 from io import BytesIO
 from PIL import Image
@@ -131,3 +133,23 @@ def test_create_and_edit_load_isolated_controllers(client, app):
     edit = client.get(f"/reports/{result['report_id']}/edit")
     assert b"report-direct-upload.js" in edit.data and b"daily-report-create-v2.js" not in edit.data
     assert b"data-report-direct-upload" in edit.data and b"data-daily-report-create-v2" not in edit.data
+
+
+def test_report_status_markup_uses_local_svg_metadata(client):
+    _login(client)
+    create = client.get("/reports/projects/1/reports/create")
+    assert b"data-icon-key=\"arrow-repeat\"" in create.data
+    assert b"data-icon-key=\"x-octagon-fill\"" in create.data
+    assert b"data-icon-class" not in create.data
+    assert b"vendor/status-icons/sprite.svg" in create.data
+
+
+def test_report_status_presentations_have_local_svg_keys_for_both_enum_sets():
+    overall = {status.value: status_presentation(status.value) for status in DailyReportStatus}
+    sections = {status.value: status_presentation(status.value) for status in SectionStatus}
+    assert set(overall) == {"UPDATED", "GOOD", "PROCESSING", "ATTENTION", "CRITICAL"}
+    assert set(sections) == {"INFO", "GOOD", "PROCESSING", "ATTENTION", "CRITICAL"}
+    assert overall["UPDATED"]["label"] == "Cập nhật"
+    assert sections["INFO"]["label"] == "Thông tin"
+    assert overall["UPDATED"]["icon_key"] == sections["INFO"]["icon_key"] == "info-circle-fill"
+    assert {item["icon_key"] for item in overall.values()} == {"info-circle-fill", "check-circle-fill", "arrow-repeat", "exclamation-triangle-fill", "x-octagon-fill"}

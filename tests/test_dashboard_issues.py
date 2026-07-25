@@ -106,7 +106,8 @@ def test_reporter_dashboard_does_not_leak_unassigned_project_data(client, app):
     counts = dict(zip(payload["labels"], payload["counts"]))
     assert counts["Tốt"] == 1
     assert counts["Đang xử lý"] == 1
-    assert counts["Nghiêm trọng"] == 0
+    assert counts["Khẩn cấp"] == 0
+    assert "Nghiêm trọng" not in counts
 
 
 def test_viewer_admin_sees_all_but_no_write_buttons(client, app):
@@ -141,12 +142,15 @@ def test_dashboard_counts_are_correct_for_seed_data(client, app):
     assert response.status_code == 200
     assert "Tổng báo cáo".encode() in response.data
     assert "Vấn đề đang mở".encode() in response.data
+    assert "Khẩn cấp".encode() in response.data
+    assert b'data-status-icon-key="x-octagon-fill"' in response.data
 
     chart = client.get("/api/reports/dashboard/status-chart")
     counts = dict(zip(chart.get_json()["labels"], chart.get_json()["counts"]))
     assert counts["Tốt"] == 1
     assert counts["Đang xử lý"] == 1
-    assert counts["Nghiêm trọng"] == 1
+    assert counts["Khẩn cấp"] == 1
+    assert "Nghiêm trọng" not in counts
 
     count_chart = client.get("/api/reports/dashboard/report-count-chart?from_date=2026-07-01&to_date=2026-07-31")
     assert count_chart.status_code == 200

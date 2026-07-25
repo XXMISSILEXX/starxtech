@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Local HEIC preview diagnostic</title>
+<input id="file" type="file" accept=".heic,.heif,image/heic,image/heif">
+<pre id="log"></pre><img id="preview" alt="HEIC preview" style="max-width:600px">
+<script src="../../app/static/vendor/heic-to/heic-preview.min.js"></script>
+<script>
+const out = document.querySelector('#log'), write = value => out.textContent += `${typeof value === 'string' ? value : JSON.stringify(value)}\n`;
+document.querySelector('#file').onchange = async event => { const file = event.target.files[0]; if (!file) return; const started = performance.now(), original = file; write({name:file.name,type:file.type,size:file.size,api:Object.keys(window.StarXHeicPreview || {})}); try { const result = await window.StarXHeicPreview.heicTo({blob:file,type:'image/jpeg',quality:.82}); const blob = Array.isArray(result) ? result[0] : result; write({result:Array.isArray(result)?'Blob[]':blob?.constructor?.name,type:blob?.type,size:blob?.size,ms:Math.round(performance.now()-started),sameFile:file===original}); const url = URL.createObjectURL(blob), image = document.querySelector('#preview'); image.onload = () => write({image:'load',width:image.naturalWidth,height:image.naturalHeight}); image.onerror = () => write({image:'error'}); image.src = url; } catch (error) { write({name:error?.name,message:error?.message,stack:error?.stack,ms:Math.round(performance.now()-started),sameFile:file===original}); } };
+</script>

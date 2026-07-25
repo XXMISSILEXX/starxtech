@@ -1,11 +1,14 @@
 from io import BytesIO
+from uuid import uuid4
 
 from PIL import Image
 from sqlalchemy import select
 from werkzeug.datastructures import MultiDict
 
 from app.extensions import db
-from app.models import AuditLog, DailyReport, MediaProcessingJob, ReportAttachment, StorageDerivative, StorageObject, UploadBatchItem, User
+from app.models import (AuditLog, DailyReport, DailyReportSection, MediaProcessingJob,
+                        ReportAttachment, StorageDerivative, StorageObject,
+                        UploadBatchItem, UploadSelectionSession, User)
 from tests.helpers.daily_report_create_v2 import DailyReportV2UploadFile, submit_daily_report_create_v2
 
 
@@ -34,8 +37,9 @@ def image_bytes(image_format="JPEG"):
 def direct_report(client, app, *, project_id=1, category_id=None, form=None, files=None, submit_url=None):
     form = form or report_form(category_id=category_id or (3 if project_id == 2 else 1))
     date = form["report_date"]
+    source_files = [DailyReportV2UploadFile(image_bytes(), "photo.jpg")] if files is None else files
     normalized_files = [DailyReportV2UploadFile(file.data, file.filename, file.mime_type, file.section_index,)
-                        if hasattr(file, "data") else file for file in (files or [DailyReportV2UploadFile(image_bytes(), "photo.jpg")])]
+                        if hasattr(file, "data") else file for file in source_files]
     result = submit_daily_report_create_v2(client, app, project_id=project_id,
         report={"report_date": date, "overall_status": form["overall_status"], "highlight": form["highlight"], "summary_note": form["summary_note"]},
         sections=[{"report_category_id": int(form["sections-0-category_id"]), "status": form["sections-0-status"], "content": form["sections-0-content"]}], files=normalized_files)
@@ -57,6 +61,16 @@ def report_form(category_id=1, report_date="2026-07-08", content="Concrete poure
     )
 
 
+def v2_preflight_payload(form=None, *, project_id=1, sections=None, files=None):
+    form = form or report_form(category_id=3 if project_id == 2 else 1)
+    sections = sections or [{"category_id": int(form["sections-0-category_id"]), "status": form["sections-0-status"], "content": form["sections-0-content"]}]
+    return {"client_request_id": str(uuid4()), "report_date": form["report_date"],
+            "overall_status": form["overall_status"], "highlight": form["highlight"],
+            "summary_note": form["summary_note"],
+            "sections": [{"client_section_id": str(uuid4()), "category_id": row["category_id"], "status": row["status"], "content": row["content"], "sort_order": index} for index, row in enumerate(sections)],
+            "files": files or []}
+
+
 def test_reporter_creates_report_for_assigned_project(client, app):
     login(client, "reporter")
     result = direct_report(client, app)
@@ -68,87 +82,74 @@ def test_reporter_creates_report_for_assigned_project(client, app):
         assert report.sections[0].content == "Concrete poured."
         assert len(report.sections[0].attachments) == 1
         assert result["upload_session"].status == "finalized"
-        assert result["upload_items"][0].finalized_at is not None
+        provider = app.extensions["storage_provider"]
+        storage = result["storage_objects"][0]
+        assert provider.objects[(storage.bucket, storage.object_key)]["bytes"] == image_bytes()
         assert AuditLog.query.filter_by(action="report.create", entity_id=report.id).count() == 1
         assert AuditLog.query.filter_by(action="attachment.create").count() == 1
 
 
-def test_legacy_multipart_files_are_rejected_without_side_effects(client, app):
+def test_legacy_multipart_post_returns_405_without_side_effects(client, app):
     login(client, "reporter")
     data = report_form(); data.add("sections-0-images", image_upload())
     response = client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
-    assert response.status_code == 400
-    assert "trình tải ảnh của hệ thống".encode() in response.data
+    assert response.status_code == 405
     with app.app_context():
         assert db.session.scalar(select(DailyReport)) is None
         assert db.session.scalar(select(StorageObject)) is None
         assert db.session.scalar(select(MediaProcessingJob)) is None
-        assert "storage_provider" not in app.extensions
+        assert db.session.scalar(select(UploadSelectionSession)) is None
 
 
-def test_legacy_multipart_json_error_is_explicit(client, app):
+def test_legacy_json_accept_post_returns_405_without_side_effects(client, app):
     login(client, "reporter")
     data = report_form(); data.add("sections-0-images", image_upload())
     response = client.post("/reports/projects/1/reports/create", data=data,
         content_type="multipart/form-data", headers={"Accept": "application/json"})
-    assert response.status_code == 400
-    assert response.get_json() == {
-        "ok": False,
-        "error": "legacy_multipart_upload_not_supported",
-        "message": "Ảnh đính kèm phải được tải lên bằng trình tải ảnh của hệ thống.",
-    }
-
-
-def test_text_only_multipart_submission_still_creates_report(client, app):
-    login(client, "reporter")
-    response = client.post("/reports/projects/1/reports/create", data=report_form(), content_type="multipart/form-data")
-    assert response.status_code == 302
-    with app.app_context():
-        assert db.session.scalar(select(DailyReport)) is not None
-
-
-def test_canonical_empty_manifest_creates_no_image_report_json(client, app):
-    login(client, "reporter")
-    data = report_form()
-    data.add("attachment_manifest", '{"upload_session_id":null,"attachments":[]}')
-    data.add("direct_upload_expected", "0")
-    data.add("direct_upload_selected_count", "0")
-    response = client.post(
-        "/reports/projects/1/reports/create", data=data,
-        headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
-    )
-    assert response.status_code == 200
-    assert response.get_json()["ok"] is True
-    assert response.get_json()["redirect_url"]
-    with app.app_context():
-        assert DailyReport.query.count() == 1
-        assert ReportAttachment.query.count() == 0
-        assert StorageObject.query.count() == 0
-        assert MediaProcessingJob.query.count() == 0
-
-
-def test_direct_upload_marker_without_complete_manifest_never_creates_report(client, app):
-    login(client, "reporter")
-    data = report_form()
-    data.add("direct_upload_expected", "1")
-    response = client.post("/reports/projects/1/reports/create", data=data)
-    assert response.status_code == 400
-    assert "chưa được tải lên hoàn tất".encode() in response.data
+    assert response.status_code == 405
     with app.app_context():
         assert db.session.scalar(select(DailyReport)) is None
+        assert db.session.scalar(select(UploadSelectionSession)) is None
+        assert db.session.scalar(select(StorageObject)) is None
+
+
+def test_no_image_v2_finalize_creates_report_without_upload_session(client, app):
+    login(client, "reporter")
+    result = direct_report(client, app, files=[])
+    assert result["response"].status_code == 200
+    assert result["upload_session_id"] is None
+    assert result["upload_session"] is None
+    with app.app_context():
+        assert DailyReport.query.count() == 1
+        assert DailyReportSection.query.count() == 1
+        assert ReportAttachment.query.count() == 0
 
 
 def test_direct_upload_rejects_unsupported_metadata_without_creating_item_or_object(client, app):
     login(client, "reporter")
-    session = client.post("/reports/projects/1/reports/upload-sessions", json={"file_count": 1, "total_size_bytes": 3}).get_json()
-    response = client.post(f"/reports/projects/1/reports/upload-sessions/{session['upload_session_id']}/presign", json={"files": [{
+    session = client.post("/api/projects/1/daily-reports/upload-sessions", json={"file_count": 1, "total_size_bytes": 3}).get_json()["data"]
+    response = client.post(f"/api/projects/1/daily-reports/upload-sessions/{session['upload_session_id']}/presign", json={"files": [{
         "client_file_id": "bad-file", "client_section_id": "section-0", "filename": "bad.txt",
         "mime_type": "text/plain", "size": 3,
     }]})
-    assert response.status_code == 400
+    assert response.status_code == 422
     with app.app_context():
         assert db.session.scalar(select(UploadBatchItem)) is None
         assert db.session.scalar(select(StorageObject)) is None
+
+
+def test_v2_finalize_rejects_incomplete_upload_item_without_creating_report(client, app):
+    login(client, "reporter")
+    section_id, file_id = str(uuid4()), str(uuid4())
+    session = client.post("/api/projects/1/daily-reports/upload-sessions", json={"file_count": 1, "total_size_bytes": len(image_bytes())}).get_json()["data"]
+    presign = client.post(f"/api/projects/1/daily-reports/upload-sessions/{session['upload_session_id']}/presign", json={"files": [{"client_file_id": file_id, "client_section_id": section_id, "filename": "pending.jpg", "mime_type": "image/jpeg", "size": len(image_bytes())}]})
+    assert presign.status_code == 200
+    item_id = presign.get_json()["data"]["items"][0]["upload_batch_item_id"]
+    response = client.post("/api/projects/1/daily-reports/finalize", json={"client_request_id": str(uuid4()), "report_date": "2026-07-08", "overall_status": "UPDATED", "highlight": "Pending upload", "summary_note": "", "upload_session_id": session["upload_session_id"], "sections": [{"client_section_id": section_id, "report_category_id": 1, "status": "GOOD", "content": "Pending", "sort_order": 0}], "attachments": [{"upload_item_id": item_id, "client_section_id": section_id, "sort_order": 0}]})
+    assert response.status_code == 422
+    with app.app_context():
+        assert DailyReport.query.count() == 0
+        assert ReportAttachment.query.count() == 0
 
 
 def test_uploaded_image_url_resolves(client, app):
@@ -186,7 +187,7 @@ def test_category_icon_appears_in_report_create_form(client):
 
 def test_category_icon_appears_in_report_edit_form(client, app):
     login(client, "reporter")
-    client.post("/reports/projects/1/reports/create", data=report_form())
+    direct_report(client, app)
     with app.app_context():
         report_id = DailyReport.query.one().id
 
@@ -196,21 +197,21 @@ def test_category_icon_appears_in_report_edit_form(client, app):
     assert b"bi-tools" in response.data
 
 
-def test_reporter_cannot_create_report_for_unassigned_project(client):
+def test_reporter_cannot_create_report_for_unassigned_project(client, app):
     login(client, "reporter")
-
-    response = client.post("/reports/projects/2/reports/create", data=report_form(category_id=3))
-
+    response = client.post("/api/projects/2/daily-reports/preflight", json=v2_preflight_payload(project_id=2))
     assert response.status_code == 403
+    with app.app_context():
+        assert DailyReport.query.count() == UploadSelectionSession.query.count() == StorageObject.query.count() == 0
 
 
 def test_viewer_admin_cannot_create_or_edit_report(client, app):
     login(client, "super")
-    client.post("/reports/projects/1/reports/create", data=report_form())
+    direct_report(client, app)
     client.post("/logout")
 
     login(client, "viewer")
-    create_response = client.post("/reports/projects/1/reports/create", data=report_form("1", "2026-07-09"))
+    create_response = client.post("/api/projects/1/daily-reports/preflight", json=v2_preflight_payload(report_form("1", "2026-07-09")))
     assert create_response.status_code == 403
 
     with app.app_context():
@@ -222,24 +223,17 @@ def test_viewer_admin_cannot_create_or_edit_report(client, app):
 
 def test_duplicate_project_date_returns_validation_error_without_second_row(client, app):
     login(client, "reporter")
-    first = client.post("/reports/projects/1/reports/create", data=report_form())
-    assert first.status_code == 302
-
-    duplicate = client.post("/reports/projects/1/reports/create", data=report_form(content="Second copy."))
-
-    assert duplicate.status_code == 400
-    assert "Dự án này đã có báo cáo cho ngày".encode() in duplicate.data
+    direct_report(client, app)
+    duplicate = client.post("/api/projects/1/daily-reports/preflight", json=v2_preflight_payload(report_form(content="Second copy.")))
+    assert duplicate.status_code == 409
     with app.app_context():
         assert DailyReport.query.filter_by(project_id=1, report_date="2026-07-08").count() == 1
 
 
 def test_duplicate_report_date_on_edit_returns_validation_error_without_autoflush(client, app):
     login(client, "reporter")
-    assert client.post("/reports/projects/1/reports/create", data=report_form()).status_code == 302
-    assert client.post(
-        "/reports/projects/1/reports/create",
-        data=report_form(report_date="2026-07-09", content="Second report."),
-    ).status_code == 302
+    direct_report(client, app)
+    direct_report(client, app, form=report_form(report_date="2026-07-09", content="Second report."))
     with app.app_context():
         reports = DailyReport.query.filter_by(project_id=1).order_by(DailyReport.report_date).all()
         first_id, second_id = reports[0].id, reports[1].id
@@ -257,17 +251,13 @@ def test_duplicate_report_date_on_edit_returns_validation_error_without_autoflus
         assert db.session.get(DailyReport, second_id).report_date.isoformat() == "2026-07-09"
 
 
-def test_duplicate_section_category_fails(client):
+def test_duplicate_section_category_fails_v2_preflight_without_side_effects(client, app):
     login(client, "reporter")
-    data = report_form()
-    data.add("sections-1-category_id", "1")
-    data.add("sections-1-status", "INFO")
-    data.add("sections-1-content", "Duplicate category.")
-
-    response = client.post("/reports/projects/1/reports/create", data=data)
-
-    assert response.status_code == 400
-    assert "Hạng mục không được trùng".encode() in response.data
+    payload = v2_preflight_payload(sections=[{"category_id": 1, "status": "GOOD", "content": "One"}, {"category_id": 1, "status": "INFO", "content": "Duplicate"}])
+    response = client.post("/api/projects/1/daily-reports/preflight", json=payload)
+    assert response.status_code == 422
+    assert response.get_json()["error"]["field_errors"]["sections"]
+    with app.app_context(): assert DailyReport.query.count() == UploadSelectionSession.query.count() == StorageObject.query.count() == 0
 
 
 def test_upload_more_than_three_images_for_one_section_fails(client, app):
@@ -282,11 +272,9 @@ def test_upload_more_than_three_images_for_one_section_fails(client, app):
 
 def test_non_image_upload_fails(client, app):
     login(client, "reporter")
-    data = report_form()
-    data.add("sections-0-images", (BytesIO(b"not an image"), "bad.jpg"))
-    response = client.post("/reports/projects/1/reports/create", data=data, content_type="multipart/form-data")
-    assert response.status_code == 400
-    assert "trình tải ảnh của hệ thống".encode() in response.data
+    session = client.post("/api/projects/1/daily-reports/upload-sessions", json={"file_count": 1, "total_size_bytes": 3}).get_json()["data"]
+    response = client.post(f"/api/projects/1/daily-reports/upload-sessions/{session['upload_session_id']}/presign", json={"files": [{"client_file_id": str(uuid4()), "client_section_id": str(uuid4()), "filename": "bad.txt", "mime_type": "text/plain", "size": 3}]})
+    assert response.status_code == 422
     with app.app_context():
         assert db.session.scalar(select(DailyReport)) is None
 
@@ -375,7 +363,7 @@ def test_attachment_delete_requires_report_edit_capability(client, app):
 
 def test_report_update_and_delete_write_audit_rows(client, app):
     login(client, "super")
-    client.post("/reports/projects/1/reports/create", data=report_form())
+    direct_report(client, app)
     with app.app_context():
         report_id = DailyReport.query.one().id
 
@@ -420,12 +408,12 @@ def test_report_delete_hard_deletes_attachments_storage_and_allows_same_date(cli
     assert deleted_keys <= set(provider.deleted)
     client.post("/logout")
     login(client, "reporter")
-    assert client.post("/reports/projects/1/reports/create", data=report_form()).status_code == 302
+    assert direct_report(client, app)["response"].status_code == 200
 
 
 def test_report_edit_post_success_shows_vietnamese_message(client, app):
     login(client, "reporter")
-    client.post("/reports/projects/1/reports/create", data=report_form())
+    direct_report(client, app)
     with app.app_context():
         report_id = DailyReport.query.one().id
 
@@ -444,7 +432,7 @@ def test_report_edit_post_success_shows_vietnamese_message(client, app):
 
 def test_report_edit_validation_error_shows_message(client, app):
     login(client, "reporter")
-    client.post("/reports/projects/1/reports/create", data=report_form())
+    direct_report(client, app)
     with app.app_context():
         report_id = DailyReport.query.one().id
 
@@ -456,24 +444,15 @@ def test_report_edit_validation_error_shows_message(client, app):
     assert "Vui lòng nhập điểm nổi bật.".encode() in response.data
 
 
-def test_report_create_missing_section_content_preserves_entered_data(client):
+def test_v2_preflight_missing_section_content_creates_no_side_effects(client, app):
     login(client, "reporter")
-    data = report_form(content="")
-    data["highlight"] = "Highlight giữ lại sau lỗi."
-    data["summary_note"] = "Note giữ lại sau lỗi."
-    data.add("sections-1-category_id", "2")
-    data.add("sections-1-status", "ATTENTION")
-    data.add("sections-1-content", "Nội dung section khác vẫn còn.")
-
-    response = client.post("/reports/projects/1/reports/create", data=data)
-
-    assert response.status_code == 400
-    assert "Mỗi phần báo cáo phải có nội dung.".encode() in response.data
-    assert "Highlight giữ lại sau lỗi.".encode() in response.data
-    assert "Note giữ lại sau lỗi.".encode() in response.data
-    assert "Nội dung section khác vẫn còn.".encode() in response.data
-    assert b'value="2" data-icon' in response.data
-    assert b'value="ATTENTION"' in response.data
+    payload = v2_preflight_payload(sections=[{"category_id": 1, "status": "GOOD", "content": ""}, {"category_id": 2, "status": "ATTENTION", "content": "Nội dung section khác vẫn còn."}])
+    payload["highlight"] = "Highlight giữ lại sau lỗi."
+    payload["summary_note"] = "Note giữ lại sau lỗi."
+    response = client.post("/api/projects/1/daily-reports/preflight", json=payload)
+    assert response.status_code == 422
+    assert response.get_json()["error"]["field_errors"]["sections"]
+    with app.app_context(): assert DailyReport.query.count() == UploadSelectionSession.query.count() == StorageObject.query.count() == 0
 
 
 def test_report_edit_validation_fail_keeps_existing_attachment(client, app):

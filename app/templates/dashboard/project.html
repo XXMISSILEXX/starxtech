@@ -75,7 +75,7 @@
               {% for report in report_history %}
                 <tr>
                   <td><a href="{{ url_for('reports.detail', report_id=report.id) }}">{{ report.report_date }}</a></td>
-                  {% set report_status = status_presentation(report.overall_status) %}<td><span class="badge status-badge {{ report_status.css_class }}"><i class="{{ report_status.icon_class }} me-1" aria-hidden="true"></i>{{ report_status.label }}</span></td>
+                  {% set report_status = status_presentation(report.overall_status) %}<td><span class="badge status-badge {{ report_status.css_class }}" data-status-icon-key="{{ report_status.icon_key }}">{{ report_status.label }}</span></td>
                   <td class="text-truncate" style="max-width: 360px;">{{ report.highlight }}</td>
                   <td>{{ report.created_by.full_name }}</td>
                 </tr>
@@ -112,7 +112,7 @@
           <tr>
             <td><a href="{{ url_for('issues.edit', issue_id=issue.id) }}">{{ issue.title }}</a></td>
               <td><span class="badge status-badge status-{{ issue.status|lower }}">{{ issue.status|status_label }}</span></td>
-              <td><span class="badge status-badge severity-{{ issue.severity|lower }}">{{ issue.severity|status_label }}</span></td>
+              <td><span class="badge status-badge severity-{{ issue.severity|lower }}">{{ issue.severity|issue_severity_label }}</span></td>
             <td>{{ issue.due_date or '-' }}</td>
             <td>{{ issue.owner.full_name if issue.owner else '-' }}</td>
           </tr>

@@ -83,8 +83,7 @@
     ('Tổng báo cáo', cards.total_reports, 'bi-journal-check', 'status-updated'),
     ('Tốt', cards.good_reports, 'bi-check-circle', 'status-good'),
     ('Đang xử lý', cards.processing_reports, 'bi-arrow-repeat', 'status-processing'),
-    ('Cần chú ý', cards.attention_reports, 'bi-exclamation-circle', 'status-attention'),
-    ('Nghiêm trọng', cards.critical_reports, 'bi-fire', 'status-critical')
+    ('Cần chú ý', cards.attention_reports, 'bi-exclamation-circle', 'status-attention')
   ] %}
   {% for label, value, icon, tone in card_items %}
     <div class="col-xl-3 col-md-4 col-sm-6">
@@ -97,6 +96,13 @@
       </div>
     </div>
   {% endfor %}
+  {% set critical_status = status_presentation('CRITICAL') %}
+  <div class="col-xl-3 col-md-4 col-sm-6">
+    <div class="stat-card">
+      <div class="stat-icon {{ critical_status.css_class }}" data-status-icon-key="{{ critical_status.icon_key }}"></div>
+      <div><div class="stat-label">{{ critical_status.label }}</div><div class="stat-value">{{ cards.critical_reports }}</div></div>
+    </div>
+  </div>
   {% if can_view_issues %}
     {% for label, value, icon, tone in [('Vấn đề đang mở', cards.open_issues, 'bi-exclamation-diamond', 'status-open'), ('Tổng vấn đề', cards.total_issues, 'bi-list-check', 'status-muted'), ('Vấn đề nghiêm trọng', cards.critical_issues, 'bi-exclamation-octagon', 'status-critical')] %}
       <div class="col-xl-3 col-md-4 col-sm-6"><div class="stat-card"><div class="stat-icon {{ tone }}"><i class="bi {{ icon }}"></i></div><div><div class="stat-label">{{ label }}</div><div class="stat-value">{{ value }}</div></div></div></div>
@@ -145,7 +151,7 @@
                     <div class="small text-muted text-truncate" style="max-width: 260px;">{{ report.highlight }}</div>
                   </td>
                   <td>{{ report.created_by.full_name }}</td>
-                  {% set report_status = status_presentation(report.overall_status) %}<td><span class="badge status-badge {{ report_status.css_class }}"><i class="{{ report_status.icon_class }} me-1" aria-hidden="true"></i>{{ report_status.label }}</span></td>
+                  {% set report_status = status_presentation(report.overall_status) %}<td><span class="badge status-badge {{ report_status.css_class }}" data-status-icon-key="{{ report_status.icon_key }}">{{ report_status.label }}</span></td>
                   <td>{{ (report.created_at or report.updated_at).strftime('%Y-%m-%d %H:%M') if (report.created_at or report.updated_at) else report.report_date }}</td>
                   <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('reports.detail', report_id=report.id) }}"><i class="bi bi-eye me-1"></i>Xem</a></td>
                 </tr>
@@ -178,7 +184,7 @@
                   <td><a href="{{ url_for('issues.edit', issue_id=issue.id) }}">{{ issue.title }}</a></td>
                   <td>{{ issue.project.code }}</td>
                   <td><span class="badge status-badge status-{{ issue.status|lower }}">{{ issue.status|status_label }}</span></td>
-                  <td><span class="badge status-badge severity-{{ issue.severity|lower }}">{{ issue.severity|status_label }}</span></td>
+                  <td><span class="badge status-badge severity-{{ issue.severity|lower }}">{{ issue.severity|issue_severity_label }}</span></td>
                 </tr>
               {% else %}
                 <tr><td colspan="4"><div class="empty-state"><i class="bi bi-check2-circle"></i>Không có vấn đề đang mở.</div></td></tr>
@@ -212,7 +218,7 @@
             <td><a href="{{ url_for('issues.edit', issue_id=issue.id) }}">{{ issue.title }}</a></td>
             <td>{{ issue.project.code }}</td>
             <td><span class="badge status-badge status-{{ issue.status|lower }}">{{ issue.status|status_label }}</span></td>
-            <td><span class="badge status-badge severity-{{ issue.severity|lower }}">{{ issue.severity|status_label }}</span></td>
+            <td><span class="badge status-badge severity-{{ issue.severity|lower }}">{{ issue.severity|issue_severity_label }}</span></td>
             <td>{{ issue.opened_date }}</td>
             <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('issues.edit', issue_id=issue.id) }}"><i class="bi bi-eye me-1"></i>Xem</a></td>
           </tr>

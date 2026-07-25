@@ -31,7 +31,7 @@ def read_csv_setting(name: str) -> tuple[str, ...]:
 
 
 class Config:
-    STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", "20260724-83")
+    STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", "20260725-8106")
     APP_ENV = os.getenv("APP_ENV", "local")
     DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true" and APP_ENV != "production"
     SECRET_KEY = read_secret("SECRET_KEY", "dev-secret-key")
