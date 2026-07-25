@@ -82,8 +82,8 @@ def presign(*, user, project_id, session_id, files, provider=None):
         if not isinstance(row, dict) or not str(row.get("client_section_id", "")).strip()[:80]:
             raise StorageValidationError("client_section_id là bắt buộc.")
         meta = validate_file_metadata(row.get("filename"), row.get("mime_type"), row.get("size"), row.get("checksum_sha256"), module_type="daily_reports")
-        if meta["file_ext"] not in {"jpg", "png", "webp"}:
-            raise StorageValidationError("Chỉ cho phép tệp jpg, jpeg, png hoặc webp.")
+        if meta["file_ext"] not in {"jpg", "png", "webp", "heic", "heif"}:
+            raise StorageValidationError("Chỉ cho phép tệp jpg, jpeg, png, webp, heic hoặc heif.")
         if meta["file_size"] > int(_cfg("DAILY_REPORT_MAX_FILE_BYTES")):
             raise StorageValidationError("Mỗi ảnh không được vượt quá 25 MB.")
         metas.append(meta)
@@ -132,8 +132,8 @@ def v2_presign(*, user, project_id, session_id, files, provider=None):
         if not isinstance(row, dict) or not str(row.get("client_section_id", "")).strip()[:80]:
             raise StorageValidationError("client_section_id là bắt buộc.")
         meta = validate_file_metadata(row.get("filename"), row.get("mime_type"), row.get("size"), row.get("checksum_sha256"), module_type="daily_reports")
-        if meta["file_ext"] not in {"jpg", "png", "webp"}:
-            raise StorageValidationError("Chỉ cho phép tệp jpg, jpeg, png hoặc webp.")
+        if meta["file_ext"] not in {"jpg", "png", "webp", "heic", "heif"}:
+            raise StorageValidationError("Chỉ cho phép tệp jpg, jpeg, png, webp, heic hoặc heif.")
         if meta["file_size"] > int(_cfg("DAILY_REPORT_MAX_FILE_BYTES")):
             raise StorageValidationError("Mỗi ảnh không được vượt quá 25 MB.")
         item = existing.get(str(row["client_file_id"]))
