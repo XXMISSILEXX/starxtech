@@ -65,6 +65,22 @@
     }
     progress();
   };
+  const addSection = () => {
+    const source = sectionRows()[0];
+    if (!source) return;
+    const row = source.cloneNode(true);
+    // Bootstrap's legacy custom-select wrapper belongs to the source select;
+    // V2 owns only the native controls it serializes.
+    row.querySelectorAll(".custom-select").forEach(wrapper => wrapper.remove());
+    row.querySelector("[data-client-section-id]").value = uuid();
+    row.querySelector("[name$='-category_id']").value = "";
+    row.querySelector("[name$='-status']").value = "INFO";
+    row.querySelector("textarea[name$='-content']").value = "";
+    const input = row.querySelector("[data-report-attachment-input]");
+    input.value = ""; input.id = `v2-images-${uuid()}`; input.closest("label.upload-dropzone").htmlFor = input.id;
+    row.querySelector("[data-attachment-preview]").replaceChildren();
+    form.querySelector("[data-sections]").append(row);
+  };
   const payload = list => ({client_request_id: form.dataset.clientRequestId || (form.dataset.clientRequestId = uuid()), report_date: form.report_date.value.split("/").reverse().join("-"), overall_status: form.overall_status.value, highlight: form.highlight.value.trim(), summary_note: form.summary_note.value.trim(), upload_session_id: list.length ? sessionId : null,
     sections: sectionRows().map((row, sort_order) => ({client_section_id: sectionId(row), report_category_id: Number(row.querySelector("[name$='-category_id']").value), status: row.querySelector("[name$='-status']").value, content: row.querySelector("textarea[name$='-content']").value.trim(), sort_order})),
     attachments: list.map((entry, sort_order) => ({upload_item_id: entry.itemId, client_section_id: entry.clientSectionId, sort_order}))});
@@ -96,7 +112,8 @@
   const retry = () => { active().filter(x => x.status === "failed").forEach(x => { x.status = "queued"; }); submitting = false; save(); };
   form.addEventListener("submit", event => { event.preventDefault(); save(); });
   form.addEventListener("change", event => { const input = event.target.closest("[data-report-attachment-input]"); if (input && !locked()) { addFiles(input.closest("[data-section-row]"), [...input.files]); input.value = ""; } });
-  form.addEventListener("click", event => { if (event.target.closest("[data-remove-section]")) { const row = event.target.closest("[data-section-row]"); active().filter(x => x.clientSectionId === sectionId(row)).forEach(x => { x.removed = true; }); } });
+  form.querySelector("[data-add-section]")?.addEventListener("click", addSection);
+  form.addEventListener("click", event => { if (event.target.closest("[data-remove-section]")) { const row = event.target.closest("[data-section-row]"); active().filter(x => x.clientSectionId === sectionId(row)).forEach(x => { x.removed = true; }); row.remove(); progress(); } });
   overlay?.querySelector("[data-save-retry]")?.addEventListener("click", retry);
   overlay?.querySelector("[data-save-cancel]")?.addEventListener("click", async () => { if (sessionId && state !== "finalizing") { try { await api(endpoint(`/upload-sessions/${sessionId}/cancel`), {}); } catch (_) {} } sessionId = null; active().forEach(x => { x.status = "queued"; x.itemId = null; }); setState("cancelled"); submitting = false; });
   normalizeSections(); progress();
