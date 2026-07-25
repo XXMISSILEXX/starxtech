@@ -701,7 +701,8 @@ a:hover {
 .upload-preview-item {
   position: relative;
   min-width: 0;
-  padding: 0.5rem;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
   background: #fff;
   border: 1px solid var(--sx-border);
   border-radius: var(--sx-radius-sm);
@@ -713,7 +714,9 @@ a:hover {
   aspect-ratio: 4 / 3;
   overflow: hidden;
   background: #f1f5f9;
-  border-radius: 8px;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
 }
 
 .upload-preview-media img {
@@ -744,6 +747,11 @@ a:hover {
   width: 32px;
   padding: 0;
 }
+
+.upload-preview-item .report-thumb { width: 100%; height: 100%; border: 0; border-radius: inherit; }
+.image-gallery { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.image-gallery .attachment-card { min-width: 0; aspect-ratio: 4 / 3; overflow: hidden; padding: 0; }
+.image-gallery .report-thumb { width: 100%; height: 100%; border: 0; border-radius: 0; }
 
 .icon-choice-grid {
   display: grid;

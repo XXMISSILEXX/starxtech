@@ -9,7 +9,9 @@ from flask_login import current_user
 from app.auth.permissions import can_create_report
 from app.extensions import limiter
 from app.models import Project
-from app.reports.services import DailyReportCreateV2Error, finalize_daily_report_create_v2
+from app.reports.services import (DailyReportCreateV2Error,
+                                  finalize_daily_report_create_v2,
+                                  validate_daily_report_create_v2_payload)
 from app.reports import direct_uploads
 from app.storage.exceptions import StorageAuthorizationError, StorageNotFoundError, StorageValidationError
 
@@ -57,6 +59,27 @@ def create_session(project_id):
         return _ok(**result)
     except (DailyReportCreateV2Error, StorageValidationError) as exc:
         return _fail("invalid_upload_session", str(exc), 422)
+
+
+@bp.post("/preflight")
+@limiter.limit("30 per minute")
+def preflight(project_id):
+    """Validate a create request before the browser is allowed to upload.
+
+    It is intentionally JSON-only and read-only: no selection session, object,
+    provider request, or media job is created here.
+    """
+    project, error = _project(project_id)
+    if error:
+        return error
+    payload = _payload()
+    validated = validate_daily_report_create_v2_payload(project=project, payload=payload, preflight=True)
+    from app.reports.services import _existing_report, _duplicate_report_error
+    duplicate = _existing_report(project.id, validated["report_date"])
+    if duplicate:
+        exc = _duplicate_report_error(validated["report_date"], duplicate.id)
+        return _fail("duplicate_report_date", str(exc), 409, field_errors=exc.errors)
+    return _ok(valid=True)
 
 
 @bp.get("/upload-sessions/<int:session_id>")

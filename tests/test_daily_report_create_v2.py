@@ -2,6 +2,7 @@ from uuid import uuid4
 
 from app.extensions import db
 from app.models import DailyReport
+from app.models import UploadSelectionSession, StorageObject
 from tests.helpers.daily_report_create_v2 import DailyReportV2UploadFile, submit_daily_report_create_v2
 from io import BytesIO
 from PIL import Image
@@ -42,6 +43,32 @@ def test_v2_duplicate_date_does_not_consume_an_upload_session(client):
     second = client.post("/api/projects/1/daily-reports/finalize", json=_payload())
     assert second.status_code == 409
     assert second.get_json()["error"]["code"] == "duplicate_report_date"
+
+
+def test_v2_preflight_is_read_only_and_accepts_public_category_id(client, app):
+    _login(client)
+    data = _payload()
+    data["sections"][0]["category_id"] = data["sections"][0].pop("report_category_id")
+    data["files"] = []
+    response = client.post("/api/projects/1/daily-reports/preflight", json=data)
+    assert response.status_code == 200, response.get_data(as_text=True)
+    with app.app_context():
+        assert UploadSelectionSession.query.count() == 0
+        assert StorageObject.query.count() == 0
+        assert DailyReport.query.count() == 0
+
+
+def test_v2_preflight_duplicate_date_returns_409_without_upload_side_effect(client, app):
+    _login(client)
+    assert client.post("/api/projects/1/daily-reports/finalize", json=_payload()).status_code == 200
+    data = _payload(); data["client_request_id"] = str(uuid4())
+    data["sections"][0]["category_id"] = data["sections"][0].pop("report_category_id")
+    data["files"] = []
+    response = client.post("/api/projects/1/daily-reports/preflight", json=data)
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "duplicate_report_date"
+    with app.app_context():
+        assert UploadSelectionSession.query.count() == 0
 
 
 def test_v2_requires_uuid_section_identity(client):

@@ -149,6 +149,7 @@ function initCustomSelects(root = document) {
     button.className = "custom-select-toggle";
     button.disabled = select.disabled;
     button.setAttribute("aria-haspopup", "listbox");
+    button.setAttribute("aria-expanded", "false");
 
     const menu = document.createElement("div");
     menu.className = "custom-select-menu";
@@ -159,6 +160,7 @@ function initCustomSelects(root = document) {
       item.type = "button";
       item.className = "custom-select-option";
       item.dataset.value = option.value;
+      item.setAttribute("role", "option");
       item.innerHTML = optionMarkup(option, select.dataset.customSelect);
       item.addEventListener("click", () => {
         select.value = option.value;
@@ -177,6 +179,16 @@ function initCustomSelects(root = document) {
       const wasOpen = wrapper.classList.contains("open");
       closeCustomSelects();
       wrapper.classList.toggle("open", !wasOpen);
+      button.setAttribute("aria-expanded", String(!wasOpen));
+    });
+    button.addEventListener("keydown", (event) => {
+      const choices = [...menu.querySelectorAll(".custom-select-option")];
+      const current = Math.max(0, choices.findIndex((item) => item.dataset.value === select.value));
+      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault();
+        const next = event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1 : (current + (event.key === "ArrowDown" ? 1 : -1) + choices.length) % choices.length;
+        choices[next]?.click(); button.focus();
+      } else if (event.key === "Escape") { closeCustomSelects(); button.focus(); }
     });
 
     wrapper.append(button, menu);
@@ -188,6 +200,7 @@ function initCustomSelects(root = document) {
 function closeCustomSelects() {
   document.querySelectorAll(".custom-select.open").forEach((select) => {
     select.classList.remove("open");
+    select.querySelector(".custom-select-toggle")?.setAttribute("aria-expanded", "false");
   });
 }
 
@@ -203,9 +216,9 @@ function updateCustomSelect(select, button, menu) {
 
 function optionMarkup(option, type) {
   const label = option.textContent || "Chọn";
-  const icon = option.dataset.icon || "";
+  const iconClass = option.dataset.iconClass || "";
   const tone = option.dataset.tone || "";
-  const iconHtml = type === "status" ? `<span class="status-dot status-dot-${escapeHtml(tone || "info")}">${escapeHtml(icon || "ℹ️")}</span>` : renderCategoryIcon(icon);
+  const iconHtml = type === "status" ? `<i class="${escapeHtml(iconClass || "bi bi-info-circle")} status-control-icon status-dot-${escapeHtml(tone || "info")}" aria-hidden="true"></i>` : renderCategoryIcon(option.dataset.icon || "");
   return `<span class="custom-select-label">${iconHtml}<span>${escapeHtml(label)}</span></span>`;
 }
 

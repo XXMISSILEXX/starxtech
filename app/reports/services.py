@@ -32,8 +32,9 @@ from app.models import (
 )
 from app.storage.keys import build_original_key
 from app.storage.providers import get_storage_provider
-from app.storage.exceptions import StorageNotFoundError
+from app.storage.exceptions import StorageNotFoundError, StorageValidationError
 from app.storage.quota import ensure_storage_capacity
+from app.storage.validation import validate_file_metadata
 from app.project_memberships import accessible_project_ids
 
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "heic", "heif"}
@@ -64,20 +65,16 @@ def _v2_uuid(value, field):
         raise DailyReportCreateV2Error("invalid_payload", f"{field} phải là UUID hợp lệ.", errors={field: "UUID không hợp lệ."}) from exc
 
 
-def finalize_daily_report_create_v2(*, project, user, payload):
-    """Create a report exclusively from the canonical V2 JSON payload.
+def validate_daily_report_create_v2_payload(*, project, payload, preflight=False):
+    """Validate the browser's canonical create payload without mutating state.
 
-    Upload rows are locked with the report transaction.  A duplicate date is
-    detected before consuming a ready session, so the user can correct it
-    without losing verified uploads.
+    Preflight intentionally validates file declarations rather than upload item
+    ids.  Finalize calls the same structural validator and then locks/validates
+    the server-side upload session before it creates anything.
     """
     if not isinstance(payload, dict):
         raise DailyReportCreateV2Error("invalid_payload", "Dữ liệu báo cáo không hợp lệ.")
     client_request_id = _v2_uuid(payload.get("client_request_id"), "client_request_id")
-    existing_request = db.session.scalar(select(DailyReport).where(DailyReport.project_id == project.id,
-        DailyReport.client_request_id == client_request_id))
-    if existing_request:
-        return existing_request
     try:
         report_date = datetime.strptime(str(payload.get("report_date", "")), "%Y-%m-%d").date()
     except ValueError as exc:
@@ -86,38 +83,89 @@ def finalize_daily_report_create_v2(*, project, user, payload):
     highlight = str(payload.get("highlight", "")).strip()
     summary_note = str(payload.get("summary_note", "")).strip() or None
     if status not in [item.value for item in DailyReportStatus] or not highlight:
-        raise DailyReportCreateV2Error("invalid_payload", "Trạng thái và điểm nổi bật là bắt buộc.")
+        raise DailyReportCreateV2Error("invalid_payload", "Trạng thái và điểm nổi bật là bắt buộc.", errors={"overall_status": "Trạng thái và điểm nổi bật là bắt buộc."})
     sections = payload.get("sections")
-    attachments = payload.get("attachments", [])
-    session_id = payload.get("upload_session_id")
+    attachments = payload.get("files", []) if preflight else payload.get("attachments", [])
     if not isinstance(sections, list) or not isinstance(attachments, list):
         raise DailyReportCreateV2Error("invalid_payload", "Danh sách phần báo cáo hoặc ảnh không hợp lệ.")
     parsed_sections, section_ids, category_ids = [], set(), set()
-    for index, row in enumerate(sections):
-        if not isinstance(row, dict): raise DailyReportCreateV2Error("invalid_section", "Phần báo cáo không hợp lệ.")
+    for row in sections:
+        if not isinstance(row, dict):
+            raise DailyReportCreateV2Error("invalid_section", "Phần báo cáo không hợp lệ.")
         section_id = _v2_uuid(row.get("client_section_id"), "client_section_id")
-        try: category_id, sort_order = int(row.get("report_category_id")), int(row.get("sort_order"))
-        except (TypeError, ValueError) as exc: raise DailyReportCreateV2Error("invalid_section", "Hạng mục hoặc thứ tự không hợp lệ.") from exc
+        # category_id is the public preflight contract; finalize preserves its
+        # existing report_category_id contract.
+        category_value = row.get("category_id") if preflight else row.get("report_category_id")
+        try:
+            category_id, sort_order = int(category_value), int(row.get("sort_order"))
+        except (TypeError, ValueError) as exc:
+            raise DailyReportCreateV2Error("invalid_section", "Hạng mục hoặc thứ tự không hợp lệ.") from exc
         content, section_status = str(row.get("content", "")).strip(), str(row.get("status", "")).strip()
         if section_id in section_ids or category_id in category_ids or sort_order < 0 or not content or section_status not in [item.value for item in SectionStatus]:
-            raise DailyReportCreateV2Error("invalid_section", "Phần báo cáo bị trùng hoặc thiếu dữ liệu.")
+            raise DailyReportCreateV2Error("invalid_section", "Phần báo cáo bị trùng hoặc thiếu dữ liệu.", errors={"sections": "Kiểm tra hạng mục, trạng thái và nội dung."})
         section_ids.add(section_id); category_ids.add(category_id)
         parsed_sections.append({"client_section_id": section_id, "report_category_id": category_id, "sort_order": sort_order, "content": content, "status": section_status})
     valid_categories = ReportCategory.query.filter(ReportCategory.project_id == project.id, ReportCategory.id.in_(category_ids or [-1]), ReportCategory.deleted_at.is_(None)).count()
-    if valid_categories != len(category_ids): raise DailyReportCreateV2Error("invalid_category", "Hạng mục không thuộc dự án này.")
-    if len(attachments) > int(current_app.config["DAILY_REPORT_MAX_FILES"]): raise DailyReportCreateV2Error("attachment_limit", "Báo cáo chỉ được có tối đa 30 ảnh.")
-    parsed_attachments, item_ids, per_section = [], set(), {}
+    if valid_categories != len(category_ids):
+        raise DailyReportCreateV2Error("invalid_category", "Hạng mục không thuộc dự án này.", errors={"sections": "Hạng mục không thuộc dự án này."})
+    if len(attachments) > int(current_app.config["DAILY_REPORT_MAX_FILES"]):
+        raise DailyReportCreateV2Error("attachment_limit", "Báo cáo chỉ được có tối đa 30 ảnh.", errors={"files": "Báo cáo chỉ được có tối đa 30 ảnh."})
+    parsed_attachments, item_ids, per_section, total_size = [], set(), {}, 0
     for row in attachments:
-        if not isinstance(row, dict) or isinstance(row.get("upload_item_id"), bool): raise DailyReportCreateV2Error("invalid_attachment", "Ảnh đính kèm không hợp lệ.")
-        try: item_id, sort_order = int(row.get("upload_item_id")), int(row.get("sort_order"))
-        except (TypeError, ValueError) as exc: raise DailyReportCreateV2Error("invalid_attachment", "Ảnh đính kèm không hợp lệ.") from exc
+        if not isinstance(row, dict):
+            raise DailyReportCreateV2Error("invalid_attachment", "Ảnh đính kèm không hợp lệ.")
         section_id = _v2_uuid(row.get("client_section_id"), "client_section_id")
-        if item_id in item_ids or section_id not in section_ids or sort_order < 0: raise DailyReportCreateV2Error("invalid_attachment", "Ảnh đính kèm không hợp lệ.")
-        item_ids.add(item_id); per_section[section_id] = per_section.get(section_id, 0) + 1
-        parsed_attachments.append({"upload_item_id": item_id, "client_section_id": section_id, "sort_order": sort_order})
+        try: sort_order = int(row.get("sort_order"))
+        except (TypeError, ValueError) as exc: raise DailyReportCreateV2Error("invalid_attachment", "Ảnh đính kèm không hợp lệ.") from exc
+        if section_id not in section_ids or sort_order < 0:
+            raise DailyReportCreateV2Error("invalid_attachment", "Ảnh đính kèm không hợp lệ.")
+        if preflight:
+            file_id = _v2_uuid(row.get("client_file_id"), "client_file_id")
+            if file_id in item_ids: raise DailyReportCreateV2Error("invalid_attachment", "Ảnh đính kèm bị trùng.")
+            try:
+                meta = validate_file_metadata(row.get("filename"), row.get("mime_type"), row.get("size"), row.get("checksum_sha256"), module_type="daily_reports")
+            except StorageValidationError as exc:
+                raise DailyReportCreateV2Error("invalid_attachment", "Thông tin ảnh không hợp lệ.", errors={"files": "Thông tin ảnh không hợp lệ."}) from exc
+            if meta["file_ext"] not in {"jpg", "png", "webp", "heic", "heif"} or meta["file_size"] > int(current_app.config["DAILY_REPORT_MAX_FILE_BYTES"]):
+                raise DailyReportCreateV2Error("attachment_limit", "Định dạng hoặc dung lượng ảnh không hợp lệ.", errors={"files": "Mỗi ảnh tối đa 25 MB; chỉ nhận định dạng ảnh được hỗ trợ."})
+            item_ids.add(file_id); total_size += meta["file_size"]
+            parsed_attachments.append({"client_file_id": file_id, "client_section_id": section_id, "sort_order": sort_order, **meta})
+        else:
+            if isinstance(row.get("upload_item_id"), bool): raise DailyReportCreateV2Error("invalid_attachment", "Ảnh đính kèm không hợp lệ.")
+            try: item_id = int(row.get("upload_item_id"))
+            except (TypeError, ValueError) as exc: raise DailyReportCreateV2Error("invalid_attachment", "Ảnh đính kèm không hợp lệ.") from exc
+            if item_id in item_ids: raise DailyReportCreateV2Error("invalid_attachment", "Ảnh đính kèm không hợp lệ.")
+            item_ids.add(item_id); parsed_attachments.append({"upload_item_id": item_id, "client_section_id": section_id, "sort_order": sort_order})
+        per_section[section_id] = per_section.get(section_id, 0) + 1
     if any(count > int(current_app.config["DAILY_REPORT_MAX_FILES_PER_SECTION"]) for count in per_section.values()):
-        raise DailyReportCreateV2Error("attachment_limit", "Mỗi phần chỉ được có tối đa 3 ảnh.")
-    if bool(session_id) != bool(attachments): raise DailyReportCreateV2Error("invalid_upload_session", "Phiên tải ảnh không khớp danh sách ảnh.")
+        raise DailyReportCreateV2Error("attachment_limit", "Mỗi phần chỉ được có tối đa 3 ảnh.", errors={"files": "Mỗi phần chỉ được có tối đa 3 ảnh."})
+    if preflight and total_size > int(current_app.config["DAILY_REPORT_MAX_TOTAL_BYTES"]):
+        raise DailyReportCreateV2Error("attachment_limit", "Tổng dung lượng ảnh vượt giới hạn.", errors={"files": "Tổng dung lượng ảnh vượt giới hạn."})
+    if not preflight and bool(payload.get("upload_session_id")) != bool(attachments):
+        raise DailyReportCreateV2Error("invalid_upload_session", "Phiên tải ảnh không khớp danh sách ảnh.")
+    return {"client_request_id": client_request_id, "report_date": report_date, "status": status, "highlight": highlight, "summary_note": summary_note, "sections": parsed_sections, "attachments": parsed_attachments}
+
+
+def finalize_daily_report_create_v2(*, project, user, payload):
+    """Create a report exclusively from the canonical V2 JSON payload.
+
+    Upload rows are locked with the report transaction.  A duplicate date is
+    detected before consuming a ready session, so the user can correct it
+    without losing verified uploads.
+    """
+    validated = validate_daily_report_create_v2_payload(project=project, payload=payload)
+    client_request_id = validated["client_request_id"]
+    existing_request = db.session.scalar(select(DailyReport).where(DailyReport.project_id == project.id,
+        DailyReport.client_request_id == client_request_id))
+    if existing_request:
+        return existing_request
+    report_date, status, highlight, summary_note = (validated[key] for key in ("report_date", "status", "highlight", "summary_note"))
+    attachments = validated["attachments"]
+    session_id = payload.get("upload_session_id")
+    parsed_sections = validated["sections"]
+    parsed_attachments = attachments
+    section_ids = {row["client_section_id"] for row in parsed_sections}
+    item_ids = {row["upload_item_id"] for row in parsed_attachments}
 
     from app.reports.direct_uploads import SCOPE, finalize_session
     from app.models import UploadBatch, UploadSelectionSession

@@ -82,7 +82,7 @@ STATUS_TONES = {
 }
 
 STATUS_PRESENTATION = {
-    value: {"value": value, "label": STATUS_LABELS[value], "icon": icon, "css_class": f"status-{STATUS_TONES.get(value, 'muted')}"}
+    value: {"value": value, "label": STATUS_LABELS[value], "icon_class": f"bi {icon}", "css_class": f"status-{STATUS_TONES.get(value, 'muted')}"}
     for value, icon in STATUS_ICONS.items() if value in STATUS_LABELS
 }
 
@@ -108,7 +108,7 @@ def status_tone(value):
 
 
 def status_presentation(value):
-    return STATUS_PRESENTATION.get(value, {"value": value, "label": status_label(value), "icon": "bi-info-circle", "css_class": "status-muted"})
+    return STATUS_PRESENTATION.get(value, {"value": value, "label": status_label(value), "icon_class": "bi bi-info-circle", "css_class": "status-muted"})
 
 
 def issue_severity_label(value):
