@@ -211,10 +211,10 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="{{ url_for('static', filename='js/app.js', v=static_asset_version) }}"></script>
     <script src="{{ url_for('static', filename='js/display-image-picker.js', v=static_asset_version) }}"></script>
-    {% if not create_v2|default(false) %}
+    {% if daily_report_legacy_edit_enabled|default(false) %}
       <script src="{{ url_for('static', filename='js/report-attachment-picker.js', v=static_asset_version) }}"></script>
       <script src="{{ url_for('static', filename='js/report-direct-upload.js', v=static_asset_version) }}"></script>
-    {% else %}
+    {% elif daily_report_create_v2_enabled|default(false) %}
       <script src="{{ url_for('static', filename='js/daily-report-create-v2.js', v=static_asset_version) }}"></script>
     {% endif %}
     <script src="{{ url_for('static', filename='js/media-preview-modal.js', v=static_asset_version) }}"></script>

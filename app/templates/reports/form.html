@@ -9,7 +9,7 @@
 {% set overall_status_value = form_data.overall_status if form_data else report.overall_status %}
 {% set highlight_value = form_data.highlight if form_data else (report.highlight or '') %}
 {% set summary_note_value = form_data.summary_note if form_data else (report.summary_note or '') %}
-<form method="post" {% if create_v2|default(false) %}data-daily-report-create-v2 data-api-base="{{ create_v2_api_base }}"{% else %}data-report-direct-upload{% endif %}
+<form method="post" {% if daily_report_create_v2_enabled|default(false) %}data-daily-report-create-v2 data-api-base="{{ create_v2_api_base }}"{% else %}data-report-direct-upload{% endif %}
       data-session-url="{{ url_for('projects.report_upload_session_create', project_id=project.id) }}"
       data-session-state-url="{{ url_for('projects.report_upload_session_state', project_id=project.id, session_id=0) }}"
       data-presign-url="{{ url_for('projects.report_upload_session_presign', project_id=project.id, session_id=0) }}"
@@ -69,7 +69,7 @@
     {% for section in active_sections %}
       {% set section_index = section.form_index if form_data else loop.index0 %}
       <div class="report-section p-3 mb-3" data-section-row>
-        <input type="hidden" name="sections-{{ section_index }}-client-section-id" value="{% if create_v2|default(false) %}{% else %}section-{{ section_index }}{% endif %}" data-client-section-id>
+        <input type="hidden" name="sections-{{ section_index }}-client-section-id" value="{% if daily_report_create_v2_enabled|default(false) %}{% else %}section-{{ section_index }}{% endif %}" data-client-section-id>
         <div class="row g-3">
           <div class="col-md-5">
             <label class="form-label">Hạng mục</label>
@@ -138,7 +138,7 @@
 
   {% if can_write %}
     <div class="d-flex gap-2">
-      {% if not create_v2|default(false) %}
+      {% if not daily_report_create_v2_enabled|default(false) %}
         <input type="hidden" name="upload_session_id" data-upload-session-id>
         <input type="hidden" name="attachment_manifest" data-attachment-manifest>
         <input type="hidden" name="direct_upload_expected" data-direct-upload-expected>

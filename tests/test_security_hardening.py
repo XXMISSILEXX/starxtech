@@ -10,7 +10,7 @@ from app import create_app
 from app.extensions import db
 from app.models import DownloadEvent, ReportAttachment, Role, StorageDerivative, User, UserRole
 from app.security import password_policy_errors
-from tests.helpers.report_direct_upload import ReportUploadFile, submit_report_with_direct_upload
+from tests.helpers.daily_report_create_v2 import DailyReportV2UploadFile, submit_daily_report_create_v2
 
 
 def test_password_policy_requires_length_and_character_groups():
@@ -57,13 +57,14 @@ def _login(client, username):
 
 def _report_attachment(client, app, project_id=1):
     stream = BytesIO(); Image.new("RGB", (16, 16), "navy").save(stream, "JPEG")
-    result = submit_report_with_direct_upload(client, app, project_id=project_id, form={
+    result = submit_daily_report_create_v2(client, app, project_id=project_id, report={
         "report_date": "2026-07-23", "overall_status": "UPDATED", "highlight": "Secure storage",
-        "sections-0-category_id": "1" if project_id == 1 else "3", "sections-0-status": "GOOD",
-        "sections-0-content": "Attachment",
-    }, files=[ReportUploadFile(stream.getvalue(), filename="safe.jpg")])
-    assert result["response"].status_code == 302
-    with app.app_context(): return db.session.scalar(select(ReportAttachment.id))
+    }, sections=[{"report_category_id": 1 if project_id == 1 else 3, "status": "GOOD", "content": "Attachment"}],
+       files=[DailyReportV2UploadFile(stream.getvalue(), filename="safe.jpg")])
+    assert result["finalize_response"].status_code == 200
+    assert result["finalize_json"]["report_id"]
+    assert len(result["attachment_ids"]) == 1
+    return result["attachment_ids"][0]
 
 
 def test_attachment_preview_is_authorized_signed_redirect_without_local_runtime(client, app):

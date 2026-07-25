@@ -245,7 +245,7 @@ def _render_create_form(project, report, form_data=None, form_errors=None):
         can_write=can_create_report(current_user, project.id),
         can_delete_attachment=False,
         direct_upload_limits={"enabled": current_app.config["DAILY_REPORT_DIRECT_UPLOAD_ENABLED"], "max_files": current_app.config["DAILY_REPORT_MAX_FILES"], "max_files_per_section": current_app.config["DAILY_REPORT_MAX_FILES_PER_SECTION"], "max_file_bytes": current_app.config["DAILY_REPORT_MAX_FILE_BYTES"], "max_total_bytes": current_app.config["DAILY_REPORT_MAX_TOTAL_BYTES"], "concurrency": current_app.config["DAILY_REPORT_UPLOAD_CONCURRENCY"]},
-        create_v2=True,
+        daily_report_create_v2_enabled=True,
         create_v2_api_base=f"/api/projects/{project.id}/daily-reports",
     )
 

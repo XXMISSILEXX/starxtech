@@ -6,7 +6,7 @@ from werkzeug.datastructures import MultiDict
 
 from app.extensions import db
 from app.models import AuditLog, DailyReport, MediaProcessingJob, ReportAttachment, StorageDerivative, StorageObject, UploadBatchItem, User
-from tests.helpers.report_direct_upload import ReportUploadFile, submit_report_with_direct_upload
+from tests.helpers.daily_report_create_v2 import DailyReportV2UploadFile, submit_daily_report_create_v2
 
 
 def login(client, username_or_email, password="password123"):
@@ -32,11 +32,15 @@ def image_bytes(image_format="JPEG"):
 
 
 def direct_report(client, app, *, project_id=1, category_id=None, form=None, files=None, submit_url=None):
-    return submit_report_with_direct_upload(
-        client, app, project_id=project_id,
-        form=form or report_form(category_id=category_id or (3 if project_id == 2 else 1)),
-        files=files or [ReportUploadFile(image_bytes())], submit_url=submit_url,
-    )
+    form = form or report_form(category_id=category_id or (3 if project_id == 2 else 1))
+    date = form["report_date"]
+    normalized_files = [DailyReportV2UploadFile(file.data, file.filename, file.mime_type, file.section_index,)
+                        if hasattr(file, "data") else file for file in (files or [DailyReportV2UploadFile(image_bytes(), "photo.jpg")])]
+    result = submit_daily_report_create_v2(client, app, project_id=project_id,
+        report={"report_date": date, "overall_status": form["overall_status"], "highlight": form["highlight"], "summary_note": form["summary_note"]},
+        sections=[{"report_category_id": int(form["sections-0-category_id"]), "status": form["sections-0-status"], "content": form["sections-0-content"]}], files=normalized_files)
+    result["response"] = result["finalize_response"]
+    return result
 
 
 def report_form(category_id=1, report_date="2026-07-08", content="Concrete poured."):
@@ -58,7 +62,7 @@ def test_reporter_creates_report_for_assigned_project(client, app):
     result = direct_report(client, app)
     response = result["response"]
 
-    assert response.status_code == 302
+    assert response.status_code == 200
     with app.app_context():
         report = DailyReport.query.filter_by(project_id=1).one()
         assert report.sections[0].content == "Concrete poured."
@@ -268,13 +272,12 @@ def test_duplicate_section_category_fails(client):
 
 def test_upload_more_than_three_images_for_one_section_fails(client, app):
     login(client, "reporter")
-    files = [ReportUploadFile(image_bytes(), filename=f"photo-{index}.jpg") for index in range(4)]
-    result = direct_report(client, app, files=files)
-    assert result["response"].status_code == 400
-    assert "tối đa 3 ảnh".encode() in result["response"].data
+    files = [DailyReportV2UploadFile(image_bytes(), filename=f"photo-{index}.jpg") for index in range(4)]
+    import pytest
+    with pytest.raises(ValueError, match="three"):
+        direct_report(client, app, files=files)
     with app.app_context():
         assert db.session.scalar(select(DailyReport)) is None
-        assert result["upload_session"].status == "ready"
 
 
 def test_non_image_upload_fails(client, app):
@@ -391,7 +394,7 @@ def test_report_update_and_delete_write_audit_rows(client, app):
 
 def test_report_delete_hard_deletes_attachments_storage_and_allows_same_date(client, app):
     login(client, "reporter")
-    assert direct_report(client, app)["response"].status_code == 302
+    assert direct_report(client, app)["response"].status_code == 200
     with app.app_context():
         attachment = ReportAttachment.query.one()
         report_id, attachment_id, object_id = attachment.section.daily_report_id, attachment.id, attachment.storage_object_id

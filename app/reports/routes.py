@@ -134,6 +134,7 @@ def _render_form(report, form_data=None, form_errors=None):
         can_write=can_edit_report(current_user, report),
         can_delete_attachment=current_user.can("report_attachments.delete") and can_edit_report(current_user, report),
         direct_upload_limits=_direct_upload_limits(),
+        daily_report_legacy_edit_enabled=True,
     )
 
 
