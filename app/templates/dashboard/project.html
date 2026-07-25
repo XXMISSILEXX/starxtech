@@ -21,7 +21,7 @@
     ('Tốt', cards.good_reports, 'bi-check-circle', 'status-good'),
     ('Đang xử lý', cards.processing_reports, 'bi-arrow-repeat', 'status-processing'),
     ('Cần chú ý', cards.attention_reports, 'bi-exclamation-circle', 'status-attention'),
-    ('Nghiêm trọng', cards.critical_reports, 'bi-fire', 'status-critical')
+    ('Khẩn cấp', cards.critical_reports, 'bi-x-octagon-fill', 'status-critical')
   ] %}
   {% for label, value, icon, tone in card_items %}
     <div class="col-xl-2 col-md-4 col-sm-6">
@@ -75,7 +75,7 @@
               {% for report in report_history %}
                 <tr>
                   <td><a href="{{ url_for('reports.detail', report_id=report.id) }}">{{ report.report_date }}</a></td>
-                  <td><span class="badge status-badge status-{{ report.overall_status|lower }}">{{ report.overall_status|status_label }}</span></td>
+                  {% set report_status = status_presentation(report.overall_status) %}<td><span class="badge status-badge {{ report_status.css_class }}"><i class="{{ report_status.icon_class }} me-1" aria-hidden="true"></i>{{ report_status.label }}</span></td>
                   <td class="text-truncate" style="max-width: 360px;">{{ report.highlight }}</td>
                   <td>{{ report.created_by.full_name }}</td>
                 </tr>

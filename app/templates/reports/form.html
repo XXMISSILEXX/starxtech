@@ -9,7 +9,7 @@
 {% set overall_status_value = form_data.overall_status if form_data else report.overall_status %}
 {% set highlight_value = form_data.highlight if form_data else (report.highlight or '') %}
 {% set summary_note_value = form_data.summary_note if form_data else (report.summary_note or '') %}
-<form method="post" {% if daily_report_create_v2_enabled|default(false) %}data-daily-report-create-v2 data-api-base="{{ create_v2_api_base }}" data-heic-decoder-url="{{ url_for('static', filename='vendor/heic/heic2any.min.js') }}" data-status-metadata='{{ status_metadata|tojson }}'{% else %}data-report-direct-upload{% endif %}
+<form method="post" {% if daily_report_create_v2_enabled|default(false) %}data-daily-report-create-v2 data-api-base="{{ create_v2_api_base }}" data-heic-decoder-url="{{ url_for('static', filename='vendor/heic-to/heic-preview.min.js', v=static_asset_version) }}" data-status-metadata='{{ status_metadata|tojson }}'{% else %}data-report-direct-upload{% endif %}
       data-session-url="{{ url_for('projects.report_upload_session_create', project_id=project.id) }}"
       data-session-state-url="{{ url_for('projects.report_upload_session_state', project_id=project.id, session_id=0) }}"
       data-presign-url="{{ url_for('projects.report_upload_session_presign', project_id=project.id, session_id=0) }}"
@@ -29,7 +29,7 @@
       <label class="form-label" for="overall_status">Trạng thái tổng thể</label>
       <select class="form-select {% if form_errors.get('overall_status') %}is-invalid{% endif %}" id="overall_status" name="overall_status" data-custom-select="status" {% if not can_write %}disabled{% endif %} required>
         {% for status in statuses %}
-          <option value="{{ status }}" data-icon-class="{{ status_presentation(status).icon_class }}" data-tone="{{ status|status_tone }}" {% if overall_status_value == status %}selected{% endif %}>{{ status|status_label }}</option>
+          {% set meta = status_presentation(status) %}<option value="{{ status }}" data-icon-class="{{ meta.icon_class }}" data-tone="{{ status|status_tone }}" data-color-class="{{ meta.color_class }}" data-background-class="{{ meta.background_class }}" {% if overall_status_value == status %}selected{% endif %}>{{ meta.label }}</option>
         {% endfor %}
       </select>
       {% if form_errors.get('overall_status') %}<div class="invalid-feedback">{{ form_errors.get('overall_status') }}</div>{% endif %}
@@ -66,7 +66,7 @@
       <div class="d-flex justify-content-between align-items-center mb-3"><h3 class="h6 mb-0" data-section-number></h3><button class="btn btn-outline-danger btn-sm" type="button" data-remove-section><i class="bi bi-trash me-1"></i>Xóa phần</button></div>
       <div class="row g-3">
         <div class="col-md-5"><label class="form-label">Hạng mục</label><select class="form-select" data-section-category required><option value="">Chọn hạng mục</option>{% for category in categories %}<option value="{{ category.id }}">{{ category_icon(category.icon) }} {{ category.name }}</option>{% endfor %}</select><div class="invalid-feedback" data-category-error></div></div>
-        <div class="col-md-4"><label class="form-label">Trạng thái</label><select class="form-select" data-section-status data-custom-select="status" required>{% for status in section_statuses %}<option value="{{ status }}" data-icon-class="{{ status_presentation(status).icon_class }}" data-tone="{{ status|status_tone }}" {% if status == 'INFO' %}selected{% endif %}>{{ status|status_label }}</option>{% endfor %}</select></div>
+        <div class="col-md-4"><label class="form-label">Trạng thái</label><select class="form-select" data-section-status data-custom-select="status" required>{% for status in section_statuses %}{% set meta = status_presentation(status) %}<option value="{{ status }}" data-icon-class="{{ meta.icon_class }}" data-tone="{{ status|status_tone }}" data-color-class="{{ meta.color_class }}" data-background-class="{{ meta.background_class }}" {% if status == 'INFO' %}selected{% endif %}>{{ meta.label }}</option>{% endfor %}</select></div>
         <div class="col-12"><label class="form-label">Nội dung</label><textarea class="form-control" rows="3" data-section-content required minlength="1"></textarea><div class="invalid-feedback" data-content-error></div></div>
         <div class="col-12" data-report-attachment-picker><label class="form-label">Ảnh đính kèm</label><label class="upload-dropzone" role="button" tabindex="0"><input class="visually-hidden" type="file" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/jpeg,image/png,image/webp,image/heic,image/heif" multiple data-report-attachment-input><span class="upload-title"><i class="bi bi-images me-1"></i>Chọn ảnh đính kèm</span><span class="upload-help">Kéo thả ảnh vào đây hoặc bấm để chọn</span></label><div class="upload-preview-grid mt-2" data-attachment-preview></div></div>
       </div>
@@ -76,7 +76,7 @@
   {% else %}
   <div data-sections
        data-categories='[{% for category in categories %}{"id":{{ category.id }},"name":{{ category.name|tojson }},"icon":{{ (category.icon or "📌")|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]'
-       data-statuses='[{% for status in section_statuses %}{"id":{{ status|tojson }},"name":{{ status|status_label|tojson }},"icon":{{ status|status_icon|tojson }},"tone":{{ status|status_tone|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]'
+       data-statuses='[{% for status in section_statuses %}{% set meta = status_presentation(status) %}{"id":{{ status|tojson }},"name":{{ meta.label|tojson }},"icon_class":{{ meta.icon_class|tojson }},"tone":{{ status|status_tone|tojson }},"color_class":{{ meta.color_class|tojson }},"background_class":{{ meta.background_class|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]'
        data-can-write="{{ '1' if can_write else '0' }}">
     {% set active_sections = form_data.sections if form_data else report.sections|selectattr('deleted_at', 'none')|sort(attribute='sort_order')|list %}
     {% for section in active_sections %}
@@ -105,7 +105,7 @@
             {% set status_error_key = 'sections-' ~ section_index ~ '-status' %}
             <select class="form-select {% if form_errors.get(status_error_key) %}is-invalid{% endif %}" name="sections-{{ section_index }}-status" data-custom-select="status" {% if not can_write %}disabled{% endif %} required>
               {% for status in section_statuses %}
-                <option value="{{ status }}" data-icon-class="{{ status_presentation(status).icon_class }}" data-tone="{{ status|status_tone }}" {% if section.status == status %}selected{% endif %}>{{ status|status_label }}</option>
+                {% set meta = status_presentation(status) %}<option value="{{ status }}" data-icon-class="{{ meta.icon_class }}" data-tone="{{ status|status_tone }}" data-color-class="{{ meta.color_class }}" data-background-class="{{ meta.background_class }}" {% if section.status == status %}selected{% endif %}>{{ meta.label }}</option>
               {% endfor %}
             </select>
             {% if form_errors.get(status_error_key) %}<div class="invalid-feedback">{{ form_errors.get(status_error_key) }}</div>{% endif %}

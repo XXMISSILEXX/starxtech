@@ -58,9 +58,10 @@ function initReportSections() {
         const value = typeof item === "object" ? String(item.id) : String(item);
         const label = typeof item === "object" ? item.name : item;
         const icon = typeof item === "object" ? item.icon || "" : "";
+        const iconClass = typeof item === "object" ? item.icon_class || "" : "";
         const tone = typeof item === "object" ? item.tone || "" : "";
         const selected = value === String(selectedValue) ? " selected" : "";
-        return `<option value="${escapeHtml(value)}" data-icon="${escapeHtml(icon)}" data-tone="${escapeHtml(tone)}"${selected}>${escapeHtml(label)}</option>`;
+        return `<option value="${escapeHtml(value)}" data-icon="${escapeHtml(icon)}" data-icon-class="${escapeHtml(iconClass)}" data-tone="${escapeHtml(tone)}"${selected}>${escapeHtml(label)}</option>`;
       })
       .join("");
 
@@ -152,8 +153,11 @@ function initCustomSelects(root = document) {
     button.setAttribute("aria-expanded", "false");
 
     const menu = document.createElement("div");
+    const menuId = `status-selector-${crypto.randomUUID?.() || Math.random().toString(36).slice(2)}`;
+    menu.id = menuId;
     menu.className = "custom-select-menu";
     menu.setAttribute("role", "listbox");
+    button.setAttribute("aria-controls", menuId);
 
     Array.from(select.options).forEach((option) => {
       const item = document.createElement("button");
@@ -161,6 +165,7 @@ function initCustomSelects(root = document) {
       item.className = "custom-select-option";
       item.dataset.value = option.value;
       item.setAttribute("role", "option");
+      item.setAttribute("aria-selected", String(option.selected));
       item.innerHTML = optionMarkup(option, select.dataset.customSelect);
       item.addEventListener("click", () => {
         select.value = option.value;
@@ -184,10 +189,14 @@ function initCustomSelects(root = document) {
     button.addEventListener("keydown", (event) => {
       const choices = [...menu.querySelectorAll(".custom-select-option")];
       const current = Math.max(0, choices.findIndex((item) => item.dataset.value === select.value));
-      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      if (["Enter", " "].includes(event.key)) {
+        event.preventDefault();
+        if (!wrapper.classList.contains("open")) button.click(); else choices[current]?.focus();
+      } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
         event.preventDefault();
         const next = event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1 : (current + (event.key === "ArrowDown" ? 1 : -1) + choices.length) % choices.length;
-        choices[next]?.click(); button.focus();
+        if (!wrapper.classList.contains("open")) button.click();
+        choices[next]?.focus();
       } else if (event.key === "Escape") { closeCustomSelects(); button.focus(); }
     });
 
@@ -211,6 +220,7 @@ function updateCustomSelect(select, button, menu) {
   button.innerHTML = optionMarkup(selected, select.dataset.customSelect);
   menu.querySelectorAll(".custom-select-option").forEach((item) => {
     item.classList.toggle("active", item.dataset.value === select.value);
+    item.setAttribute("aria-selected", String(item.dataset.value === select.value));
   });
 }
 

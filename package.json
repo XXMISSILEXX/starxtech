@@ -1,12 +1,14 @@
 {
   "private": true,
   "scripts": {
-    "test": "node --test tests_js/**/*.test.js"
+    "test": "node --test tests_js/**/*.test.js",
+    "build:heic-preview": "node scripts/build-heic-preview.mjs"
   },
   "devDependencies": {
+    "esbuild": "0.25.8",
     "jsdom": "^24.1.1"
   },
   "dependencies": {
-    "heic2any": "^0.0.4"
+    "heic-to": "1.2.0"
   }
 }

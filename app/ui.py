@@ -26,7 +26,7 @@ REPORT_STATUS_LABELS = {
     DailyReportStatus.GOOD.value: "Tốt",
     DailyReportStatus.PROCESSING.value: "Đang xử lý",
     DailyReportStatus.ATTENTION.value: "Cần chú ý",
-    DailyReportStatus.CRITICAL.value: "Nghiêm trọng",
+    DailyReportStatus.CRITICAL.value: "Khẩn cấp",
 }
 
 STATUS_LABELS = {
@@ -45,7 +45,7 @@ STATUS_ICONS = {
     DailyReportStatus.GOOD.value: "bi-check-circle-fill",
     DailyReportStatus.PROCESSING.value: "bi-arrow-repeat",
     DailyReportStatus.ATTENTION.value: "bi-exclamation-triangle-fill",
-    DailyReportStatus.CRITICAL.value: "bi-exclamation-octagon-fill",
+    DailyReportStatus.CRITICAL.value: "bi-x-octagon-fill",
     SectionStatus.INFO.value: "bi-info-circle-fill",
     IssueStatus.OPEN.value: "ℹ️",
     IssueStatus.PROCESSING.value: "⚠️",
@@ -81,9 +81,26 @@ STATUS_TONES = {
     SectionStatus.INFO.value: "info",
 }
 
+# A single presentation contract for every report/section status control and
+# badge.  ``css_class`` remains a compatibility alias for existing templates.
 STATUS_PRESENTATION = {
-    value: {"value": value, "label": STATUS_LABELS[value], "icon_class": f"bi {icon}", "css_class": f"status-{STATUS_TONES.get(value, 'muted')}"}
-    for value, icon in STATUS_ICONS.items() if value in STATUS_LABELS
+    value: {
+        "value": value,
+        "label": STATUS_LABELS[value],
+        "icon_class": f"bi {STATUS_ICONS[value]}",
+        "color_class": f"status-color-{STATUS_TONES[value]}",
+        "background_class": f"status-bg-{STATUS_TONES[value]}",
+        "css_class": f"status-{STATUS_TONES[value]}",
+        "order": order,
+    }
+    for order, value in enumerate((
+        DailyReportStatus.UPDATED.value,
+        SectionStatus.INFO.value,
+        DailyReportStatus.GOOD.value,
+        DailyReportStatus.PROCESSING.value,
+        DailyReportStatus.ATTENTION.value,
+        DailyReportStatus.CRITICAL.value,
+    ), start=1)
 }
 
 
@@ -108,7 +125,7 @@ def status_tone(value):
 
 
 def status_presentation(value):
-    return STATUS_PRESENTATION.get(value, {"value": value, "label": status_label(value), "icon_class": "bi bi-info-circle", "css_class": "status-muted"})
+    return STATUS_PRESENTATION.get(value, {"value": value, "label": status_label(value), "icon_class": "bi bi-info-circle", "color_class": "status-color-muted", "background_class": "status-bg-muted", "css_class": "status-muted", "order": 999})
 
 
 def issue_severity_label(value):

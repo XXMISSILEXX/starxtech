@@ -145,7 +145,7 @@
                     <div class="small text-muted text-truncate" style="max-width: 260px;">{{ report.highlight }}</div>
                   </td>
                   <td>{{ report.created_by.full_name }}</td>
-                  <td><span class="badge status-badge status-{{ report.overall_status|lower }}">{{ report.overall_status|status_label }}</span></td>
+                  {% set report_status = status_presentation(report.overall_status) %}<td><span class="badge status-badge {{ report_status.css_class }}"><i class="{{ report_status.icon_class }} me-1" aria-hidden="true"></i>{{ report_status.label }}</span></td>
                   <td>{{ (report.created_at or report.updated_at).strftime('%Y-%m-%d %H:%M') if (report.created_at or report.updated_at) else report.report_date }}</td>
                   <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('reports.detail', report_id=report.id) }}"><i class="bi bi-eye me-1"></i>Xem</a></td>
                 </tr>
