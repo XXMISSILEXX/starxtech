@@ -82,6 +82,8 @@ def presign(*, user, project_id, session_id, files, provider=None):
         if not isinstance(row, dict) or not str(row.get("client_section_id", "")).strip()[:80]:
             raise StorageValidationError("client_section_id là bắt buộc.")
         meta = validate_file_metadata(row.get("filename"), row.get("mime_type"), row.get("size"), row.get("checksum_sha256"), module_type="daily_reports")
+        if meta["file_ext"] not in {"jpg", "png", "webp"}:
+            raise StorageValidationError("Chỉ cho phép tệp jpg, jpeg, png hoặc webp.")
         if meta["file_size"] > int(_cfg("DAILY_REPORT_MAX_FILE_BYTES")):
             raise StorageValidationError("Mỗi ảnh không được vượt quá 25 MB.")
         metas.append(meta)
@@ -102,6 +104,66 @@ def presign(*, user, project_id, session_id, files, provider=None):
         batch.accepted_files += 1
         output.append({"client_file_id": item.client_file_id, "upload_batch_item_id": item.id, "storage_object_id": obj.id, **upload})
     session.presigned_files += len(files); session.presigned_size_bytes += total; session.status = "uploading"; db.session.commit()
+    return {"upload_session_id": session.id, "items": output}
+
+
+def v2_presign(*, user, project_id, session_id, files, provider=None):
+    """Idempotent V2 presign: one object/item for each browser file UUID.
+
+    Unlike the legacy form flow, retries reuse the original database records
+    and only mint a fresh PUT URL.  This prevents duplicate orphan objects.
+    """
+    session = _session(user, project_id, session_id)
+    files = list(files or [])
+    if not files or len(files) > int(_cfg("DAILY_REPORT_MAX_FILES")):
+        raise StorageValidationError("Danh sách ảnh không hợp lệ.")
+    ids = [str(row.get("client_file_id", "")) for row in files if isinstance(row, dict)]
+    if len(ids) != len(files) or not all(ids) or len(set(ids)) != len(ids):
+        raise StorageValidationError("client_file_id phải duy nhất.")
+    if session.status not in {"pending", "uploading", "ready"}:
+        raise StorageValidationError("Phiên tải ảnh không sẵn sàng.")
+    provider = provider or get_storage_provider()
+    existing = {item.client_file_id: item for item in UploadBatchItem.query.join(UploadBatch).filter(
+        UploadBatch.selection_session_id == session.id).all()}
+    if len(existing) + len([file_id for file_id in ids if file_id not in existing]) > session.declared_files:
+        raise StorageValidationError("Ảnh vượt quá giới hạn của phiên tải.")
+    output = []
+    for row in files:
+        if not isinstance(row, dict) or not str(row.get("client_section_id", "")).strip()[:80]:
+            raise StorageValidationError("client_section_id là bắt buộc.")
+        meta = validate_file_metadata(row.get("filename"), row.get("mime_type"), row.get("size"), row.get("checksum_sha256"), module_type="daily_reports")
+        if meta["file_ext"] not in {"jpg", "png", "webp"}:
+            raise StorageValidationError("Chỉ cho phép tệp jpg, jpeg, png hoặc webp.")
+        if meta["file_size"] > int(_cfg("DAILY_REPORT_MAX_FILE_BYTES")):
+            raise StorageValidationError("Mỗi ảnh không được vượt quá 25 MB.")
+        item = existing.get(str(row["client_file_id"]))
+        if item:
+            if (item.client_section_id != str(row["client_section_id"]).strip()[:80] or item.file_size != meta["file_size"]
+                    or item.original_filename != meta["filename"]):
+                raise StorageValidationError("Thông tin ảnh không khớp với lần tải trước.")
+            if item.status == "completed":
+                output.append({"client_file_id": item.client_file_id, "upload_batch_item_id": item.id, "status": "completed"})
+                continue
+            item.status = "accepted"; item.error_message = None
+            obj = item.storage_object
+        else:
+            if session.presigned_size_bytes + meta["file_size"] > session.declared_size_bytes:
+                raise StorageValidationError("Ảnh vượt quá giới hạn của phiên tải.")
+            ensure_storage_capacity(meta["file_size"])
+            batch = UploadBatch(module_type=SCOPE[0], target_type=SCOPE[1], target_id=int(project_id), created_by_id=user.id,
+                selection_session_id=session.id, total_files=1, accepted_files=1, status="uploading")
+            add_with_sqlite_id(batch); db.session.flush()
+            key = build_original_key("daily-reports", uuid4().hex, meta["filename"], _cfg("STORAGE_PREFIX"))
+            obj = StorageObject(bucket=_cfg("STORAGE_BUCKET"), object_key=key, storage_module="daily-reports", original_filename=meta["filename"], mime_type=meta["mime_type"], file_ext=meta["file_ext"], file_size=meta["file_size"], checksum_sha256=meta["checksum_sha256"], uploaded_by_id=user.id, upload_status="pending")
+            add_with_sqlite_id(obj); db.session.flush()
+            item = UploadBatchItem(upload_batch_id=batch.id, storage_object_id=obj.id, client_file_id=str(row["client_file_id"]), client_section_id=str(row["client_section_id"]).strip()[:80], original_filename=meta["filename"], mime_type=meta["mime_type"], file_size=meta["file_size"], status="accepted")
+            add_with_sqlite_id(item); db.session.flush()
+            session.presigned_files += 1; session.presigned_size_bytes += meta["file_size"]
+        upload = provider.create_presigned_put(obj.bucket, obj.object_key, obj.mime_type, obj.file_size,
+            int(_cfg("DAILY_REPORT_PRESIGN_TTL_SECONDS")), metadata={"sha256": obj.checksum_sha256} if obj.checksum_sha256 else None)
+        output.append({"client_file_id": item.client_file_id, "upload_batch_item_id": item.id, "storage_object_id": obj.id, "status": "presigned", **upload})
+    session.status = "uploading"
+    db.session.commit()
     return {"upload_session_id": session.id, "items": output}
 
 

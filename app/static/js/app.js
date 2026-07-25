@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-  initReportSections();
+  if (!document.querySelector("[data-daily-report-create-v2]")) initReportSections();
   initCustomSelects();
   initUploadPreviews();
   initIconChoices();

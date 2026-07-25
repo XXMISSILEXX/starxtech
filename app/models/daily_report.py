@@ -7,6 +7,7 @@ class DailyReport(TimestampMixin, db.Model):
     __tablename__ = "daily_reports"
     __table_args__ = (
         db.UniqueConstraint("project_id", "report_date", name="uq_daily_reports_project_date"),
+        db.UniqueConstraint("project_id", "client_request_id", name="uq_daily_reports_project_client_request"),
         db.CheckConstraint(
             "overall_status IN ('UPDATED', 'GOOD', 'PROCESSING', 'ATTENTION', 'CRITICAL')",
             name="ck_daily_reports_overall_status",
@@ -31,6 +32,10 @@ class DailyReport(TimestampMixin, db.Model):
     summary_note = db.Column(db.Text, nullable=True)
     created_by_user_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=False)
     updated_by_user_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=True)
+    # A browser-generated UUID makes finalization safe to retry after a lost
+    # response.  It is intentionally nullable for every report created before
+    # the V2 create flow.
+    client_request_id = db.Column(db.String(36), nullable=True)
 
     project = db.relationship("Project", back_populates="daily_reports")
     created_by = db.relationship(

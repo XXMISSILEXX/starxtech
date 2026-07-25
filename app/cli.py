@@ -172,6 +172,31 @@ def register_cli(app):
         click.echo("mode={mode} matched={matched} cleaned={cleaned}".format(
             mode="dry-run" if dry_run else "apply", **summary))
 
+    @app.cli.command("daily-report-upload-sessions")
+    @click.option("--list-active", "list_active", is_flag=True, help="List non-finalized Daily Report upload sessions.")
+    @click.option("--show", "session_id", type=int, help="Show one upload session and its items.")
+    @click.option("--cancel", "cancel_id", type=int, help="Safely cancel one non-finalized session.")
+    def daily_report_upload_sessions(list_active, session_id, cancel_id):
+        """Inspect or cancel V2 upload sessions; finalized sessions are immutable."""
+        from app.models import UploadBatch, UploadBatchItem, UploadSelectionSession
+        if sum(bool(value) for value in (list_active, session_id, cancel_id)) != 1:
+            raise click.UsageError("Chọn chính xác một trong --list-active, --show hoặc --cancel.")
+        if list_active:
+            rows = UploadSelectionSession.query.filter_by(module_type="daily_reports", target_type="project").filter(
+                UploadSelectionSession.status != "finalized").order_by(UploadSelectionSession.id.desc()).all()
+            for row in rows: click.echo(f"id={row.id} project={row.target_id} owner={row.created_by_id} status={row.status} expires_at={row.expires_at.isoformat()}")
+            click.echo(f"count={len(rows)}")
+            return
+        target = session_id or cancel_id
+        row = UploadSelectionSession.query.filter_by(id=target, module_type="daily_reports", target_type="project").first()
+        if not row: raise click.ClickException("Không tìm thấy phiên tải ảnh.")
+        if cancel_id:
+            if row.status == "finalized": raise click.ClickException("Không thể hủy phiên đã hoàn tất.")
+            row.status = "cancelled"; db.session.commit(); click.echo(f"cancelled id={row.id}"); return
+        items = UploadBatchItem.query.join(UploadBatch).filter(UploadBatch.selection_session_id == row.id).all()
+        click.echo(f"id={row.id} project={row.target_id} owner={row.created_by_id} status={row.status} items={len(items)}")
+        for item in items: click.echo(f"item={item.id} file={item.original_filename} status={item.status} finalized={bool(item.finalized_at)}")
+
     @app.cli.command("reconcile-media-jobs")
     @click.option("--module", "module_name", default=None,
                   type=click.Choice(["daily-reports", "document-library", "company-media"]),

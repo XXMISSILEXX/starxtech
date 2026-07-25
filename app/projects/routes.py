@@ -106,7 +106,7 @@ def reports(project_id):
     )
 
 
-@bp.route("/<int:project_id>/reports/create", methods=["GET", "POST"])
+@bp.get("/<int:project_id>/reports/create")
 def reports_create(project_id):
     project = _project_or_404(project_id)
     if not can_read_project(project.id):
@@ -115,33 +115,14 @@ def reports_create(project_id):
     report = DailyReport(project_id=project.id)
     report.sections = []
 
-    if request.method == "POST":
-        if not can_create_report(current_user, project.id):
-            abort(403)
-        legacy_response = _reject_legacy_multipart_files(project=project, report=report)
-        if legacy_response is not None:
-            return legacy_response
-        try:
-            report = create_report(project, request.form)
-        except ReportValidationError as exc:
-            db.session.rollback()
-            if _wants_json():
-                return jsonify(ok=False, error="validation_error", message=str(exc), field_errors=exc.errors), 422
-            flash(str(exc), "danger")
-            return _render_create_form(
-                project,
-                report,
-                form_data=build_report_form_data(request.form),
-                form_errors=exc.errors,
-            ), 400
-        redirect_url = url_for("reports.detail", report_id=report.id)
-        if _wants_json():
-            flash("Đã tạo báo cáo.", "success")
-            return jsonify(ok=True, report_id=report.id, redirect_url=redirect_url)
-        flash("Đã tạo báo cáo.", "success")
-        return redirect(redirect_url)
-
     return _render_create_form(project, report)
+
+
+@bp.post("/<int:project_id>/reports/create")
+def reports_create_legacy_post_rejected(project_id):
+    _project_or_404(project_id)
+    return jsonify(ok=False, error="legacy_create_post_not_supported",
+                   message="Trang tạo báo cáo chỉ hỗ trợ quy trình JSON mới."), 405
 
 
 @bp.post("/<int:project_id>/reports/upload-sessions")
@@ -264,6 +245,8 @@ def _render_create_form(project, report, form_data=None, form_errors=None):
         can_write=can_create_report(current_user, project.id),
         can_delete_attachment=False,
         direct_upload_limits={"enabled": current_app.config["DAILY_REPORT_DIRECT_UPLOAD_ENABLED"], "max_files": current_app.config["DAILY_REPORT_MAX_FILES"], "max_files_per_section": current_app.config["DAILY_REPORT_MAX_FILES_PER_SECTION"], "max_file_bytes": current_app.config["DAILY_REPORT_MAX_FILE_BYTES"], "max_total_bytes": current_app.config["DAILY_REPORT_MAX_TOTAL_BYTES"], "concurrency": current_app.config["DAILY_REPORT_UPLOAD_CONCURRENCY"]},
+        create_v2=True,
+        create_v2_api_base=f"/api/projects/{project.id}/daily-reports",
     )
 
 

@@ -15,3 +15,4 @@ secrets/*
 backups/
 docker_backup_*/
 *.log
+node_modules/

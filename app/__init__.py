@@ -103,6 +103,7 @@ def register_blueprints(app):
     from app.project_documents import bp as project_documents_bp
     from app.company_media import bp as company_media_bp
     from app.reports import bp as reports_bp
+    from app.reports.create_v2 import bp as daily_report_create_v2_bp
     from app.users import bp as users_bp
 
     app.register_blueprint(admin_bp)
@@ -119,6 +120,7 @@ def register_blueprints(app):
     app.register_blueprint(project_documents_bp)
     app.register_blueprint(company_media_bp)
     app.register_blueprint(reports_bp)
+    app.register_blueprint(daily_report_create_v2_bp)
     app.register_blueprint(issues_bp)
     app.register_blueprint(attachments_bp)
     app.register_blueprint(partners_bp)
