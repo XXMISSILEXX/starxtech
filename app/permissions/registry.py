@@ -23,6 +23,12 @@ _RESOURCES = {
     "company_media": "Thư viện ảnh/video công ty", "company_media_albums": "Album công ty", "company_media_files": "Media công ty",
     "storage": "Dung lượng & băng thông",
     "settings": "Cấu hình giao diện",
+    "project_operations": "Quản lý dự án & nhà thầu",
+    "customers": "Khách hàng",
+    "project_contractors": "Nhà thầu dự án",
+    "contractor_assignments": "Assignment nhà thầu",
+    "project_updates": "Báo cáo xuyên suốt",
+    "dashboards": "Dashboard",
 }
 
 def _permission(code, name, *, dangerous=False, sort_order=0):
@@ -67,6 +73,26 @@ PERMISSIONS = [
     _permission("storage.dashboard.manage", "Quản lý Dung lượng & băng thông", dangerous=True),
     _permission("settings.branding.view", "Xem nhận diện hệ thống"),
     _permission("settings.branding.manage", "Quản lý nhận diện hệ thống", dangerous=True),
+    _permission("reports.today.view", "Xem Hôm nay"),
+    _permission("project_operations.view", "Xem Quản lý dự án & nhà thầu"),
+    _permission("reports.configuration.view", "Xem cấu hình Báo cáo"),
+    _permission("projects.scope_all", "Xem tất cả dự án trong scope Reports"),
+    *[_permission(f"dashboards.{action}.view", f"Xem Dashboard {label}")
+      for action, label in (
+          ("system", "toàn hệ thống"),
+          ("customer", "khách hàng"),
+          ("project", "dự án"),
+          ("contractor", "nhà thầu"),
+      )],
+    *[_permission(f"customers.{action}", f"{label} Khách hàng", dangerous=action == "archive")
+      for action, label in (("view", "Xem"), ("create", "Tạo"), ("edit", "Sửa"), ("archive", "Lưu trữ"))],
+    *[_permission(f"project_contractors.{action}", f"{label} Nhà thầu dự án", dangerous=action == "archive")
+      for action, label in (("view", "Xem"), ("create", "Tạo"), ("edit", "Sửa"), ("archive", "Lưu trữ"))],
+    _permission("contractor_assignments.view", "Xem Assignment nhà thầu"),
+    _permission("contractor_assignments.manage", "Quản lý Assignment nhà thầu", dangerous=True),
+    _permission("contractor_assignments.end", "Kết thúc Assignment nhà thầu", dangerous=True),
+    *[_permission(f"project_updates.{action}", f"{label} Báo cáo xuyên suốt", dangerous=action == "delete")
+      for action, label in (("view", "Xem"), ("create", "Tạo"), ("edit", "Sửa"), ("edit_all", "Sửa tất cả"), ("delete", "Xóa"))],
 ]
 
 DEFAULTS = {
@@ -78,6 +104,9 @@ DEFAULTS = {
         "modules.project_documents.access", "project_document_folders.view", "project_document_files.view", "project_document_files.download",
         "modules.company_media.access", "company_media_albums.view", "company_media_files.view", "company_media_files.download",
         "storage.dashboard.view",
+        "reports.today.view", "project_operations.view", "projects.scope_all",
+        "dashboards.system.view", "dashboards.customer.view", "dashboards.project.view", "dashboards.contractor.view",
+        "customers.view", "project_contractors.view", "contractor_assignments.view", "project_updates.view",
     },
     UserRole.SUPER_ADMIN.value: set(),  # bypass; grants intentionally meaningless
 }

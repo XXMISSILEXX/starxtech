@@ -163,10 +163,18 @@ def role_permissions(role_id):
         "project_documents": "Hồ sơ dự án", "project_document_folders": "Hồ sơ dự án", "project_document_files": "Hồ sơ dự án",
         "company_media": "Thư viện ảnh/video công ty", "company_media_albums": "Thư viện ảnh/video công ty", "company_media_files": "Thư viện ảnh/video công ty",
         "partners": "Quản lý đối tác", "partner_companies": "Quản lý đối tác", "partner_fields": "Quản lý đối tác", "partner_field_collections": "Quản lý đối tác", "partner_relations": "Quản lý đối tác",
+        "project_operations": "Điều hướng Reports", "customers": "Khách hàng", "project_contractors": "Nhà thầu dự án",
+        "contractor_assignments": "Assignment", "project_updates": "Báo cáo xuyên suốt", "dashboards": "Dashboard",
+    }
+    phase9_group_labels = {
+        "reports.today.view": "Điều hướng Reports",
+        "reports.configuration.view": "Điều hướng Reports",
+        "projects.scope_all": "Dashboard",
     }
     grouped = {}
     for permission in Permission.query.order_by(Permission.module, Permission.sort_order, Permission.code).all():
-        grouped.setdefault(group_labels.get(permission.module, permission.group_name), []).append(permission)
+        group = phase9_group_labels.get(permission.code, group_labels.get(permission.module, permission.group_name))
+        grouped.setdefault(group, []).append(permission)
     return render_template("admin/roles/permissions.html", role=role, grouped=grouped,
                            selected_ids={item.permission_id for item in role.role_permissions}, can_manage=current_user.can("roles.manage"))
 

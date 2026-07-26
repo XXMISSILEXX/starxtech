@@ -47,6 +47,16 @@ VIEWER_ADMIN_CODE = UserRole.VIEWER_ADMIN.value
 READ_CAPABILITIES = {"can_view_project", "can_view_reports", "can_view_issues", "can_view_documents"}
 
 
+def has_global_project_scope(user):
+    """Whether a custom role may read every project in the Reports scope.
+
+    This is deliberately a scope permission, not a mutation capability.
+    Existing write helpers remain governed by active ProjectUser capability flags.
+    """
+    return bool(user and getattr(user, "is_authenticated", False) and user.is_active and
+                user.can("projects.scope_all"))
+
+
 def active_membership(user, project_id):
     if not user or not getattr(user, "is_authenticated", False) or not user.is_active:
         return None
@@ -73,6 +83,8 @@ def user_has_project_capability(user, project_id, capability):
         return True
     if is_viewer_admin(user):
         return capability in READ_CAPABILITIES
+    if capability in READ_CAPABILITIES and has_global_project_scope(user):
+        return True
     membership = active_membership(user, project_id)
     return bool(membership and getattr(membership, capability, False))
 
@@ -89,7 +101,7 @@ def has_any_project_capability(user, capabilities):
 
 
 def accessible_project_ids(user, capabilities=("can_view_project",)):
-    if is_project_admin(user) or is_viewer_admin(user):
+    if is_project_admin(user) or is_viewer_admin(user) or has_global_project_scope(user):
         return None
     if not user or not getattr(user, "is_authenticated", False) or not user.is_active:
         return []
