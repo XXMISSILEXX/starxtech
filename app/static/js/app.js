@@ -5,7 +5,6 @@ document.addEventListener("DOMContentLoaded", () => {
   initUploadPreviews();
   initIconChoices();
   initReportFormValidation();
-  initDashboardCharts();
   initConfirmActions();
   initPartnerDynamicFields();
   initDatePickers();
@@ -511,91 +510,6 @@ function initConfirmActions() {
         window.location.href = trigger.href;
       }
     }
-  });
-}
-
-function initDashboardCharts() {
-  const charts = document.querySelectorAll("[data-dashboard-chart]");
-  if (!charts.length || typeof Chart === "undefined") {
-    return;
-  }
-
-  charts.forEach((canvas) => {
-    fetch(canvas.dataset.url)
-      .then((response) => response.json())
-      .then((data) => {
-        const chartType = canvas.dataset.dashboardChart === "pie" ? "pie" : "bar";
-        new Chart(canvas, {
-          type: chartType,
-          data: {
-            labels: data.labels,
-            datasets: [
-              {
-                data: data.counts,
-                backgroundColor: [
-                  "#64748b",
-                  "#22c55e",
-                  "#38bdf8",
-                  "#f59e0b",
-                  "#ef4444",
-                ],
-              },
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                display: chartType === "pie",
-                position: "bottom",
-                labels: {
-                  boxWidth: 12,
-                  boxHeight: 12,
-                  color: "#475569",
-                  font: {
-                    family: "Inter, system-ui, sans-serif",
-                    weight: "600",
-                  },
-                },
-              },
-              tooltip: {
-                backgroundColor: "#0f172a",
-                padding: 12,
-                titleFont: {
-                  family: "Inter, system-ui, sans-serif",
-                },
-                bodyFont: {
-                  family: "Inter, system-ui, sans-serif",
-                },
-              },
-            },
-            scales:
-              chartType === "bar"
-                ? {
-                    y: {
-                      beginAtZero: true,
-                      grid: {
-                        color: "#e2e8f0",
-                      },
-                      ticks: {
-                        color: "#64748b",
-                        precision: 0,
-                      },
-                    },
-                    x: {
-                      grid: {
-                        display: false,
-                      },
-                      ticks: {
-                        color: "#64748b",
-                      },
-                    },
-                  }
-                : {},
-          },
-        });
-      });
   });
 }
 

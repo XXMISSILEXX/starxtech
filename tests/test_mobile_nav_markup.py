@@ -11,7 +11,7 @@ def login(client, username_or_email, password="password123"):
 def test_mobile_account_actions_are_in_offcanvas_and_topbar_is_mobile_hidden(client):
     login(client, "super")
 
-    response = client.get("/reports/dashboard")
+    response = client.get("/reports/dashboard/system")
 
     assert response.status_code == 200
     assert b'class="topbar-actions mobile-hide"' in response.data

@@ -61,7 +61,6 @@
     </div>
   {% endfor %}
   {% if can_view_issues %}
-    <div class="col-xl-2 col-md-4 col-sm-6"><div class="stat-card"><div class="stat-icon status-open"><i class="bi bi-exclamation-diamond"></i></div><div><div class="stat-label">Vấn đề đang mở</div><div class="stat-value">{{ cards.open_issues }}</div></div></div></div>
   {% endif %}
 </div>
 
@@ -118,7 +117,7 @@
 {% if can_view_issues %}<div class="card">
   <div class="card-header py-3">
     <div class="d-flex justify-content-between align-items-center mb-2">
-      <h2 class="h6 mb-0">Vấn đề tồn đọng đang mở</h2>
+      <h2 class="h6 mb-0">Vấn đề tồn đọng</h2>
       <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('projects.issues', project_id=project.id) }}"><i class="bi bi-arrow-right me-1"></i>Xem vấn đề</a>
     </div>
   </div>

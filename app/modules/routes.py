@@ -17,7 +17,9 @@ def select_reports():
         abort(403)
     session["active_module"] = "reports"
     flash("Đã chuyển sang phân hệ Báo cáo hàng ngày.", "success")
-    return redirect(url_for("dashboard.index"))
+    if current_user.can("dashboards.system.view") and current_user.can("projects.scope_all"):
+        return redirect(url_for("dashboard.system_dashboard"))
+    return redirect(url_for("projects.index"))
 
 
 @bp.get("/select/partners")

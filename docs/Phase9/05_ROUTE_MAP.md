@@ -2,7 +2,7 @@
 
 ## Existing relevant routes
 
-- Dashboard: `GET /reports/dashboard`, APIs `/api/reports/dashboard/status-chart` and `/report-count-chart`.
+- Dashboard: `GET /reports/dashboard/system`, `/customers/<id>`, `/contractors/<id>` and their scoped overview APIs below `/api/reports/dashboard`.
 - Project: `GET /projects`, `/projects/<id>`, `/projects/<id>/dashboard`, `/projects/<id>/reports/create`.
 - Daily Report V2: `POST /api/projects/<id>/daily-reports/{preflight,upload-sessions,presign,complete,finalize}`.
 - Reports: `/reports...`; attachments `/attachments...`; issues `/reports/issues...` and `/projects/<id>/issues...`.
@@ -12,7 +12,7 @@
 
 `/reports/today`, `/project-operations`, Customer/project/role/update/contractor subroutes below `/project-operations`, dashboard scope routes below `/reports/dashboard`, and `/reports/config`.
 
-All old routes remain operational or receive a tested redirect. Reports navigation target is: Hôm nay; Quản lý dự án & nhà thầu; Dashboard quản trị; Cấu hình. Visibility is permission-based and direct URLs remain backend-enforced.
+The retired report-centric Dashboard page and its two chart APIs intentionally return 404. Reports navigation target is: Hôm nay; Quản lý dự án & nhà thầu; Dashboard quản trị; Cấu hình. Visibility is permission-based and direct URLs remain backend-enforced.
 # STEP 9.3 — Contractor routes
 
 | Route | Purpose | Permission and scope |

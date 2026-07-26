@@ -76,7 +76,7 @@ GET  /project-operations/projects/<id>/updates
 POST /project-operations/projects/<id>/updates
 GET  /project-operations/contractors/<id>
 
-GET  /reports/dashboard
+GET  /reports/dashboard/system
 GET  /reports/dashboard/customers/<id>
 GET  /projects/<id>/dashboard
 GET  /reports/dashboard/contractors/<id>

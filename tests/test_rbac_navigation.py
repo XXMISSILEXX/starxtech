@@ -8,7 +8,7 @@ def login(client, username, password="password123"):
 
 def test_roles_navigation_visibility_and_access(client, app):
     login(client, "super")
-    response = client.get("/reports/dashboard")
+    response = client.get("/reports/dashboard/system")
     assert response.status_code == 200
     assert b"Vai tr\xc3\xb2 & ph\xc3\xa2n quy\xe1\xbb\x81n" not in response.data
     assert b'href="/admin/roles"' not in response.data
@@ -48,6 +48,6 @@ def test_roles_navigation_visibility_and_access(client, app):
     client.post("/logout")
     login(client, "admin")
     assert "Quản trị hệ thống".encode() in client.get("/modules/").data
-    response = client.get("/reports/dashboard")
+    response = client.get("/reports/dashboard/system")
     assert b"Vai tr\xc3\xb2 & ph\xc3\xa2n quy\xe1\xbb\x81n" not in response.data
     assert client.get("/admin/roles").status_code == 200
