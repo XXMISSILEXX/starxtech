@@ -1,0 +1,179 @@
+Endpoint                                      Methods    Rule                                                                                                      
+--------------------------------------------  ---------  ----------------------------------------------------------------------------------------------------------
+account.avatar                                GET        /account/avatar                                                                                           
+account.delete_avatar                         POST       /account/avatar/delete                                                                                    
+account.profile                               GET, POST  /account/                                                                                                 
+admin.branding                                GET, POST  /admin/branding                                                                                           
+admin.categories_activate                     POST       /admin/projects/<int:project_id>/categories/<int:category_id>/activate                                    
+admin.categories_deactivate                   POST       /admin/projects/<int:project_id>/categories/<int:category_id>/deactivate                                  
+admin.categories_delete                       POST       /admin/projects/<int:project_id>/categories/<int:category_id>/delete                                      
+admin.categories_edit                         GET, POST  /admin/projects/<int:project_id>/categories/<int:category_id>/edit                                        
+admin.categories_index                        GET, POST  /admin/projects/<int:project_id>/categories                                                               
+admin.index                                   GET        /admin/                                                                                                   
+admin.memberships_create                      POST       /admin/projects/<int:project_id>/memberships                                                              
+admin.memberships_deactivate                  POST       /admin/projects/<int:project_id>/memberships/<int:membership_id>/deactivate                               
+admin.memberships_update                      POST       /admin/projects/<int:project_id>/memberships/<int:membership_id>                                          
+admin.projects_archive                        POST       /admin/projects/<int:project_id>/archive                                                                  
+admin.projects_edit                           GET, POST  /admin/projects/<int:project_id>/edit                                                                     
+admin.projects_index                          GET        /admin/projects                                                                                           
+admin.projects_new                            GET, POST  /admin/projects/new                                                                                       
+admin.projects_reporters                      GET        /admin/projects/<int:project_id>/memberships                                                              
+admin.projects_reporters                      GET        /admin/projects/<int:project_id>/reporters                                                                
+admin.role_permissions                        GET, POST  /admin/roles/<int:role_id>/permissions                                                                    
+admin.role_permissions_reset_defaults         POST       /admin/roles/<int:role_id>/permissions/reset-defaults                                                     
+admin.roles_edit                              GET, POST  /admin/roles/<int:role_id>/edit                                                                           
+admin.roles_index                             GET        /admin/roles                                                                                              
+admin.roles_new                               GET, POST  /admin/roles/new                                                                                          
+admin.users_activate                          POST       /admin/users/<int:user_id>/activate                                                                       
+admin.users_deactivate                        POST       /admin/users/<int:user_id>/deactivate                                                                     
+admin.users_edit                              GET, POST  /admin/users/<int:user_id>/edit                                                                           
+admin.users_index                             GET        /admin/users                                                                                              
+admin.users_new                               GET, POST  /admin/users/new                                                                                          
+admin.users_reset_password                    POST       /admin/users/<int:user_id>/reset-password                                                                 
+admin_storage.export_csv                      GET        /admin/storage/export.csv                                                                                 
+admin_storage.index                           GET        /admin/storage/                                                                                           
+admin_storage.index                           GET        /admin/storage                                                                                            
+attachments.delete                            POST       /attachments/<int:attachment_id>/delete                                                                   
+attachments.download                          GET        /attachments/<int:attachment_id>/download                                                                 
+attachments.status                            GET        /attachments/<int:attachment_id>/status                                                                   
+attachments.status_batch                      POST       /attachments/status-batch                                                                                 
+attachments.thumbnail                         GET        /attachments/<int:attachment_id>/thumbnail                                                                
+attachments.view                              GET        /attachments/<int:attachment_id>                                                                          
+auth.change_password                          GET, POST  /change-password                                                                                          
+auth.login                                    GET, POST  /login                                                                                                    
+auth.logout                                   POST       /logout                                                                                                   
+company_media.album                           GET        /company-media/albums/<int:album_id>                                                                      
+company_media.archive                         POST       /company-media/albums/<int:album_id>/archive                                                              
+company_media.bulk_archive                    POST       /company-media/albums/<int:album_id>/files/bulk-archive                                                   
+company_media.bulk_download                   POST       /company-media/albums/<int:album_id>/files/bulk-signed-download                                           
+company_media.bulk_download_status            GET        /company-media/bulk-download-jobs/<int:job_id>                                                            
+company_media.bulk_download_validate          POST       /company-media/albums/<int:album_id>/files/bulk-download-validate                                         
+company_media.bulk_restore                    POST       /company-media/albums/<int:album_id>/files/bulk-restore                                                   
+company_media.clear_cover                     POST       /company-media/albums/<int:album_id>/cover/clear                                                          
+company_media.complete                        POST       /company-media/albums/<int:album_id>/files/complete-upload                                                
+company_media.cover                           POST       /company-media/albums/<int:album_id>/cover                                                                
+company_media.create                          POST       /company-media/albums/create                                                                              
+company_media.download                        POST       /company-media/files/<int:file_id>/signed-download                                                        
+company_media.file_archive                    POST       /company-media/files/<int:file_id>/archive                                                                
+company_media.file_rename                     POST       /company-media/files/<int:file_id>/rename                                                                 
+company_media.file_restore                    POST       /company-media/files/<int:file_id>/restore                                                                
+company_media.index                           GET        /company-media                                                                                            
+company_media.index                           GET        /company-media/                                                                                           
+company_media.permissions                     GET, POST  /company-media/albums/<int:album_id>/permissions                                                          
+company_media.presign                         POST       /company-media/albums/<int:album_id>/files/presign-batch                                                  
+company_media.preview                         POST       /company-media/files/<int:file_id>/signed-preview                                                         
+company_media.rename                          POST       /company-media/albums/<int:album_id>/rename                                                               
+company_media.restore                         POST       /company-media/albums/<int:album_id>/restore                                                              
+company_media.selection                       POST       /company-media/albums/<int:album_id>/files/upload-selection-sessions                                      
+company_media.selection_finalize              POST       /company-media/albums/<int:album_id>/files/upload-selection-sessions/<int:session_id>/finalize            
+daily_report_create_v2.cancel                 POST       /api/projects/<int:project_id>/daily-reports/upload-sessions/<int:session_id>/cancel                      
+daily_report_create_v2.complete               POST       /api/projects/<int:project_id>/daily-reports/upload-sessions/<int:session_id>/items/<int:item_id>/complete
+daily_report_create_v2.create_session         POST       /api/projects/<int:project_id>/daily-reports/upload-sessions                                              
+daily_report_create_v2.finalize               POST       /api/projects/<int:project_id>/daily-reports/finalize                                                     
+daily_report_create_v2.preflight              POST       /api/projects/<int:project_id>/daily-reports/preflight                                                    
+daily_report_create_v2.presign                POST       /api/projects/<int:project_id>/daily-reports/upload-sessions/<int:session_id>/presign                     
+daily_report_create_v2.session_state          GET        /api/projects/<int:project_id>/daily-reports/upload-sessions/<int:session_id>                             
+dashboard.index                               GET        /reports/dashboard                                                                                        
+dashboard_api.report_count_chart              GET        /api/reports/dashboard/report-count-chart                                                                 
+dashboard_api.status_chart                    GET        /api/reports/dashboard/status-chart                                                                       
+health                                        GET        /health                                                                                                   
+healthz                                       GET        /healthz                                                                                                  
+index                                         GET        /                                                                                                         
+issues.close                                  POST       /reports/issues/<int:issue_id>/close                                                                      
+issues.delete                                 POST       /reports/issues/<int:issue_id>/delete                                                                     
+issues.edit                                   GET, POST  /reports/issues/<int:issue_id>/edit                                                                       
+issues.index                                  GET        /reports/issues                                                                                           
+issues.new                                    GET, POST  /reports/issues/new                                                                                       
+issues.reopen                                 POST       /reports/issues/<int:issue_id>/reopen                                                                     
+media_display_preview                         POST       /media-display-preview                                                                                    
+modules.index                                 GET        /modules/                                                                                                 
+modules.select_admin                          GET        /modules/select/admin                                                                                     
+modules.select_partners                       GET        /modules/select/partners                                                                                  
+modules.select_reports                        GET        /modules/select/reports                                                                                   
+partner_companies.archive                     POST       /partner-companies/<int:company_id>/archive                                                               
+partner_companies.deactivate                  POST       /partner-companies/<int:company_id>/deactivate                                                            
+partner_companies.departments                 GET        /partner-companies/<int:company_id>/departments                                                           
+partner_companies.departments_delete          POST       /partner-companies/<int:company_id>/departments/<int:department_id>/delete                                
+partner_companies.departments_edit            GET, POST  /partner-companies/<int:company_id>/departments/<int:department_id>/edit                                  
+partner_companies.departments_new             GET, POST  /partner-companies/<int:company_id>/departments/new                                                       
+partner_companies.detail                      GET        /partner-companies/<int:company_id>                                                                       
+partner_companies.edit                        GET, POST  /partner-companies/<int:company_id>/edit                                                                  
+partner_companies.index                       GET        /partner-companies/                                                                                       
+partner_companies.new                         GET, POST  /partner-companies/new                                                                                    
+partner_companies.photo                       POST       /partner-companies/<int:company_id>/photo                                                                 
+partner_companies.photo_delete                POST       /partner-companies/<int:company_id>/photo/delete                                                          
+partner_companies.photo_preview               GET        /partner-companies/<int:company_id>/photo/preview                                                         
+partner_companies.photo_signed_preview        POST       /partner-companies/<int:company_id>/photo/signed-preview                                                  
+partner_companies.restore                     POST       /partner-companies/<int:company_id>/restore                                                               
+partner_field_collections.deactivate          POST       /partner-field-collections/<int:collection_id>/deactivate                                                 
+partner_field_collections.edit                GET, POST  /partner-field-collections/<int:collection_id>/edit                                                       
+partner_field_collections.index               GET        /partner-field-collections/                                                                               
+partner_field_collections.new                 GET, POST  /partner-field-collections/new                                                                            
+partner_fields.deactivate                     POST       /partner-fields/<int:field_id>/deactivate                                                                 
+partner_fields.edit                           GET, POST  /partner-fields/<int:field_id>/edit                                                                       
+partner_fields.index                          GET        /partner-fields/                                                                                          
+partner_fields.new                            GET, POST  /partner-fields/new                                                                                       
+partner_fields.reorder                        POST       /partner-fields/reorder                                                                                   
+partner_relations.company                     GET        /partner-relations/company/<int:company_id>                                                               
+partner_relations.delete_relationship         POST       /partner-relations/company/<int:company_id>/relationships/<int:relationship_id>/delete                    
+partner_relations.department_summary          GET        /partner-relations/departments/<int:department_id>/summary                                                
+partner_relations.edit_company                GET, POST  /partner-relations/company/<int:company_id>/edit                                                          
+partner_relations.edit_relationship           GET, POST  /partner-relations/company/<int:company_id>/relationships/<int:relationship_id>/edit                      
+partner_relations.index                       GET        /partner-relations/                                                                                       
+partner_relations.manage_company              GET, POST  /partner-relations/company/<int:company_id>/manage                                                        
+partner_relations.tree                        GET        /partner-relations/company/<int:company_id>/tree                                                          
+partners.archive                              POST       /partners/<int:partner_id>/archive                                                                        
+partners.dashboard                            GET        /partners/dashboard                                                                                       
+partners.deactivate                           POST       /partners/<int:partner_id>/deactivate                                                                     
+partners.detail                               GET        /partners/<int:partner_id>                                                                                
+partners.edit                                 GET, POST  /partners/<int:partner_id>/edit                                                                           
+partners.index                                GET        /partners/                                                                                                
+partners.new                                  GET, POST  /partners/new                                                                                             
+partners.photo                                POST       /partners/<int:partner_id>/photo                                                                          
+partners.photo_delete                         POST       /partners/<int:partner_id>/photo/delete                                                                   
+partners.photo_preview                        GET        /partners/<int:partner_id>/photo/preview                                                                  
+partners.photo_signed_preview                 POST       /partners/<int:partner_id>/photo/signed-preview                                                           
+partners.restore                              POST       /partners/<int:partner_id>/restore                                                                        
+project_documents.archive                     POST       /project-documents/folders/<int:folder_id>/archive                                                        
+project_documents.bulk_archive                POST       /project-documents/folders/<int:folder_id>/files/bulk-archive                                             
+project_documents.bulk_download_status        GET        /project-documents/bulk-download-jobs/<int:job_id>                                                        
+project_documents.bulk_download_validate      POST       /project-documents/folders/<int:folder_id>/files/bulk-download-validate                                   
+project_documents.bulk_restore                POST       /project-documents/folders/<int:folder_id>/files/bulk-restore                                             
+project_documents.bulk_signed_download        POST       /project-documents/folders/<int:folder_id>/files/bulk-signed-download                                     
+project_documents.complete_upload             POST       /project-documents/folders/<int:folder_id>/files/complete-upload                                          
+project_documents.create_selection_session    POST       /project-documents/folders/<int:folder_id>/files/upload-selection-sessions                                
+project_documents.custom_root_create          POST       /project-documents/custom-roots                                                                           
+project_documents.file_archive                POST       /project-documents/files/<int:file_id>/archive                                                            
+project_documents.file_rename                 POST       /project-documents/files/<int:file_id>/rename                                                             
+project_documents.file_restore                POST       /project-documents/files/<int:file_id>/restore                                                            
+project_documents.finalize_selection_session  POST       /project-documents/folders/<int:folder_id>/files/upload-selection-sessions/<int:session_id>/finalize      
+project_documents.folder                      GET        /project-documents/folders/<int:folder_id>                                                                
+project_documents.index                       GET        /project-documents/                                                                                       
+project_documents.index                       GET        /project-documents                                                                                        
+project_documents.move                        POST       /project-documents/folders/<int:folder_id>/move                                                           
+project_documents.new_folder                  POST       /project-documents/folders/new                                                                            
+project_documents.permissions                 GET, POST  /project-documents/folders/<int:folder_id>/permissions                                                    
+project_documents.presign_batch               POST       /project-documents/folders/<int:folder_id>/files/presign-batch                                            
+project_documents.project_root                GET        /project-documents/projects/<int:project_id>                                                              
+project_documents.rename                      POST       /project-documents/folders/<int:folder_id>/rename                                                         
+project_documents.restore                     POST       /project-documents/folders/<int:folder_id>/restore                                                        
+project_documents.signed_download             POST       /project-documents/files/<int:file_id>/signed-download                                                    
+project_documents.signed_preview              POST       /project-documents/files/<int:file_id>/signed-preview                                                     
+projects.dashboard                            GET        /reports/projects/<int:project_id>/dashboard                                                              
+projects.index                                GET        /reports/projects                                                                                         
+projects.issues                               GET        /reports/projects/<int:project_id>/issues                                                                 
+projects.issues_create                        GET, POST  /reports/projects/<int:project_id>/issues/create                                                          
+projects.report_upload_session_cancel         POST       /reports/projects/<int:project_id>/reports/upload-sessions/<int:session_id>/cancel                        
+projects.report_upload_session_complete       POST       /reports/projects/<int:project_id>/reports/upload-sessions/<int:session_id>/complete                      
+projects.report_upload_session_create         POST       /reports/projects/<int:project_id>/reports/upload-sessions                                                
+projects.report_upload_session_presign        POST       /reports/projects/<int:project_id>/reports/upload-sessions/<int:session_id>/presign                       
+projects.report_upload_session_state          GET        /reports/projects/<int:project_id>/reports/upload-sessions/<int:session_id>                               
+projects.reports                              GET        /reports/projects/<int:project_id>/reports                                                                
+projects.reports_create                       GET        /reports/projects/<int:project_id>/reports/create                                                         
+projects.reports_create_legacy_post_rejected  POST       /reports/projects/<int:project_id>/reports/create                                                         
+reports.delete                                POST       /reports/<int:report_id>/delete                                                                           
+reports.detail                                GET        /reports/<int:report_id>                                                                                  
+reports.edit                                  GET, POST  /reports/<int:report_id>/edit                                                                             
+reports.index                                 GET        /reports                                                                                                  
+static                                        GET        /static/<path:filename>                                                                                   
+users.index                                   GET        /users/                                                                                                   

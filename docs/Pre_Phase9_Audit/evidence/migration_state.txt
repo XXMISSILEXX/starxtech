@@ -1,0 +1,4 @@
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+20260725_0026 (head)
+20260725_0026 (head)

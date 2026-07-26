@@ -1,0 +1,367 @@
+Database schema read-only summary
+Tables: alembic_version, audit_logs, bulk_download_jobs, companies, company_departments, company_media_album_permissions, company_media_albums, company_media_files, daily_report_sections, daily_reports, download_events, media_processing_jobs, partner_field_collection_items, partner_field_collections, partner_field_definitions, partner_field_values, partner_relationships, partners, permissions, persistent_issues, project_document_files, project_document_folder_permissions, project_document_folders, project_users, projects, report_attachments, report_categories, role_permissions, roles, storage_derivatives, storage_objects, system_settings, upload_batch_items, upload_batches, upload_selection_sessions, users
+
+TABLE projects
+  COLUMN id BIGINT nullable=False default=nextval('projects_id_seq'::regclass)
+  COLUMN code VARCHAR(50) nullable=False default=None
+  COLUMN name VARCHAR(255) nullable=False default=None
+  COLUMN description TEXT nullable=True default=None
+  COLUMN status VARCHAR(50) nullable=False default='active'::character varying
+  COLUMN start_date DATE nullable=True default=None
+  COLUMN expected_end_date DATE nullable=True default=None
+  COLUMN created_by_user_id BIGINT nullable=True default=None
+  COLUMN created_at TIMESTAMP nullable=False default=now()
+  COLUMN updated_at TIMESTAMP nullable=False default=now()
+  COLUMN deleted_at TIMESTAMP nullable=True default=None
+  FK projects_created_by_user_id_fkey ['created_by_user_id'] -> users.['id']
+  CHECK ck_projects_status status::text = ANY (ARRAY['active'::character varying, 'paused'::character varying, 'completed'::character varying, 'archived'::character varying]::text[])
+  INDEX ix_projects_code ['code'] unique=True
+
+TABLE project_users
+  COLUMN id BIGINT nullable=False default=nextval('project_users_id_seq'::regclass)
+  COLUMN project_id BIGINT nullable=False default=None
+  COLUMN user_id BIGINT nullable=False default=None
+  COLUMN project_role_code VARCHAR(50) nullable=False default='PROJECT_VIEWER'::character varying
+  COLUMN created_at TIMESTAMP nullable=False default=now()
+  COLUMN is_active BOOLEAN nullable=False default=true
+  COLUMN can_view_project BOOLEAN nullable=False default=false
+  COLUMN can_view_reports BOOLEAN nullable=False default=false
+  COLUMN can_create_reports BOOLEAN nullable=False default=false
+  COLUMN can_edit_own_reports BOOLEAN nullable=False default=false
+  COLUMN can_edit_all_reports BOOLEAN nullable=False default=false
+  COLUMN can_archive_reports BOOLEAN nullable=False default=false
+  COLUMN can_view_issues BOOLEAN nullable=False default=false
+  COLUMN can_create_issues BOOLEAN nullable=False default=false
+  COLUMN can_edit_issues BOOLEAN nullable=False default=false
+  COLUMN can_close_reopen_issues BOOLEAN nullable=False default=false
+  COLUMN can_manage_report_categories BOOLEAN nullable=False default=false
+  COLUMN can_view_documents BOOLEAN nullable=False default=false
+  COLUMN can_upload_documents BOOLEAN nullable=False default=false
+  COLUMN can_edit_documents BOOLEAN nullable=False default=false
+  COLUMN can_share_documents BOOLEAN nullable=False default=false
+  COLUMN can_archive_documents BOOLEAN nullable=False default=false
+  COLUMN can_restore_documents BOOLEAN nullable=False default=false
+  COLUMN updated_at TIMESTAMP nullable=False default=CURRENT_TIMESTAMP
+  FK project_users_project_id_fkey ['project_id'] -> projects.['id']
+  FK project_users_user_id_fkey ['user_id'] -> users.['id']
+  UNIQUE uq_project_users_project_user ['project_id', 'user_id']
+  INDEX ix_project_users_project_id ['project_id'] unique=False
+  INDEX ix_project_users_user_id ['user_id'] unique=False
+  INDEX uq_project_users_project_user ['project_id', 'user_id'] unique=True
+
+TABLE report_categories
+  COLUMN id BIGINT nullable=False default=nextval('report_categories_id_seq'::regclass)
+  COLUMN project_id BIGINT nullable=False default=None
+  COLUMN name VARCHAR(255) nullable=False default=None
+  COLUMN description TEXT nullable=True default=None
+  COLUMN icon VARCHAR(50) nullable=True default=None
+  COLUMN sort_order INTEGER nullable=False default=0
+  COLUMN is_active BOOLEAN nullable=False default=true
+  COLUMN is_required BOOLEAN nullable=False default=false
+  COLUMN created_at TIMESTAMP nullable=False default=now()
+  COLUMN updated_at TIMESTAMP nullable=False default=now()
+  COLUMN deleted_at TIMESTAMP nullable=True default=None
+  FK report_categories_project_id_fkey ['project_id'] -> projects.['id']
+  UNIQUE uq_report_categories_project_name ['project_id', 'name']
+  INDEX ix_report_categories_project_id ['project_id'] unique=False
+  INDEX uq_report_categories_project_name ['project_id', 'name'] unique=True
+
+TABLE daily_reports
+  COLUMN id BIGINT nullable=False default=nextval('daily_reports_id_seq'::regclass)
+  COLUMN project_id BIGINT nullable=False default=None
+  COLUMN report_date DATE nullable=False default=None
+  COLUMN overall_status VARCHAR(50) nullable=False default=None
+  COLUMN highlight TEXT nullable=False default=None
+  COLUMN summary_note TEXT nullable=True default=None
+  COLUMN created_by_user_id BIGINT nullable=False default=None
+  COLUMN updated_by_user_id BIGINT nullable=True default=None
+  COLUMN created_at TIMESTAMP nullable=False default=now()
+  COLUMN updated_at TIMESTAMP nullable=False default=now()
+  COLUMN client_request_id VARCHAR(36) nullable=True default=None
+  FK daily_reports_created_by_user_id_fkey ['created_by_user_id'] -> users.['id']
+  FK daily_reports_project_id_fkey ['project_id'] -> projects.['id']
+  FK daily_reports_updated_by_user_id_fkey ['updated_by_user_id'] -> users.['id']
+  UNIQUE uq_daily_reports_project_client_request ['project_id', 'client_request_id']
+  UNIQUE uq_daily_reports_project_date ['project_id', 'report_date']
+  CHECK ck_daily_reports_overall_status overall_status::text = ANY (ARRAY['UPDATED'::character varying, 'GOOD'::character varying, 'PROCESSING'::character varying, 'ATTENTION'::character varying, 'CRITICAL'::character varying]::text[])
+  INDEX idx_daily_reports_project_date ['project_id', 'report_date'] unique=False
+  INDEX idx_daily_reports_status ['overall_status'] unique=False
+  INDEX uq_daily_reports_project_client_request ['project_id', 'client_request_id'] unique=True
+  INDEX uq_daily_reports_project_date ['project_id', 'report_date'] unique=True
+
+TABLE daily_report_sections
+  COLUMN id BIGINT nullable=False default=nextval('daily_report_sections_id_seq'::regclass)
+  COLUMN daily_report_id BIGINT nullable=False default=None
+  COLUMN report_category_id BIGINT nullable=False default=None
+  COLUMN status VARCHAR(50) nullable=False default=None
+  COLUMN content TEXT nullable=False default=None
+  COLUMN sort_order INTEGER nullable=False default=0
+  COLUMN created_at TIMESTAMP nullable=False default=now()
+  COLUMN updated_at TIMESTAMP nullable=False default=now()
+  COLUMN deleted_at TIMESTAMP nullable=True default=None
+  FK daily_report_sections_daily_report_id_fkey ['daily_report_id'] -> daily_reports.['id']
+  FK daily_report_sections_report_category_id_fkey ['report_category_id'] -> report_categories.['id']
+  UNIQUE uq_daily_report_sections_report_category ['daily_report_id', 'report_category_id']
+  CHECK ck_daily_report_sections_status status::text = ANY (ARRAY['INFO'::character varying, 'GOOD'::character varying, 'PROCESSING'::character varying, 'ATTENTION'::character varying, 'CRITICAL'::character varying]::text[])
+  INDEX ix_daily_report_sections_daily_report_id ['daily_report_id'] unique=False
+  INDEX ix_daily_report_sections_report_category_id ['report_category_id'] unique=False
+  INDEX uq_daily_report_sections_report_category ['daily_report_id', 'report_category_id'] unique=True
+
+TABLE report_attachments
+  COLUMN id BIGINT nullable=False default=nextval('report_attachments_id_seq'::regclass)
+  COLUMN daily_report_section_id BIGINT nullable=False default=None
+  COLUMN original_filename VARCHAR(255) nullable=False default=None
+  COLUMN mime_type VARCHAR(100) nullable=False default=None
+  COLUMN file_size BIGINT nullable=False default=None
+  COLUMN image_width INTEGER nullable=True default=None
+  COLUMN image_height INTEGER nullable=True default=None
+  COLUMN uploaded_by_user_id BIGINT nullable=False default=None
+  COLUMN created_at TIMESTAMP nullable=False default=now()
+  COLUMN deleted_at TIMESTAMP nullable=True default=None
+  COLUMN storage_object_id BIGINT nullable=True default=None
+  FK fk_report_attachments_storage_object ['storage_object_id'] -> storage_objects.['id']
+  FK report_attachments_daily_report_section_id_fkey ['daily_report_section_id'] -> daily_report_sections.['id']
+  FK report_attachments_uploaded_by_user_id_fkey ['uploaded_by_user_id'] -> users.['id']
+  CHECK ck_report_attachments_active_storage_object deleted_at IS NOT NULL OR storage_object_id IS NOT NULL
+  INDEX idx_attachments_section ['daily_report_section_id'] unique=False
+  INDEX idx_report_attachments_storage_object ['storage_object_id'] unique=False
+
+TABLE persistent_issues
+  COLUMN id BIGINT nullable=False default=nextval('persistent_issues_id_seq'::regclass)
+  COLUMN project_id BIGINT nullable=False default=None
+  COLUMN title VARCHAR(255) nullable=False default=None
+  COLUMN description TEXT nullable=True default=None
+  COLUMN severity VARCHAR(50) nullable=False default='MEDIUM'::character varying
+  COLUMN status VARCHAR(50) nullable=False default='OPEN'::character varying
+  COLUMN opened_date DATE nullable=False default=None
+  COLUMN due_date DATE nullable=True default=None
+  COLUMN closed_date DATE nullable=True default=None
+  COLUMN owner_user_id BIGINT nullable=True default=None
+  COLUMN created_by_user_id BIGINT nullable=False default=None
+  COLUMN created_at TIMESTAMP nullable=False default=now()
+  COLUMN updated_at TIMESTAMP nullable=False default=now()
+  COLUMN deleted_at TIMESTAMP nullable=True default=None
+  FK persistent_issues_created_by_user_id_fkey ['created_by_user_id'] -> users.['id']
+  FK persistent_issues_owner_user_id_fkey ['owner_user_id'] -> users.['id']
+  FK persistent_issues_project_id_fkey ['project_id'] -> projects.['id']
+  CHECK ck_persistent_issues_severity severity::text = ANY (ARRAY['LOW'::character varying, 'MEDIUM'::character varying, 'HIGH'::character varying, 'CRITICAL'::character varying]::text[])
+  CHECK ck_persistent_issues_status status::text = ANY (ARRAY['OPEN'::character varying, 'PROCESSING'::character varying, 'RESOLVED'::character varying, 'CLOSED'::character varying]::text[])
+  INDEX idx_issues_project_status ['project_id', 'status'] unique=False
+
+TABLE audit_logs
+  COLUMN id BIGINT nullable=False default=nextval('audit_logs_id_seq'::regclass)
+  COLUMN actor_user_id BIGINT nullable=True default=None
+  COLUMN action VARCHAR(100) nullable=False default=None
+  COLUMN entity_type VARCHAR(100) nullable=False default=None
+  COLUMN entity_id BIGINT nullable=True default=None
+  COLUMN old_values_json JSONB nullable=True default=None
+  COLUMN new_values_json JSONB nullable=True default=None
+  COLUMN ip_address VARCHAR(100) nullable=True default=None
+  COLUMN user_agent TEXT nullable=True default=None
+  COLUMN created_at TIMESTAMP nullable=False default=now()
+  FK audit_logs_actor_user_id_fkey ['actor_user_id'] -> users.['id']
+
+TABLE roles
+  COLUMN id BIGINT nullable=False default=nextval('roles_id_seq'::regclass)
+  COLUMN code VARCHAR(50) nullable=False default=None
+  COLUMN name VARCHAR(255) nullable=False default=None
+  COLUMN description TEXT nullable=True default=None
+  COLUMN is_system BOOLEAN nullable=False default=true
+  COLUMN created_at TIMESTAMP nullable=False default=CURRENT_TIMESTAMP
+  COLUMN updated_at TIMESTAMP nullable=False default=CURRENT_TIMESTAMP
+  UNIQUE uq_roles_code ['code']
+  INDEX ix_roles_code ['code'] unique=False
+  INDEX uq_roles_code ['code'] unique=True
+
+TABLE permissions
+  COLUMN id BIGINT nullable=False default=nextval('permissions_id_seq'::regclass)
+  COLUMN code VARCHAR(100) nullable=False default=None
+  COLUMN name VARCHAR(255) nullable=False default=None
+  COLUMN description TEXT nullable=True default=None
+  COLUMN module VARCHAR(100) nullable=False default=None
+  COLUMN group_name VARCHAR(100) nullable=False default=None
+  COLUMN action VARCHAR(50) nullable=False default=None
+  COLUMN resource VARCHAR(100) nullable=False default=None
+  COLUMN sort_order INTEGER nullable=False default=0
+  COLUMN is_dangerous BOOLEAN nullable=False default=false
+  COLUMN is_deprecated BOOLEAN nullable=False default=false
+  COLUMN created_at TIMESTAMP nullable=False default=CURRENT_TIMESTAMP
+  COLUMN updated_at TIMESTAMP nullable=False default=CURRENT_TIMESTAMP
+  UNIQUE uq_permissions_code ['code']
+  INDEX ix_permissions_code ['code'] unique=False
+  INDEX uq_permissions_code ['code'] unique=True
+
+TABLE role_permissions
+  COLUMN id BIGINT nullable=False default=nextval('role_permissions_id_seq'::regclass)
+  COLUMN role_id BIGINT nullable=False default=None
+  COLUMN permission_id BIGINT nullable=False default=None
+  FK role_permissions_permission_id_fkey ['permission_id'] -> permissions.['id']
+  FK role_permissions_role_id_fkey ['role_id'] -> roles.['id']
+  UNIQUE uq_role_permissions_role_permission ['role_id', 'permission_id']
+  INDEX ix_role_permissions_permission_id ['permission_id'] unique=False
+  INDEX ix_role_permissions_role_id ['role_id'] unique=False
+  INDEX uq_role_permissions_role_permission ['role_id', 'permission_id'] unique=True
+
+TABLE users
+  COLUMN id BIGINT nullable=False default=nextval('users_id_seq'::regclass)
+  COLUMN full_name VARCHAR(255) nullable=False default=None
+  COLUMN username VARCHAR(100) nullable=False default=None
+  COLUMN email VARCHAR(255) nullable=True default=None
+  COLUMN password_hash TEXT nullable=False default=None
+  COLUMN role VARCHAR(50) nullable=True default=None
+  COLUMN is_active BOOLEAN nullable=False default=true
+  COLUMN last_login_at TIMESTAMP nullable=True default=None
+  COLUMN created_at TIMESTAMP nullable=False default=now()
+  COLUMN updated_at TIMESTAMP nullable=False default=now()
+  COLUMN deleted_at TIMESTAMP nullable=True default=None
+  COLUMN role_id BIGINT nullable=False default=None
+  COLUMN avatar_storage_object_id BIGINT nullable=True default=None
+  FK fk_users_avatar_storage_object ['avatar_storage_object_id'] -> storage_objects.['id']
+  FK fk_users_role_id_roles ['role_id'] -> roles.['id']
+  INDEX ix_users_avatar_storage_object_id ['avatar_storage_object_id'] unique=False
+  INDEX ix_users_email ['email'] unique=True
+  INDEX ix_users_role_id ['role_id'] unique=False
+  INDEX ix_users_username ['username'] unique=True
+
+TABLE storage_objects
+  COLUMN id BIGINT nullable=False default=nextval('storage_objects_id_seq'::regclass)
+  COLUMN bucket VARCHAR(255) nullable=False default=None
+  COLUMN object_key VARCHAR(1024) nullable=False default=None
+  COLUMN original_filename VARCHAR(255) nullable=False default=None
+  COLUMN mime_type VARCHAR(255) nullable=False default=None
+  COLUMN file_ext VARCHAR(20) nullable=False default=None
+  COLUMN file_size BIGINT nullable=False default=None
+  COLUMN checksum_sha256 VARCHAR(64) nullable=True default=None
+  COLUMN width INTEGER nullable=True default=None
+  COLUMN height INTEGER nullable=True default=None
+  COLUMN duration_seconds NUMERIC(12, 3) nullable=True default=None
+  COLUMN uploaded_by_id BIGINT nullable=False default=None
+  COLUMN upload_status VARCHAR(20) nullable=False default='pending'::character varying
+  COLUMN processing_status VARCHAR(20) nullable=False default='none'::character varying
+  COLUMN created_at TIMESTAMP nullable=False default=CURRENT_TIMESTAMP
+  COLUMN completed_at TIMESTAMP nullable=True default=None
+  COLUMN deleted_at TIMESTAMP nullable=True default=None
+  COLUMN storage_module VARCHAR(40) nullable=True default=None
+  FK storage_objects_uploaded_by_id_fkey ['uploaded_by_id'] -> users.['id']
+  UNIQUE uq_storage_objects_bucket_key ['bucket', 'object_key']
+  CHECK ck_storage_objects_processing_status processing_status::text = ANY (ARRAY['none'::character varying, 'queued'::character varying, 'processing'::character varying, 'completed'::character varying, 'failed'::character varying]::text[])
+  CHECK ck_storage_objects_upload_status upload_status::text = ANY (ARRAY['pending'::character varying, 'uploaded'::character varying, 'active'::character varying, 'failed'::character varying, 'deleted'::character varying]::text[])
+  INDEX idx_storage_objects_created ['created_at'] unique=False
+  INDEX idx_storage_objects_processing_status_created ['processing_status', 'created_at'] unique=False
+  INDEX idx_storage_objects_upload_status_created ['upload_status', 'created_at'] unique=False
+  INDEX idx_storage_objects_uploader_status ['uploaded_by_id', 'upload_status'] unique=False
+  INDEX ix_storage_objects_storage_module ['storage_module'] unique=False
+  INDEX uq_storage_objects_bucket_key ['bucket', 'object_key'] unique=True
+
+TABLE upload_batches
+  COLUMN id BIGINT nullable=False default=nextval('upload_batches_id_seq'::regclass)
+  COLUMN module_type VARCHAR(40) nullable=False default=None
+  COLUMN target_type VARCHAR(20) nullable=False default=None
+  COLUMN target_id BIGINT nullable=False default=None
+  COLUMN created_by_id BIGINT nullable=False default=None
+  COLUMN total_files INTEGER nullable=False default=0
+  COLUMN accepted_files INTEGER nullable=False default=0
+  COLUMN completed_files INTEGER nullable=False default=0
+  COLUMN failed_files INTEGER nullable=False default=0
+  COLUMN status VARCHAR(20) nullable=False default='pending'::character varying
+  COLUMN created_at TIMESTAMP nullable=False default=CURRENT_TIMESTAMP
+  COLUMN completed_at TIMESTAMP nullable=True default=None
+  COLUMN selection_session_id BIGINT nullable=True default=None
+  FK upload_batches_created_by_id_fkey ['created_by_id'] -> users.['id']
+  FK upload_batches_selection_session_id_fkey ['selection_session_id'] -> upload_selection_sessions.['id']
+  CHECK ck_upload_batches_module_type module_type::text = ANY (ARRAY['project_documents'::character varying, 'company_media'::character varying, 'daily_reports'::character varying]::text[])
+  CHECK ck_upload_batches_status status::text = ANY (ARRAY['pending'::character varying, 'uploading'::character varying, 'completed'::character varying, 'partial_failed'::character varying, 'failed'::character varying]::text[])
+  CHECK ck_upload_batches_target_type target_type::text = ANY (ARRAY['folder'::character varying, 'album'::character varying, 'project'::character varying]::text[])
+  INDEX idx_upload_batches_creator_status ['created_by_id', 'status'] unique=False
+  INDEX idx_upload_batches_target ['module_type', 'target_type', 'target_id'] unique=False
+  INDEX ix_upload_batches_selection_session_id ['selection_session_id'] unique=False
+
+TABLE upload_selection_sessions
+  COLUMN id BIGINT nullable=False default=nextval('upload_selection_sessions_id_seq'::regclass)
+  COLUMN module_type VARCHAR(40) nullable=False default=None
+  COLUMN target_type VARCHAR(20) nullable=False default=None
+  COLUMN target_id BIGINT nullable=False default=None
+  COLUMN created_by_id BIGINT nullable=False default=None
+  COLUMN declared_files INTEGER nullable=False default=None
+  COLUMN declared_size_bytes BIGINT nullable=False default=None
+  COLUMN presigned_files INTEGER nullable=False default=0
+  COLUMN presigned_size_bytes BIGINT nullable=False default='0'::bigint
+  COLUMN status VARCHAR(20) nullable=False default='pending'::character varying
+  COLUMN expires_at TIMESTAMP nullable=False default=None
+  COLUMN completed_at TIMESTAMP nullable=True default=None
+  COLUMN created_at TIMESTAMP nullable=False default=CURRENT_TIMESTAMP
+  COLUMN updated_at TIMESTAMP nullable=False default=CURRENT_TIMESTAMP
+  FK upload_selection_sessions_created_by_id_fkey ['created_by_id'] -> users.['id']
+  CHECK ck_upload_selection_module module_type::text = ANY (ARRAY['project_documents'::character varying, 'company_media'::character varying, 'daily_reports'::character varying]::text[])
+  CHECK ck_upload_selection_status status::text = ANY (ARRAY['pending'::character varying, 'uploading'::character varying, 'ready'::character varying, 'completed'::character varying, 'finalized'::character varying, 'cancelled'::character varying, 'expired'::character varying]::text[])
+  CHECK ck_upload_selection_target target_type::text = ANY (ARRAY['folder'::character varying, 'album'::character varying, 'project'::character varying]::text[])
+  INDEX idx_upload_selection_owner_expiry ['created_by_id', 'expires_at'] unique=False
+  INDEX idx_upload_selection_project_status_expiry ['target_id', 'status', 'expires_at'] unique=False
+
+TABLE upload_batch_items
+  COLUMN id BIGINT nullable=False default=nextval('upload_batch_items_id_seq'::regclass)
+  COLUMN upload_batch_id BIGINT nullable=False default=None
+  COLUMN storage_object_id BIGINT nullable=True default=None
+  COLUMN client_file_id VARCHAR(255) nullable=False default=None
+  COLUMN original_filename VARCHAR(255) nullable=False default=None
+  COLUMN mime_type VARCHAR(255) nullable=False default=None
+  COLUMN file_size BIGINT nullable=False default=None
+  COLUMN status VARCHAR(20) nullable=False default=None
+  COLUMN error_message TEXT nullable=True default=None
+  COLUMN created_at TIMESTAMP nullable=False default=CURRENT_TIMESTAMP
+  COLUMN updated_at TIMESTAMP nullable=False default=CURRENT_TIMESTAMP
+  COLUMN client_section_id VARCHAR(80) nullable=True default=None
+  COLUMN finalized_at TIMESTAMP nullable=True default=None
+  FK upload_batch_items_storage_object_id_fkey ['storage_object_id'] -> storage_objects.['id']
+  FK upload_batch_items_upload_batch_id_fkey ['upload_batch_id'] -> upload_batches.['id']
+  UNIQUE uq_upload_batch_items_client_file ['upload_batch_id', 'client_file_id']
+  CHECK ck_upload_batch_items_status status::text = ANY (ARRAY['accepted'::character varying, 'rejected'::character varying, 'uploading'::character varying, 'completed'::character varying, 'failed'::character varying, 'cancelled'::character varying]::text[])
+  INDEX idx_upload_batch_items_batch_status ['upload_batch_id', 'status'] unique=False
+  INDEX idx_upload_batch_items_client_section ['upload_batch_id', 'client_section_id'] unique=False
+  INDEX idx_upload_batch_items_storage_object ['storage_object_id'] unique=False
+  INDEX uq_upload_batch_items_client_file ['upload_batch_id', 'client_file_id'] unique=True
+
+TABLE media_processing_jobs
+  COLUMN id BIGINT nullable=False default=nextval('media_processing_jobs_id_seq'::regclass)
+  COLUMN storage_object_id BIGINT nullable=False default=None
+  COLUMN job_type VARCHAR(40) nullable=False default=None
+  COLUMN status VARCHAR(20) nullable=False default=None
+  COLUMN celery_task_id VARCHAR(255) nullable=True default=None
+  COLUMN attempts INTEGER nullable=False default=0
+  COLUMN max_attempts INTEGER nullable=False default=3
+  COLUMN started_at TIMESTAMP nullable=True default=None
+  COLUMN finished_at TIMESTAMP nullable=True default=None
+  COLUMN error_code VARCHAR(100) nullable=True default=None
+  COLUMN error_message TEXT nullable=True default=None
+  COLUMN created_at TIMESTAMP nullable=False default=CURRENT_TIMESTAMP
+  COLUMN updated_at TIMESTAMP nullable=False default=CURRENT_TIMESTAMP
+  FK media_processing_jobs_storage_object_id_fkey ['storage_object_id'] -> storage_objects.['id']
+  UNIQUE uq_media_jobs_storage_object_type ['storage_object_id', 'job_type']
+  CHECK ck_media_jobs_status status::text = ANY (ARRAY['pending'::character varying, 'processing'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'cancelled'::character varying]::text[])
+  CHECK ck_media_jobs_type job_type::text = ANY (ARRAY['image_derivatives'::character varying, 'video_derivatives'::character varying]::text[])
+  INDEX idx_media_jobs_object_type ['storage_object_id', 'job_type'] unique=False
+  INDEX idx_media_jobs_status_created ['status', 'created_at'] unique=False
+  INDEX uq_media_jobs_storage_object_type ['storage_object_id', 'job_type'] unique=True
+
+TABLE storage_derivatives
+  COLUMN id BIGINT nullable=False default=nextval('storage_derivatives_id_seq'::regclass)
+  COLUMN storage_object_id BIGINT nullable=False default=None
+  COLUMN derivative_type VARCHAR(30) nullable=False default=None
+  COLUMN bucket VARCHAR(255) nullable=False default=None
+  COLUMN object_key VARCHAR(1024) nullable=False default=None
+  COLUMN mime_type VARCHAR(255) nullable=False default=None
+  COLUMN file_ext VARCHAR(20) nullable=False default=None
+  COLUMN file_size BIGINT nullable=False default=None
+  COLUMN width INTEGER nullable=True default=None
+  COLUMN height INTEGER nullable=True default=None
+  COLUMN duration_seconds NUMERIC(12, 3) nullable=True default=None
+  COLUMN created_by_job_id BIGINT nullable=True default=None
+  COLUMN created_at TIMESTAMP nullable=False default=CURRENT_TIMESTAMP
+  COLUMN deleted_at TIMESTAMP nullable=True default=None
+  FK storage_derivatives_created_by_job_id_fkey ['created_by_job_id'] -> media_processing_jobs.['id']
+  FK storage_derivatives_storage_object_id_fkey ['storage_object_id'] -> storage_objects.['id']
+  UNIQUE uq_storage_derivatives_bucket_key ['bucket', 'object_key']
+  CHECK ck_storage_derivatives_type derivative_type::text = ANY (ARRAY['thumbnail'::character varying, 'preview'::character varying, 'poster'::character varying, 'video_preview'::character varying]::text[])
+  INDEX idx_storage_derivatives_object_type ['storage_object_id', 'derivative_type'] unique=False
+  INDEX uq_storage_derivatives_bucket_key ['bucket', 'object_key'] unique=True
+

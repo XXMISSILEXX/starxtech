@@ -1,0 +1,107 @@
+Database profile read-only; aggregate values only
+
+[row_counts]
+('alembic_version', 0)
+('audit_logs', 614)
+('bulk_download_jobs', 0)
+('companies', 0)
+('company_departments', 4)
+('company_media_album_permissions', 0)
+('company_media_albums', 0)
+('company_media_files', 0)
+('daily_report_sections', 22)
+('daily_reports', 12)
+('download_events', 3026)
+('media_processing_jobs', 237)
+('partner_field_collection_items', 0)
+('partner_field_collections', 1)
+('partner_field_definitions', 0)
+('partner_field_values', 0)
+('partner_relationships', 0)
+('partners', 3)
+('permissions', 0)
+('persistent_issues', 0)
+('project_document_files', 0)
+('project_document_folder_permissions', 0)
+('project_document_folders', 0)
+('project_users', 0)
+('projects', 0)
+('report_attachments', 55)
+('report_categories', 0)
+('role_permissions', 0)
+('roles', 0)
+('storage_derivatives', 461)
+('storage_objects', 373)
+('system_settings', 0)
+('upload_batch_items', 390)
+('upload_batches', 136)
+('upload_selection_sessions', 39)
+('users', 0)
+
+[projects_status]
+('active', 1)
+('archived', 1)
+
+[projects_no_categories]
+(1,)
+
+[category_flags]
+(True, False, 12)
+
+[reports_per_project]
+(1, 12)
+
+[report_dates]
+(datetime.date(2026, 6, 8), datetime.date(2026, 9, 29), 12)
+
+[duplicate_project_date]
+
+[overall_status]
+('ATTENTION', 1)
+('GOOD', 2)
+('PROCESSING', 2)
+('UPDATED', 7)
+
+[section_status]
+('GOOD', 6)
+('INFO', 12)
+('PROCESSING', 4)
+
+[sections_no_category]
+(0,)
+
+[used_inactive_categories]
+(0,)
+
+[attachment_states]
+('active', 'completed', 55)
+
+[issues]
+
+[users_roles]
+('005', 1)
+('ADMIN', 1)
+('PARTNER', 1)
+('PROJECT_STAFF', 2)
+('SUPER_ADMIN', 1)
+('VIEWER_ADMIN', 1)
+
+[memberships_roles]
+('PROJECT_DOCUMENT_CONTROLLER', True, 1)
+('PROJECT_REPORTER', True, 1)
+('PROJECT_VIEWER', False, 2)
+
+[duplicate_memberships]
+
+[projects_no_active_user]
+(1,)
+
+[role_permission_counts]
+('005', 10)
+('ADMIN', 93)
+('PARTNER', 18)
+('PROJECT_MANAGER', 31)
+('PROJECT_STAFF', 0)
+('REPORTER', 17)
+('SUPER_ADMIN', 0)
+('VIEWER_ADMIN', 27)

@@ -1,0 +1,77 @@
+$ python -m compileall -q app tests migrations
+exit=0
+$ npm run build:heic-preview
+
+> build:heic-preview
+> node scripts/build-heic-preview.mjs
+
+exit=0
+$ npm test
+
+> test
+> node --test tests_js/**/*.test.js
+
+✔ tests_js/daily-report-create-v2.test.js (346.152986ms)
+✔ tests_js/report-direct-upload.test.js (288.375228ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 352.308591
+exit=0
+$ node --check app/static/js/daily-report-create-v2.js
+exit=0
+$ node --check app/static/js/app.js
+exit=0
+$ node --check app/static/js/report-direct-upload.js
+exit=0
+$ node --check app/static/js/report-attachment-status.js
+exit=0
+$ node --check app/static/js/media-preview-modal.js
+exit=0
+$ PYTHONWARNINGS=error pytest -q
+........................................................................ [ 26%]
+........................................................................ [ 53%]
+........................................................................ [ 80%]
+....................................................                     [100%]
+268 passed in 174.43s (0:02:54)
+exit=0
+$ pip check
+WARNING: The directory '/home/ubuntu/.cache/pip' or its parent directory is not owned or is not writable by the current user. The cache has been disabled. Check the permissions and owner of that directory. If executing pip with sudo, you should use sudo's -H flag.
+No broken requirements found.
+exit=0
+$ flask security-audit
+PASS production-guards: production configuration is safe
+PASS secret-key: non-default key configured
+PASS session-cookies: HttpOnly and SameSite configured
+PASS secure-cookie: disabled only outside production
+PASS csrf: CSRF protection initialized
+PASS security-headers: CSP and frame protection enabled
+PASS rate-limit: rate-limit storage configured
+PASS rate-limit-storage: shared Redis storage configured
+PASS storage-provider-config: recognized storage provider
+PASS storage-fake-provider-not-production: fake provider is not used in production
+PASS storage-upload-limits-configured: storage upload limits configured
+PASS daily-report-direct-upload: daily report direct upload limits configured
+PASS storage-cors-origins: explicit storage CORS origins configured
+PASS celery-config-present: Celery broker/result configured
+PASS celery-eager-not-production: Celery eager disabled in production
+PASS media-temp-root-configured: media temp root configured
+PASS media-timeouts-configured: media timeouts configured
+PASS bulk-download-configured: bulk ZIP limits configured
+PASS bulk-download-temp-root: bulk ZIP temp root configured
+PASS media-processing-limits-configured: media processing limits configured
+PASS upload-controls: bounded upload root configured
+PASS export-safety: no export feature is implemented
+PASS dependencies-pinned: dependencies are pinned
+PASS dependencies-installed: all pinned dependencies are installed
+FAIL database-checks: OperationalError
+Error: Security audit failed: 1 check(s).
+exit=1
+$ git diff --check
+exit=0
+nment ended it. Result: NOT COMPLETED; do not interpret
+the dots as a PASS. No source/test modifications were made in response.

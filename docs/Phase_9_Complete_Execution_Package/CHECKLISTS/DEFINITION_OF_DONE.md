@@ -1,0 +1,21 @@
+# Phase 9 Definition of Done
+
+- [ ] Reports module navigation has four permission-aware items.
+- [ ] Custom roles can access independent sections.
+- [ ] Customer groups existing Projects.
+- [ ] Project scope remains ProjectUser-based.
+- [ ] Contractor domain is independent Partner module.
+- [ ] Construction/Solution assignments work and retain history.
+- [ ] ProjectUpdate supports general and assignment-specific updates.
+- [ ] VTS handover example works end-to-end.
+- [ ] Daily Report statuses remain unchanged.
+- [ ] PersistentIssue remains completely separate.
+- [ ] No health/OpenIssue/observation/ProjectReportItem introduced.
+- [ ] Today correctly represents submitted/missing reports.
+- [ ] Project/Customer/System charts use five section statuses.
+- [ ] Contractor dashboard avoids false attribution.
+- [ ] V2 upload, HEIC, S3, attachment, Celery regressions pass.
+- [ ] Migrations rehearsed on PostgreSQL copy.
+- [ ] Full tests, security and runtime gates pass.
+- [ ] Desktop and iPhone manual acceptance pass.
+- [ ] User/RBAC/migration/release docs complete.

@@ -1,0 +1,17 @@
+Source: app/permissions/registry.py (version-controlled registry; not runtime DB)
+
+System roles declared: SUPER_ADMIN, ADMIN, VIEWER_ADMIN.
+Resource permission families: reports, attachments, report_attachments, issues, projects,
+categories, partners, companies, fields, collections, relations, users, roles, security,
+system, project_assignments, modules, project_documents, project_document_folders,
+project_document_files, company_media, company_media_albums, company_media_files, storage,
+settings.
+
+Reports-relevant registry codes include modules.reports.access; reports.view/create/edit/delete;
+attachments.view/create/edit/delete; report_attachments.view/download/delete; issues.view/create/edit/delete/close;
+projects.view/create/edit/delete/manage; categories.view/create/edit/delete/manage; and project_assignments.manage.
+
+Default role policy: SUPER_ADMIN bypasses permissions; ADMIN receives every registry permission
+except listed restricted administration/storage/branding codes; VIEWER_ADMIN receives view-family
+permissions plus report/partner/document/media module access and selected downloads. Project roles
+and capability presets are intentionally defined separately in app/project_memberships.py.
