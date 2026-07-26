@@ -24,7 +24,10 @@ def get_sidebar_items(user, active_module=None):
     if active_module == "reports":
         add("Hôm nay", "reports.today", "bi-calendar-check", "reports.today.view")
         add("Quản lý dự án & nhà thầu", "project_operations.operations_index", "bi-diagram-3", "project_operations.view")
-        add("Dashboard quản trị", "dashboard.index", "bi-grid-1x2", "reports.view")
+        if user.can("dashboards.system.view") and user.can("projects.scope_all"):
+            add("Dashboard quản trị", "dashboard.system_dashboard", "bi-grid-1x2")
+        else:
+            add("Dashboard quản trị", "dashboard.index", "bi-grid-1x2", "reports.view")
         add("Cấu hình", "reports.configuration_hub", "bi-gear", "reports.configuration.view")
     elif active_module == "partners":
         add("Tổng quan đối tác", "partners.dashboard", "bi-grid-1x2", "partners.view")

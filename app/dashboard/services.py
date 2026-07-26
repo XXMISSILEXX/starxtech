@@ -1,16 +1,21 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import Enum
 from zoneinfo import ZoneInfo
 
 from flask_login import current_user
 from sqlalchemy import func
+from sqlalchemy.orm import joinedload
 
 from app.models import (
     DailyReport,
     DailyReportStatus,
     DailyReportSection,
+    IssueSeverity,
     IssueStatus,
     PersistentIssue,
     Project,
+    ProjectStatus,
     ProjectUser,
     User,
     ProjectContractorAssignment,
@@ -23,6 +28,68 @@ from app.reports.services import accessible_projects_query
 
 
 OPEN_ISSUE_STATUSES = [IssueStatus.OPEN.value, IssueStatus.PROCESSING.value]
+SECTION_STATUS_LABELS = {
+    "INFO": "Thông tin",
+    "GOOD": "Tốt",
+    "PROCESSING": "Đang xử lý",
+    "ATTENTION": "Cần chú ý",
+    "CRITICAL": "Khẩn cấp",
+}
+ISSUE_STATUS_LABELS = {
+    "OPEN": "Mở",
+    "PROCESSING": "Đang xử lý",
+    "RESOLVED": "Đã xử lý",
+    "CLOSED": "Đã đóng",
+}
+ISSUE_SEVERITY_LABELS = {
+    "LOW": "Thấp",
+    "MEDIUM": "Trung bình",
+    "HIGH": "Cao",
+    "CRITICAL": "Khẩn cấp",
+}
+
+
+class DashboardScopeType(str, Enum):
+    SYSTEM = "SYSTEM"
+    CUSTOMER = "CUSTOMER"
+    PROJECT = "PROJECT"
+    CONTRACTOR = "CONTRACTOR"
+
+
+@dataclass(frozen=True)
+class DashboardScope:
+    """A non-persistent aggregation scope intersected with project access.
+
+    Routes are responsible for action permissions.  This value object only
+    provides the shared, data-level intersection so aggregates cannot expand
+    beyond a user's effective project scope.
+    """
+
+    kind: DashboardScopeType
+    customer_id: int | None = None
+    project_id: int | None = None
+
+    @classmethod
+    def system(cls):
+        return cls(DashboardScopeType.SYSTEM)
+
+    @classmethod
+    def customer(cls, customer_id):
+        return cls(DashboardScopeType.CUSTOMER, customer_id=int(customer_id))
+
+    def projects_query(self):
+        query = Project.query.options(joinedload(Project.customer)).filter(Project.deleted_at.is_(None))
+        if self.kind == DashboardScopeType.CUSTOMER:
+            query = query.filter(Project.customer_id == self.customer_id)
+        elif self.kind == DashboardScopeType.PROJECT:
+            query = query.filter(Project.id == self.project_id)
+
+        from app.project_memberships import accessible_project_ids
+
+        project_ids = accessible_project_ids(current_user, ("can_view_project",))
+        if project_ids is not None:
+            query = query.filter(Project.id.in_(project_ids or [0]))
+        return query
 
 
 class DashboardFilterError(ValueError):
@@ -152,6 +219,235 @@ def project_section_status_payload(project, selected_date=None):
             "contractors": {"construction_active": metrics["construction_active"], "solution_active": metrics["solution_active"]},
             "persistent_issues": {"total": sum(metrics["issue_counts"].values()), "by_status": metrics["issue_counts"]},
             "latest_project_update": {"id": latest.id, "date": latest.update_date.isoformat(), "title": latest.title} if latest else None}
+
+
+def dashboard_scope_context(scope, selected_date=None, days=7):
+    """Build Customer/System dashboard data from aggregate SQL queries.
+
+    The expected-report denominator is explicitly the active projects in the
+    effective scope.  Paused, completed, archived, and soft-deleted projects
+    are deliberately not counted as missing for the selected date.
+    """
+    selected_date = selected_date or datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).date()
+    effective_projects = scope.projects_query()
+    active_projects = effective_projects.filter(Project.status == ProjectStatus.ACTIVE.value).order_by(Project.code).all()
+    active_project_ids = [project.id for project in active_projects]
+    all_project_ids = [project_id for (project_id,) in effective_projects.with_entities(Project.id).all()]
+
+    submitted_rows = []
+    if active_project_ids:
+        submitted_rows = (
+            db.session.query(DailyReport.project_id, DailyReport.id, DailyReport.overall_status)
+            .filter(
+                DailyReport.project_id.in_(active_project_ids),
+                DailyReport.report_date == selected_date,
+            )
+            .all()
+        )
+    reports_by_project = {project_id: {"id": report_id, "status": status} for project_id, report_id, status in submitted_rows}
+    project_rows = [
+        {
+            "project": project,
+            "report": reports_by_project.get(project.id),
+            "submitted": project.id in reports_by_project,
+        }
+        for project in active_projects
+    ]
+    missing_projects = [row["project"] for row in project_rows if not row["submitted"]]
+
+    section_pie = _section_status_counts(active_project_ids, selected_date)
+    section_trend = _section_status_trend(active_project_ids, selected_date, days)
+    issue_counts = _issue_dashboard_counts(all_project_ids)
+    contractor_counts = _active_contractor_counts(all_project_ids)
+    updates = _recent_project_updates(all_project_ids)
+
+    expected_count = len(active_project_ids)
+    submitted_count = len(reports_by_project)
+    customer_count = 0
+    if all_project_ids:
+        customer_count = (
+            db.session.query(func.count(func.distinct(Project.customer_id)))
+            .filter(Project.id.in_(all_project_ids), Project.customer_id.is_not(None))
+            .scalar()
+            or 0
+        )
+
+    return {
+        "scope": scope,
+        "selected_date": selected_date,
+        "timezone": "Asia/Ho_Chi_Minh",
+        "projects": project_rows,
+        "missing_projects": missing_projects,
+        "recent_updates": updates,
+        "section_pie": section_pie,
+        "section_trend": section_trend,
+        "issue_counts": issue_counts,
+        "contractor_counts": contractor_counts,
+        "cards": {
+            "customers": int(customer_count),
+            "active_projects": expected_count,
+            "submitted_reports": submitted_count,
+            "missing_reports": expected_count - submitted_count,
+            "submission_rate": round((submitted_count / expected_count) * 100, 1) if expected_count else 0,
+            "distinct_contractors": contractor_counts["distinct"],
+            "persistent_issues": issue_counts["total"],
+        },
+    }
+
+
+def dashboard_scope_payload(scope, selected_date=None, days=7):
+    """CSP-safe chart contract shared by Customer and System dashboards."""
+    context = dashboard_scope_context(scope, selected_date=selected_date, days=days)
+    section_keys = [item.value for item in SectionStatus]
+    issue_status_keys = [item.value for item in IssueStatus]
+    severity_keys = [item.value for item in IssueSeverity]
+    project_labels = [row["project"].code for row in context["projects"]]
+    return {
+        "selected_date": context["selected_date"].isoformat(),
+        "timezone": context["timezone"],
+        "section_status": {
+            "keys": section_keys,
+            "labels": [SECTION_STATUS_LABELS[key] for key in section_keys],
+            "values": [int(context["section_pie"][key]) for key in section_keys],
+        },
+        "trend": {
+            "days": context["section_trend"]["labels"],
+            "series": {
+                key: [int(value) for value in context["section_trend"]["datasets"][key]]
+                for key in section_keys
+            },
+        },
+        "submissions": {
+            "labels": project_labels,
+            "values": [1 if row["submitted"] else 0 for row in context["projects"]],
+        },
+        "overall_status": {
+            "labels": project_labels,
+            "keys": [row["report"]["status"] if row["report"] else None for row in context["projects"]],
+        },
+        "persistent_issues": {
+            "status": {
+                "keys": issue_status_keys,
+                "labels": [ISSUE_STATUS_LABELS[key] for key in issue_status_keys],
+                "values": [int(context["issue_counts"]["by_status"].get(key, 0)) for key in issue_status_keys],
+            },
+            "severity": {
+                "keys": severity_keys,
+                "labels": [ISSUE_SEVERITY_LABELS[key] for key in severity_keys],
+                "values": [int(context["issue_counts"]["by_severity"].get(key, 0)) for key in severity_keys],
+            },
+            "by_project": {
+                "labels": project_labels,
+                "values": [int(context["issue_counts"]["by_project"].get(row["project"].id, 0)) for row in context["projects"]],
+            },
+        },
+        "contractors": {
+            "labels": ["Thi công", "Giải pháp"],
+            "values": [
+                int(context["contractor_counts"]["by_role"].get("CONSTRUCTION", 0)),
+                int(context["contractor_counts"]["by_role"].get("SOLUTION", 0)),
+            ],
+        },
+    }
+
+
+def _section_status_counts(project_ids, selected_date):
+    counts = {item.value: 0 for item in SectionStatus}
+    if not project_ids:
+        return counts
+    rows = (
+        db.session.query(DailyReportSection.status, func.count(DailyReportSection.id))
+        .join(DailyReport, DailyReport.id == DailyReportSection.daily_report_id)
+        .filter(DailyReport.project_id.in_(project_ids), DailyReport.report_date == selected_date)
+        .group_by(DailyReportSection.status)
+        .all()
+    )
+    counts.update({status: int(count) for status, count in rows})
+    return counts
+
+
+def _section_status_trend(project_ids, selected_date, days):
+    statuses = [item.value for item in SectionStatus]
+    start = selected_date - timedelta(days=days - 1)
+    labels = [(start + timedelta(days=offset)).isoformat() for offset in range(days)]
+    datasets = {status: [0] * len(labels) for status in statuses}
+    if not project_ids:
+        return {"labels": labels, "datasets": datasets}
+    rows = (
+        db.session.query(DailyReport.report_date, DailyReportSection.status, func.count(DailyReportSection.id))
+        .join(DailyReportSection, DailyReportSection.daily_report_id == DailyReport.id)
+        .filter(
+            DailyReport.project_id.in_(project_ids),
+            DailyReport.report_date.between(start, selected_date),
+        )
+        .group_by(DailyReport.report_date, DailyReportSection.status)
+        .order_by(DailyReport.report_date)
+        .all()
+    )
+    positions = {label: index for index, label in enumerate(labels)}
+    for report_date, status, count in rows:
+        datasets[status][positions[report_date.isoformat()]] = int(count)
+    return {"labels": labels, "datasets": datasets}
+
+
+def _issue_dashboard_counts(project_ids):
+    empty = {
+        "total": 0,
+        "by_status": {item.value: 0 for item in IssueStatus},
+        "by_severity": {item.value: 0 for item in IssueSeverity},
+        "by_project": {},
+        "by_project_status": {},
+        "by_project_severity": {},
+    }
+    if not project_ids:
+        return empty
+    base = PersistentIssue.query.filter(
+        PersistentIssue.project_id.in_(project_ids),
+        PersistentIssue.deleted_at.is_(None),
+    )
+    status_rows = base.with_entities(PersistentIssue.status, func.count(PersistentIssue.id)).group_by(PersistentIssue.status).all()
+    severity_rows = base.with_entities(PersistentIssue.severity, func.count(PersistentIssue.id)).group_by(PersistentIssue.severity).all()
+    project_rows = base.with_entities(PersistentIssue.project_id, func.count(PersistentIssue.id)).group_by(PersistentIssue.project_id).all()
+    project_status_rows = base.with_entities(PersistentIssue.project_id, PersistentIssue.status, func.count(PersistentIssue.id)).group_by(PersistentIssue.project_id, PersistentIssue.status).all()
+    project_severity_rows = base.with_entities(PersistentIssue.project_id, PersistentIssue.severity, func.count(PersistentIssue.id)).group_by(PersistentIssue.project_id, PersistentIssue.severity).all()
+    empty["by_status"].update({status: int(count) for status, count in status_rows})
+    empty["by_severity"].update({severity: int(count) for severity, count in severity_rows})
+    empty["by_project"].update({project_id: int(count) for project_id, count in project_rows})
+    for project_id, status, count in project_status_rows:
+        empty["by_project_status"].setdefault(project_id, {})[status] = int(count)
+    for project_id, severity, count in project_severity_rows:
+        empty["by_project_severity"].setdefault(project_id, {})[severity] = int(count)
+    empty["total"] = sum(empty["by_status"].values())
+    return empty
+
+
+def _active_contractor_counts(project_ids):
+    result = {"distinct": 0, "by_role": {"CONSTRUCTION": 0, "SOLUTION": 0}}
+    if not project_ids:
+        return result
+    base = ProjectContractorAssignment.query.filter(
+        ProjectContractorAssignment.project_id.in_(project_ids),
+        ProjectContractorAssignment.status == ProjectContractorAssignmentStatus.ACTIVE.value,
+    )
+    result["distinct"] = int(base.with_entities(func.count(func.distinct(ProjectContractorAssignment.contractor_id))).scalar() or 0)
+    rows = base.with_entities(ProjectContractorAssignment.role, func.count(ProjectContractorAssignment.id)).group_by(ProjectContractorAssignment.role).all()
+    result["by_role"].update({role: int(count) for role, count in rows})
+    return result
+
+
+def _recent_project_updates(project_ids):
+    if not project_ids:
+        return []
+    return (
+        ProjectUpdate.query.options(
+            joinedload(ProjectUpdate.project),
+            joinedload(ProjectUpdate.contractor_assignment).joinedload(ProjectContractorAssignment.contractor),
+        )
+        .filter(ProjectUpdate.project_id.in_(project_ids), ProjectUpdate.deleted_at.is_(None))
+        .order_by(ProjectUpdate.update_date.desc(), ProjectUpdate.created_at.desc(), ProjectUpdate.id.desc())
+        .limit(10)
+        .all()
+    )
 
 
 def status_chart_data(filters):
