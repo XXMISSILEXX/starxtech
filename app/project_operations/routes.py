@@ -5,6 +5,8 @@ from flask_login import current_user
 
 from app.auth.permissions import can_read_project
 from app.extensions import db
+from sqlalchemy import func, or_
+from sqlalchemy.orm import contains_eager, joinedload
 from app.models import (
     Project,
     ProjectContractor,
@@ -13,7 +15,10 @@ from app.models import (
     ProjectContractorRole,
     ProjectUpdate,
     ProjectUpdateType,
+    Customer,
+    DailyReport,
 )
+from app.project_memberships import accessible_project_ids
 from app.project_operations import bp
 from app.project_operations.services import (
     accessible_contractors_query,
@@ -40,6 +45,33 @@ ROLE_PATHS = {
 }
 
 
+@bp.get("/project-operations")
+def operations_index():
+    _permission_required("project_operations.view")
+    project_ids = accessible_project_ids(current_user, ("can_view_project",))
+    # The explicit outer join is required for the customer sort.  Loader
+    # options alone use their own alias and do not put ``customers`` in FROM.
+    query = Project.query.outerjoin(Customer, Project.customer_id == Customer.id).options(
+        contains_eager(Project.customer)
+    ).filter(Project.deleted_at.is_(None))
+    if project_ids is not None:
+        query = query.filter(Project.id.in_(project_ids or [0]))
+    search = request.args.get("q", "").strip()
+    if search:
+        query = query.filter(or_(Project.code.ilike(f"%{search}%"), Project.name.ilike(f"%{search}%"), Customer.name.ilike(f"%{search}%")))
+    projects = query.order_by(Customer.name.asc().nulls_last(), Project.name.asc(), Project.id.asc()).all()
+    ids = [project.id for project in projects]
+    today = date.today()
+    role_counts = {(row[0], row[1]): row[2] for row in db.session.query(ProjectContractorAssignment.project_id, ProjectContractorAssignment.role, func.count(ProjectContractorAssignment.id)).filter(ProjectContractorAssignment.project_id.in_(ids or [0]), ProjectContractorAssignment.status != "ENDED").group_by(ProjectContractorAssignment.project_id, ProjectContractorAssignment.role).all()}
+    submitted = {row[0] for row in db.session.query(DailyReport.project_id).filter(DailyReport.project_id.in_(ids or [0]), DailyReport.report_date == today)}
+    groups = {}
+    for project in projects:
+        customer = project.customer
+        key = customer.id if customer else 0
+        groups.setdefault(key, {"customer": customer, "projects": []})["projects"].append({"project": project, "submitted": project.id in submitted, "construction": role_counts.get((project.id, "CONSTRUCTION"), 0), "solution": role_counts.get((project.id, "SOLUTION"), 0)})
+    return render_template("project_operations/index.html", groups=list(groups.values()), search=search)
+
+
 def _permission_required(code):
     if not current_user.can(code):
         abort(403)
@@ -51,6 +83,23 @@ def _contractor_or_404(contractor_id):
 
 def _project_or_404(project_id):
     return Project.query.filter(Project.id == project_id, Project.deleted_at.is_(None)).first_or_404()
+
+
+@bp.get("/projects/<int:project_id>/workspace")
+def project_workspace(project_id):
+    project = _project_or_404(project_id)
+    if not can_read_project(project.id):
+        abort(403)
+    tabs = [
+        ("overview", "Tổng quan", "dashboards.project.view", url_for("projects.dashboard", project_id=project.id)),
+        ("reports", "Báo cáo ngày", "reports.view", url_for("projects.reports", project_id=project.id)),
+        ("updates", "Báo cáo xuyên suốt", "project_updates.view", url_for("project_operations.project_updates", project_id=project.id)),
+        ("issues", "Vấn đề tồn đọng", "issues.view", url_for("projects.issues", project_id=project.id)),
+        ("construction", "Đối tác thi công", "contractor_assignments.view", url_for("project_operations.project_contractors", project_id=project.id, role_path="construction")),
+        ("solution", "Đối tác giải pháp", "contractor_assignments.view", url_for("project_operations.project_contractors", project_id=project.id, role_path="solution")),
+    ]
+    visible_tabs = [tab for tab in tabs if current_user.can(tab[2])]
+    return render_template("project_operations/workspace.html", project=project, tabs=visible_tabs)
 
 
 def _date_from_form(field):

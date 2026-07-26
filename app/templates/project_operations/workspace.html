@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} — Workspace{% endblock %}
+{% block page_title %}Project Workspace{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="{{ url_for('project_operations.operations_index') }}">Quản lý dự án & nhà thầu</a></li><li class="breadcrumb-item active" aria-current="page">{{ project.code }}</li></ol></nav>
+<header class="mb-3"><h2 class="h4 mb-1">{{ project.name }}</h2><div class="text-muted">{{ project.customer.name if project.customer else 'Khách hàng chưa phân loại' }} · {{ project.code }}</div><span class="badge text-bg-secondary mt-2">{{ project.status }}</span></header>
+<div class="nav nav-tabs flex-wrap" role="tablist" aria-label="Khu vực dự án">{% for key, label, permission, href in tabs %}<a class="nav-link {% if loop.first %}active{% endif %}" href="{{ href }}" role="tab">{{ label }}</a>{% endfor %}</div>
+<section class="card card-body border-top-0 rounded-top-0"><p class="mb-0">Chọn một tab để mở chức năng đã được phân quyền cho dự án này.</p></section>
+{% endblock %}
