@@ -58,6 +58,10 @@ class Project(TimestampMixin, SoftDeleteMixin, db.Model):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    contractor_assignments = db.relationship(
+        "ProjectContractorAssignment",
+        back_populates="project",
+    )
 
 
 class ProjectUser(TimestampMixin, db.Model):

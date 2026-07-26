@@ -17,6 +17,18 @@ class ProjectStatus(str, Enum):
     ARCHIVED = "archived"
 
 
+class ProjectContractorRole(str, Enum):
+    CONSTRUCTION = "CONSTRUCTION"
+    SOLUTION = "SOLUTION"
+
+
+class ProjectContractorAssignmentStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    PAUSED = "PAUSED"
+    COMPLETED = "COMPLETED"
+    ENDED = "ENDED"
+
+
 class DailyReportStatus(str, Enum):
     UPDATED = "UPDATED"
     GOOD = "GOOD"

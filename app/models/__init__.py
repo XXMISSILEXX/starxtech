@@ -5,6 +5,8 @@ from app.models.enums import (
     DailyReportStatus,
     IssueSeverity,
     IssueStatus,
+    ProjectContractorAssignmentStatus,
+    ProjectContractorRole,
     ProjectStatus,
     SectionStatus,
     UserRole,
@@ -21,6 +23,7 @@ from app.models.partner import (
     PartnerRelationship,
 )
 from app.models.project import Project, ProjectUser, ReportCategory
+from app.models.project_contractor import ProjectContractor, ProjectContractorAssignment
 from app.models.rbac import Permission, Role, RolePermission
 from app.models.user import User
 from app.models.storage import StorageObject, UploadBatch, UploadBatchItem, UploadSelectionSession, DownloadEvent
@@ -48,6 +51,10 @@ __all__ = [
     "PartnerFieldValue",
     "PartnerRelationship",
     "Project",
+    "ProjectContractor",
+    "ProjectContractorAssignment",
+    "ProjectContractorAssignmentStatus",
+    "ProjectContractorRole",
     "ProjectStatus",
     "ProjectUser",
     "ReportAttachment",
