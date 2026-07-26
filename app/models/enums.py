@@ -29,6 +29,15 @@ class ProjectContractorAssignmentStatus(str, Enum):
     ENDED = "ENDED"
 
 
+class ProjectUpdateType(str, Enum):
+    GENERAL = "GENERAL"
+    PROGRESS = "PROGRESS"
+    HANDOVER = "HANDOVER"
+    CONTRACTOR = "CONTRACTOR"
+    STATUS_CHANGE = "STATUS_CHANGE"
+    NOTE = "NOTE"
+
+
 class DailyReportStatus(str, Enum):
     UPDATED = "UPDATED"
     GOOD = "GOOD"

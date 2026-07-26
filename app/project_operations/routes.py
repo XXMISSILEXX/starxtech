@@ -11,6 +11,8 @@ from app.models import (
     ProjectContractorAssignment,
     ProjectContractorAssignmentStatus,
     ProjectContractorRole,
+    ProjectUpdate,
+    ProjectUpdateType,
 )
 from app.project_operations import bp
 from app.project_operations.services import (
@@ -25,6 +27,10 @@ from app.project_operations.services import (
     end_assignment,
     restore_contractor,
     update_assignment,
+    create_project_update,
+    edit_project_update,
+    soft_delete_project_update,
+    updates_query,
 )
 
 
@@ -237,3 +243,111 @@ def assignment_end(assignment_id):
     else:
         flash("Đã kết thúc assignment; lịch sử vẫn được giữ.", "success")
     return redirect(url_for("project_operations.project_contractors", project_id=assignment.project_id, role_path=assignment.role.lower()))
+
+
+def _update_or_404(update_id):
+    return ProjectUpdate.query.filter_by(id=update_id).first_or_404()
+
+
+def _can_edit_update(update):
+    return current_user.can("project_updates.edit_all") or (
+        current_user.can("project_updates.edit") and update.created_by_id == current_user.id
+    )
+
+
+def _update_form(project, update=None, assignment=None):
+    assignments = ProjectContractorAssignment.query.filter(
+        ProjectContractorAssignment.project_id == project.id,
+        ProjectContractorAssignment.status != ProjectContractorAssignmentStatus.ENDED.value,
+    ).order_by(ProjectContractorAssignment.role, ProjectContractorAssignment.id).all()
+    return render_template("project_operations/updates/form.html", project=project, update=update,
+                           locked_assignment=assignment, assignments=assignments, types=ProjectUpdateType)
+
+
+@bp.get("/projects/<int:project_id>/updates")
+def project_updates(project_id):
+    _permission_required("project_updates.view")
+    project = _project_or_404(project_id)
+    if not can_read_project(project.id):
+        abort(403)
+    update_type = request.args.get("type") or None
+    return render_template("project_operations/updates/index.html", project=project,
+                           updates=updates_query(project_id=project.id, update_type=update_type).all(),
+                           types=ProjectUpdateType, selected_type=update_type,
+                           can_create=current_user.can("project_updates.create"))
+
+
+@bp.get("/projects/<int:project_id>/updates/new")
+def project_update_new(project_id):
+    _permission_required("project_updates.create")
+    project = _project_or_404(project_id)
+    if not can_read_project(project.id):
+        abort(403)
+    assignment_id = request.args.get("assignment_id", type=int)
+    assignment = ProjectContractorAssignment.query.get_or_404(assignment_id) if assignment_id else None
+    if assignment is not None and assignment.project_id != project.id:
+        abort(403)
+    return _update_form(project, assignment=assignment)
+
+
+@bp.post("/projects/<int:project_id>/updates")
+def project_update_create(project_id):
+    _permission_required("project_updates.create")
+    project = _project_or_404(project_id)
+    if not can_read_project(project.id):
+        abort(403)
+    assignment_id = request.form.get("contractor_assignment_id", type=int)
+    assignment = ProjectContractorAssignment.query.get_or_404(assignment_id) if assignment_id else None
+    try:
+        update = create_project_update(project=project, assignment=assignment,
+            update_type=request.form.get("update_type", "GENERAL"), title=request.form.get("title", ""),
+            content=request.form.get("content", ""), update_date=_date_from_form("update_date"), actor_id=current_user.id)
+        db.session.commit()
+    except (ValueError, TypeError) as error:
+        db.session.rollback(); flash(str(error), "danger")
+        return _update_form(project, assignment=assignment), 400
+    flash("Đã thêm cập nhật dự án.", "success")
+    return redirect(url_for("project_operations.project_updates", project_id=update.project_id))
+
+
+@bp.route("/project-updates/<int:update_id>/edit", methods=["GET", "POST"])
+def project_update_edit(update_id):
+    update = _update_or_404(update_id)
+    if not can_read_project(update.project_id) or not _can_edit_update(update):
+        abort(403)
+    if request.method == "GET":
+        return _update_form(update.project, update=update, assignment=update.contractor_assignment)
+    try:
+        edit_project_update(update, update_type=request.form.get("update_type", update.update_type),
+            title=request.form.get("title", ""), content=request.form.get("content", ""),
+            update_date=_date_from_form("update_date"), actor_id=current_user.id)
+        db.session.commit()
+    except (ValueError, TypeError) as error:
+        db.session.rollback(); flash(str(error), "danger")
+        return _update_form(update.project, update=update, assignment=update.contractor_assignment), 400
+    flash("Đã cập nhật timeline.", "success")
+    return redirect(url_for("project_operations.project_updates", project_id=update.project_id))
+
+
+@bp.post("/project-updates/<int:update_id>/delete")
+def project_update_delete(update_id):
+    _permission_required("project_updates.delete")
+    update = _update_or_404(update_id)
+    if not can_read_project(update.project_id):
+        abort(403)
+    soft_delete_project_update(update, actor_id=current_user.id)
+    db.session.commit()
+    flash("Đã xóa mềm cập nhật. Audit được giữ lại.", "success")
+    return redirect(url_for("project_operations.project_updates", project_id=update.project_id))
+
+
+@bp.get("/project-assignments/<int:assignment_id>/updates")
+def assignment_updates(assignment_id):
+    _permission_required("project_updates.view")
+    assignment = ProjectContractorAssignment.query.get_or_404(assignment_id)
+    if not can_read_project(assignment.project_id):
+        abort(403)
+    return render_template("project_operations/updates/index.html", project=assignment.project,
+                           assignment=assignment, updates=updates_query(assignment_id=assignment.id).all(),
+                           types=ProjectUpdateType, selected_type=None,
+                           can_create=current_user.can("project_updates.create"))

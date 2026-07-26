@@ -98,3 +98,4 @@ class ProjectContractorAssignment(TimestampMixin, db.Model):
     contractor = db.relationship("ProjectContractor", back_populates="assignments")
     created_by = db.relationship("User", foreign_keys=[created_by_id])
     updated_by = db.relationship("User", foreign_keys=[updated_by_id])
+    updates = db.relationship("ProjectUpdate", back_populates="contractor_assignment")

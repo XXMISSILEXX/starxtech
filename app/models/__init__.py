@@ -7,6 +7,7 @@ from app.models.enums import (
     IssueStatus,
     ProjectContractorAssignmentStatus,
     ProjectContractorRole,
+    ProjectUpdateType,
     ProjectStatus,
     SectionStatus,
     UserRole,
@@ -24,6 +25,7 @@ from app.models.partner import (
 )
 from app.models.project import Project, ProjectUser, ReportCategory
 from app.models.project_contractor import ProjectContractor, ProjectContractorAssignment
+from app.models.project_update import ProjectUpdate
 from app.models.rbac import Permission, Role, RolePermission
 from app.models.user import User
 from app.models.storage import StorageObject, UploadBatch, UploadBatchItem, UploadSelectionSession, DownloadEvent
@@ -55,6 +57,8 @@ __all__ = [
     "ProjectContractorAssignment",
     "ProjectContractorAssignmentStatus",
     "ProjectContractorRole",
+    "ProjectUpdate",
+    "ProjectUpdateType",
     "ProjectStatus",
     "ProjectUser",
     "ReportAttachment",

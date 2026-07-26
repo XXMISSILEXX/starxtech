@@ -3,6 +3,7 @@ import unicodedata
 from datetime import date, datetime
 
 from sqlalchemy import or_
+from sqlalchemy.orm import joinedload
 
 from app.audit import log_audit
 from app.extensions import db
@@ -11,6 +12,8 @@ from app.models import (
     ProjectContractor,
     ProjectContractorAssignment,
     ProjectContractorAssignmentStatus,
+    ProjectUpdate,
+    ProjectUpdateType,
 )
 from app.project_memberships import accessible_project_ids, is_project_admin
 
@@ -212,3 +215,81 @@ def end_assignment(assignment, *, ended_on=None, actor_id=None):
     assignment.updated_by_id = actor_id
     log_audit("project_contractor_assignment.end", "ProjectContractorAssignment", assignment.id, old_values=old_values, new_values=assignment_snapshot(assignment))
     return assignment
+
+
+def updates_query(*, project_id=None, assignment_id=None, update_type=None, include_deleted=False):
+    query = ProjectUpdate.query
+    if not include_deleted:
+        query = query.filter(ProjectUpdate.deleted_at.is_(None))
+    if project_id is not None:
+        query = query.filter(ProjectUpdate.project_id == project_id)
+    if assignment_id is not None:
+        query = query.filter(ProjectUpdate.contractor_assignment_id == assignment_id)
+    if update_type:
+        query = query.filter(ProjectUpdate.update_type == update_type)
+    return query.options(
+        joinedload(ProjectUpdate.created_by),
+        joinedload(ProjectUpdate.contractor_assignment).joinedload(ProjectContractorAssignment.contractor),
+    ).order_by(ProjectUpdate.update_date.desc(), ProjectUpdate.created_at.desc(), ProjectUpdate.id.desc())
+
+
+def update_snapshot(update):
+    return {
+        "project_id": update.project_id,
+        "contractor_assignment_id": update.contractor_assignment_id,
+        "update_type": update.update_type,
+        "title": update.title,
+        "content": update.content,
+        "update_date": update.update_date.isoformat(),
+        "deleted_at": update.deleted_at.isoformat() if update.deleted_at else None,
+    }
+
+
+def validate_update_values(*, project, assignment, update_type, title, content, update_date):
+    if project.deleted_at is not None or project.status != "active":
+        raise ValueError("Chỉ có thể thêm cập nhật cho dự án đang hoạt động.")
+    if update_type not in {item.value for item in ProjectUpdateType}:
+        raise ValueError("Loại cập nhật không hợp lệ.")
+    if not title or len(title.strip()) > 255:
+        raise ValueError("Tiêu đề là bắt buộc và tối đa 255 ký tự.")
+    if not content or len(content.strip()) > 10000:
+        raise ValueError("Nội dung là bắt buộc và tối đa 10000 ký tự.")
+    if update_date > date.today():
+        raise ValueError("Ngày cập nhật không được ở tương lai.")
+    if assignment is not None:
+        if assignment.project_id != project.id:
+            raise ValueError("Assignment không thuộc dự án này.")
+        if assignment.status == ProjectContractorAssignmentStatus.ENDED.value:
+            raise ValueError("Không thể thêm cập nhật cho assignment đã kết thúc.")
+        if not assignment.contractor.is_active:
+            raise ValueError("Không thể thêm cập nhật cho nhà thầu đã lưu trữ.")
+
+
+def create_project_update(*, project, assignment=None, update_type, title, content, update_date, actor_id):
+    validate_update_values(project=project, assignment=assignment, update_type=update_type, title=title, content=content, update_date=update_date)
+    update = ProjectUpdate(project_id=project.id, contractor_assignment_id=assignment.id if assignment else None,
+                           update_type=update_type, title=title.strip(), content=content.strip(), update_date=update_date,
+                           created_by_id=actor_id)
+    db.session.add(update)
+    db.session.flush()
+    log_audit("project_update.create", "ProjectUpdate", update.id, new_values=update_snapshot(update))
+    return update
+
+
+def edit_project_update(update, *, update_type, title, content, update_date, actor_id):
+    old_values = update_snapshot(update)
+    validate_update_values(project=update.project, assignment=update.contractor_assignment, update_type=update_type, title=title, content=content, update_date=update_date)
+    update.update_type, update.title, update.content, update.update_date = update_type, title.strip(), content.strip(), update_date
+    update.updated_by_id = actor_id
+    log_audit("project_update.update", "ProjectUpdate", update.id, old_values=old_values, new_values=update_snapshot(update))
+    return update
+
+
+def soft_delete_project_update(update, *, actor_id):
+    if update.deleted_at is not None:
+        return update
+    old_values = update_snapshot(update)
+    update.deleted_at = datetime.utcnow()
+    update.updated_by_id = actor_id
+    log_audit("project_update.delete", "ProjectUpdate", update.id, old_values=old_values, new_values=update_snapshot(update))
+    return update
