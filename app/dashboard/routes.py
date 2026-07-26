@@ -1,4 +1,4 @@
-from flask import abort, flash, jsonify, render_template, request, url_for
+from flask import abort, jsonify, render_template, request, url_for
 from flask_login import current_user
 
 from app.dashboard import api_bp, bp
@@ -7,31 +7,16 @@ from app.dashboard.services import (
     DashboardFilterError,
     dashboard_scope_context,
     dashboard_scope_payload,
-    dashboard_context,
-    parse_filters,
-    report_count_chart_data,
-    status_chart_data,
+    contractor_dashboard_context,
+    contractor_dashboard_payload,
+    contractor_is_visible,
+    parse_contractor_dashboard_filters,
     project_section_status_payload,
 )
 from app.auth.permissions import can_access_reports_module
 from app.auth.permissions import can_read_project
-from app.models import Customer, Project
+from app.models import Customer, Project, ProjectContractor
 from datetime import datetime
-
-
-@bp.get("")
-def index():
-    # Keep the existing report-centric URL stable for legacy/report-only users.
-    # The explicit system route below is the Phase 9 aggregate surface and
-    # requires both its action permission and global project scope.
-    if not can_access_reports_module(current_user):
-        abort(403)
-    try:
-        filters = parse_filters(request.args)
-    except DashboardFilterError as exc:
-        flash(str(exc), "danger")
-        filters = parse_filters({})
-    return render_template("dashboard/index.html", **dashboard_context(filters))
 
 
 @bp.get("/system")
@@ -62,20 +47,16 @@ def customer_dashboard(customer_id):
     )
 
 
-@api_bp.get("/status-chart")
-def status_chart():
-    if not can_access_reports_module(current_user):
-        abort(403)
-    filters = _filters_or_400()
-    return jsonify(status_chart_data(filters))
-
-
-@api_bp.get("/report-count-chart")
-def report_count_chart():
-    if not can_access_reports_module(current_user):
-        abort(403)
-    filters = _filters_or_400()
-    return jsonify(report_count_chart_data(filters))
+@bp.get("/contractors/<int:contractor_id>")
+def contractor_dashboard(contractor_id):
+    _require_contractor_dashboard()
+    contractor = _contractor_or_404(contractor_id)
+    filters = _contractor_filters_or_400()
+    try:
+        context = contractor_dashboard_context(contractor, filters)
+    except DashboardFilterError as exc:
+        abort(404, str(exc))
+    return render_template("dashboard/contractor.html", **context)
 
 
 @api_bp.get("/projects/<int:project_id>/section-status")
@@ -106,11 +87,34 @@ def customer_dashboard_payload(customer_id):
     return jsonify(dashboard_scope_payload(DashboardScope.customer(customer.id)))
 
 
-def _filters_or_400():
+@api_bp.get("/contractors/<int:contractor_id>/overview")
+def contractor_dashboard_payload_api(contractor_id):
+    _require_contractor_dashboard()
+    contractor = _contractor_or_404(contractor_id)
+    filters = _contractor_filters_or_400()
     try:
-        return parse_filters(request.args)
+        return jsonify(contractor_dashboard_payload(contractor, filters))
+    except DashboardFilterError as exc:
+        abort(404, str(exc))
+
+
+def _contractor_filters_or_400():
+    try:
+        return parse_contractor_dashboard_filters(request.args)
     except DashboardFilterError as exc:
         abort(400, str(exc))
+
+
+def _contractor_or_404(contractor_id):
+    contractor = ProjectContractor.query.filter_by(id=contractor_id).first_or_404()
+    if not contractor_is_visible(contractor.id):
+        abort(404)
+    return contractor
+
+
+def _require_contractor_dashboard():
+    if not can_access_reports_module(current_user) or not current_user.can("dashboards.contractor.view"):
+        abort(403)
 
 
 def _require_dashboard_scope(permission):

@@ -91,27 +91,11 @@ def issue_form(title="New persistent issue", status="OPEN"):
     }
 
 
-def test_reporter_dashboard_does_not_leak_unassigned_project_data(client, app):
+def test_legacy_report_dashboard_and_chart_routes_are_404(client, app):
     with app.app_context():
         seed_dashboard_data()
-
-    login(client, "reporter")
-    response = client.get("/reports/dashboard")
-
-    assert response.status_code == 200
-    assert b"Assigned good report" in response.data
-    assert b"Unassigned critical report" not in response.data
-    assert b"Assigned open issue" in response.data
-    assert b"Unassigned open issue" not in response.data
-
-    chart = client.get("/api/reports/dashboard/status-chart")
-    assert chart.status_code == 200
-    payload = chart.get_json()
-    counts = dict(zip(payload["labels"], payload["counts"]))
-    assert counts["Tốt"] == 1
-    assert counts["Đang xử lý"] == 1
-    assert counts["Khẩn cấp"] == 0
-    assert "Nghiêm trọng" not in counts
+    for url in ("/reports/dashboard", "/api/reports/dashboard/status-chart", "/api/reports/dashboard/report-count-chart"):
+        assert client.get(url).status_code == 404
 
 
 def test_viewer_admin_sees_all_but_no_write_buttons(client, app):
@@ -119,11 +103,6 @@ def test_viewer_admin_sees_all_but_no_write_buttons(client, app):
         seed_dashboard_data()
 
     login(client, "viewer")
-    dashboard = client.get("/reports/dashboard")
-    assert dashboard.status_code == 200
-    assert b"Unassigned critical report" in dashboard.data
-    assert b"Unassigned open issue" in dashboard.data
-
     project_dashboard = client.get("/reports/projects/1/dashboard")
     assert project_dashboard.status_code == 200
     assert b"Add report" not in project_dashboard.data
@@ -136,29 +115,12 @@ def test_viewer_admin_sees_all_but_no_write_buttons(client, app):
     assert blocked.status_code == 403
 
 
-def test_dashboard_counts_are_correct_for_seed_data(client, app):
-    with app.app_context():
-        seed_dashboard_data()
-
-    login(client, "super")
-    response = client.get("/reports/dashboard")
-
+def test_project_dashboard_uses_project_context_issue_wording(client, app):
+    login(client, "viewer")
+    response = client.get("/reports/projects/1/dashboard")
     assert response.status_code == 200
-    assert "Tổng báo cáo".encode() in response.data
-    assert "Vấn đề đang mở".encode() in response.data
-    assert "Khẩn cấp".encode() in response.data
-    assert b'data-status-icon-key="x-octagon-fill"' in response.data
-
-    chart = client.get("/api/reports/dashboard/status-chart")
-    counts = dict(zip(chart.get_json()["labels"], chart.get_json()["counts"]))
-    assert counts["Tốt"] == 1
-    assert counts["Đang xử lý"] == 1
-    assert counts["Khẩn cấp"] == 1
-    assert "Nghiêm trọng" not in counts
-
-    count_chart = client.get("/api/reports/dashboard/report-count-chart?from_date=2026-07-01&to_date=2026-07-31")
-    assert count_chart.status_code == 200
-    assert count_chart.get_json()["counts"] == [1, 1, 1]
+    assert "Vấn đề tồn đọng".encode() in response.data
+    assert "Vấn đề đang mở".encode() not in response.data
 
 
 def test_reporter_cannot_mutate_persistent_issues_by_default(client, app):
@@ -408,3 +370,89 @@ def test_system_dashboard_payload_query_count_is_not_linear(client, app):
         finally:
             event.remove(db.engine, "before_cursor_execute", before)
     assert count < 20
+
+
+def test_contractor_dashboard_is_assignment_scoped_and_keeps_project_context(client, app):
+    with app.app_context():
+        customer_one = Customer(id=901, name="Contract customer one", normalized_name="contract customer one")
+        customer_two = Customer(id=902, name="Contract customer two", normalized_name="contract customer two")
+        project_one = db.session.get(Project, 1); project_two = db.session.get(Project, 2)
+        project_one.customer = customer_one; project_two.customer = customer_two
+        contractor = ProjectContractor(id=901, name="Contractor Dashboard", short_name="CD", normalized_name="contractor dashboard")
+        archived = ProjectContractor(id=902, name="Archived contractor", normalized_name="archived contractor", is_active=False)
+        db.session.add_all([customer_one, customer_two, contractor, archived]); db.session.flush()
+        active = ProjectContractorAssignment(id=901, project_id=1, contractor_id=contractor.id, role="CONSTRUCTION", status="ACTIVE")
+        ended = ProjectContractorAssignment(id=902, project_id=2, contractor_id=contractor.id, role="SOLUTION", status="ENDED")
+        db.session.add_all([active, ended]); db.session.flush()
+        db.session.add_all([
+            ProjectUpdate(id=901, project_id=1, contractor_assignment_id=active.id, update_type="CONTRACTOR", title="Bound contractor update", content="bound", update_date=date.today(), created_by_id=3),
+            ProjectUpdate(id=902, project_id=1, update_type="GENERAL", title="General update", content="general", update_date=date.today(), created_by_id=3),
+            DailyReport(id=901, project_id=1, report_date=date.today(), overall_status="GOOD", highlight="context", created_by_user_id=3),
+            PersistentIssue(id=901, project_id=1, title="Project context issue", severity="LOW", status="OPEN", opened_date=date.today(), created_by_user_id=3),
+        ])
+        db.session.commit()
+
+    login(client, "viewer")
+    page = client.get("/reports/dashboard/contractors/901")
+    assert page.status_code == 200
+    assert b"CD" in page.data and "Bối cảnh báo cáo dự án".encode() in page.data
+    assert b"Bound contractor update" in page.data
+    assert b"General update" not in page.data
+    assert "Bối cảnh dự án".encode() in page.data
+    payload = client.get("/api/reports/dashboard/contractors/901/overview").get_json()
+    assert payload["cards"]["active_projects"] == 1
+    assert payload["assignment_roles"]["values"] == [1, 0]
+    assert payload["latest_update"]["title"] == "Bound contractor update"
+    historical = client.get("/api/reports/dashboard/contractors/901/overview?assignment_status=ALL").get_json()
+    assert historical["assignment_roles"]["values"] == [1, 1]
+    assert client.get("/reports/dashboard/contractors/902").status_code == 200
+
+
+def test_contractor_dashboard_hides_inaccessible_contractors_after_permission_check(client, app):
+    with app.app_context():
+        contractor = ProjectContractor(id=903, name="Scoped contractor", normalized_name="scoped contractor")
+        other = ProjectContractor(id=904, name="Other contractor", normalized_name="other contractor")
+        db.session.add_all([contractor, other]); db.session.flush()
+        db.session.add_all([
+            ProjectContractorAssignment(id=903, project_id=1, contractor_id=contractor.id, role="CONSTRUCTION", status="ACTIVE"),
+            ProjectContractorAssignment(id=904, project_id=2, contractor_id=other.id, role="CONSTRUCTION", status="ACTIVE"),
+        ])
+        permission = Permission.query.filter_by(code="dashboards.contractor.view").one()
+        reporter = User.query.filter_by(username="reporter").one()
+        db.session.add(RolePermission(role_id=reporter.role_id, permission_id=permission.id)); db.session.commit()
+    login(client, "reporter")
+    assert client.get("/reports/dashboard/contractors/903").status_code == 200
+    assert client.get("/api/reports/dashboard/contractors/904/overview").status_code == 404
+    assert client.get("/reports/dashboard/contractors/903?project_id=2").status_code == 404
+    assert client.get("/reports/dashboard/contractors/999999").status_code == 404
+
+
+def test_contractor_dashboard_payload_query_count_is_not_linear(client, app):
+    with app.app_context():
+        contractor = ProjectContractor(id=905, name="Query contractor", normalized_name="query contractor")
+        db.session.add(contractor); db.session.flush()
+        db.session.add(ProjectContractorAssignment(id=905, project_id=1, contractor_id=contractor.id, role="CONSTRUCTION", status="ACTIVE"))
+        db.session.commit()
+    login(client, "viewer")
+
+    def payload_queries(extra_rows, start):
+        with app.app_context():
+            for index in range(extra_rows):
+                row_id = start + index
+                db.session.add(ProjectUpdate(id=row_id, project_id=1, contractor_assignment_id=905, update_type="NOTE", title=f"Update {index}", content="x", update_date=date.today(), created_by_id=3))
+            db.session.commit()
+            count = 0
+            def before(*_args):
+                nonlocal count
+                count += 1
+            event.listen(db.engine, "before_cursor_execute", before)
+            try:
+                with client:
+                    assert client.get("/api/reports/dashboard/contractors/905/overview").status_code == 200
+            finally:
+                event.remove(db.engine, "before_cursor_execute", before)
+            return count
+
+    small = payload_queries(1, 910)
+    large = payload_queries(20, 1000)
+    assert large == small

@@ -15,19 +15,14 @@ from app.models import (
     IssueStatus,
     PersistentIssue,
     Project,
+    ProjectContractor,
     ProjectStatus,
-    ProjectUser,
-    User,
     ProjectContractorAssignment,
     ProjectContractorAssignmentStatus,
     ProjectUpdate,
     SectionStatus,
 )
 from app.extensions import db
-from app.reports.services import accessible_projects_query
-
-
-OPEN_ISSUE_STATUSES = [IssueStatus.OPEN.value, IssueStatus.PROCESSING.value]
 SECTION_STATUS_LABELS = {
     "INFO": "Thông tin",
     "GOOD": "Tốt",
@@ -68,6 +63,7 @@ class DashboardScope:
     kind: DashboardScopeType
     customer_id: int | None = None
     project_id: int | None = None
+    contractor_id: int | None = None
 
     @classmethod
     def system(cls):
@@ -76,6 +72,10 @@ class DashboardScope:
     @classmethod
     def customer(cls, customer_id):
         return cls(DashboardScopeType.CUSTOMER, customer_id=int(customer_id))
+
+    @classmethod
+    def contractor(cls, contractor_id):
+        return cls(DashboardScopeType.CONTRACTOR, contractor_id=int(contractor_id))
 
     def projects_query(self):
         query = Project.query.options(joinedload(Project.customer)).filter(Project.deleted_at.is_(None))
@@ -96,85 +96,40 @@ class DashboardFilterError(ValueError):
     pass
 
 
-def parse_filters(args):
-    filters = {
-        "project_id": args.get("project_id", type=int),
-        "from_date": _parse_date(args.get("from_date", "").strip(), "from_date"),
-        "to_date": _parse_date(args.get("to_date", "").strip(), "to_date"),
-        "overall_status": args.get("overall_status", "").strip(),
-        "reporter": args.get("reporter", type=int),
-    }
-    if filters["overall_status"] and filters["overall_status"] not in [
-        status.value for status in DailyReportStatus
-    ]:
-        raise DashboardFilterError("Bộ lọc trạng thái báo cáo không hợp lệ.")
-    return filters
-
-
-def dashboard_context(filters):
-    reports = filtered_reports_query(filters)
-    # A report dashboard may be visible without the separately granted issue
-    # resource.  Do not leak issue counters or rows in that case.
-    from app.project_memberships import has_any_project_capability
-    issues = filtered_issues_query(filters) if has_any_project_capability(current_user, ("can_view_issues",)) else None
-    open_issues = issues.filter(PersistentIssue.status.in_(OPEN_ISSUE_STATUSES)) if issues is not None else None
-    critical_issues = issues.filter(PersistentIssue.severity == "CRITICAL") if issues is not None else None
-    status_counts = _status_counts(reports)
-
+def project_dashboard_context(project):
+    """Project Dashboard data is intentionally independent of retired legacy aggregates."""
+    reports = DailyReport.query.filter(DailyReport.project_id == project.id).order_by(
+        DailyReport.report_date.desc(),
+        DailyReport.id.desc(),
+    )
+    report_history = reports.limit(30).all()
+    rows = reports.with_entities(DailyReport.overall_status, func.count(DailyReport.id)).group_by(DailyReport.overall_status).all()
+    status_counts = {status: int(count) for status, count in rows}
+    from app.project_memberships import user_has_project_capability
+    can_view_issues = user_has_project_capability(current_user, project.id, "can_view_issues")
+    open_issues = (
+        PersistentIssue.query.filter(
+            PersistentIssue.project_id == project.id,
+            PersistentIssue.deleted_at.is_(None),
+            PersistentIssue.status.in_([IssueStatus.OPEN.value, IssueStatus.PROCESSING.value]),
+        ).order_by(PersistentIssue.severity.desc(), PersistentIssue.opened_date.desc(), PersistentIssue.id.desc()).limit(10).all()
+        if can_view_issues else []
+    )
     return {
-        "can_view_issues": issues is not None,
-        "filters": filters,
-        "projects": accessible_projects_query().all(),
-        "reporters": accessible_reporters(),
-        "statuses": [status.value for status in DailyReportStatus],
+        "project": project,
+        "report_history": report_history,
+        "report_dates": [report.report_date for report in report_history],
+        "project_dashboard": project_dashboard_metrics(project),
+        "can_view_issues": can_view_issues,
+        "open_issues": open_issues,
         "cards": {
-            "total_reports": reports.count(),
+            "total_reports": sum(status_counts.values()),
             "good_reports": status_counts.get(DailyReportStatus.GOOD.value, 0),
             "processing_reports": status_counts.get(DailyReportStatus.PROCESSING.value, 0),
             "attention_reports": status_counts.get(DailyReportStatus.ATTENTION.value, 0),
             "critical_reports": status_counts.get(DailyReportStatus.CRITICAL.value, 0),
-            "total_issues": issues.count() if issues is not None else 0,
-            "open_issues": open_issues.count() if open_issues is not None else 0,
-            "critical_issues": critical_issues.count() if critical_issues is not None else 0,
         },
-        "latest_reports": reports.order_by(
-            DailyReport.report_date.desc(),
-            DailyReport.id.desc(),
-        )
-        .limit(10)
-        .all(),
-        "open_issues": open_issues.order_by(
-            PersistentIssue.severity.desc(),
-            PersistentIssue.opened_date.desc(),
-            PersistentIssue.id.desc(),
-        )
-        .limit(10)
-        .all() if open_issues is not None else [],
-        "recent_issues": issues.order_by(
-            PersistentIssue.opened_date.desc(),
-            PersistentIssue.id.desc(),
-        )
-        .limit(10)
-        .all() if issues is not None else [],
     }
-
-
-def project_dashboard_context(project):
-    filters = {"project_id": project.id, "from_date": None, "to_date": None, "overall_status": "", "reporter": None}
-    context = dashboard_context(filters)
-    reports = filtered_reports_query(filters).order_by(
-        DailyReport.report_date.desc(),
-        DailyReport.id.desc(),
-    )
-    context.update(
-        {
-            "project": project,
-            "report_history": reports.limit(30).all(),
-            "report_dates": [report.report_date for report in reports.limit(30).all()],
-            "project_dashboard": project_dashboard_metrics(project),
-        }
-    )
-    return context
 
 
 def project_dashboard_metrics(project, selected_date=None, days=7):
@@ -351,6 +306,189 @@ def dashboard_scope_payload(scope, selected_date=None, days=7):
     }
 
 
+CONTRACTOR_ASSIGNMENT_STATUSES = [item.value for item in ProjectContractorAssignmentStatus]
+CONTRACTOR_ROLE_LABELS = {"CONSTRUCTION": "Thi công", "SOLUTION": "Giải pháp"}
+CONTRACTOR_STATUS_LABELS = {
+    "ACTIVE": "Đang hoạt động",
+    "PAUSED": "Tạm dừng",
+    "COMPLETED": "Hoàn thành",
+    "ENDED": "Đã kết thúc",
+}
+
+
+def parse_contractor_dashboard_filters(args):
+    """Parse non-persistent Contractor Dashboard filters.
+
+    An omitted status intentionally keeps current and completed assignment
+    history, while suppressing ended assignments.  END and ALL are explicit
+    historical choices.
+    """
+    assignment_status = args.get("assignment_status", "").strip().upper()
+    if assignment_status and assignment_status not in {*CONTRACTOR_ASSIGNMENT_STATUSES, "ALL"}:
+        raise DashboardFilterError("Bộ lọc trạng thái assignment không hợp lệ.")
+    return {"project_id": args.get("project_id", type=int), "assignment_status": assignment_status}
+
+
+def contractor_projects_query(contractor_id):
+    """Visible projects which have ever had an assignment for contractor."""
+    return (
+        DashboardScope.contractor(contractor_id).projects_query()
+        .join(ProjectContractorAssignment, ProjectContractorAssignment.project_id == Project.id)
+        .filter(ProjectContractorAssignment.contractor_id == contractor_id)
+        .distinct()
+    )
+
+
+def contractor_is_visible(contractor_id):
+    """Global project scope may inspect an otherwise unassigned contractor."""
+    from app.project_memberships import has_global_project_scope, is_project_admin, is_viewer_admin
+
+    if is_project_admin(current_user) or is_viewer_admin(current_user) or has_global_project_scope(current_user):
+        return True
+    return contractor_projects_query(contractor_id).with_entities(Project.id).first() is not None
+
+
+def _contractor_assignments_query(contractor_id, filters):
+    query = (
+        ProjectContractorAssignment.query.options(
+            joinedload(ProjectContractorAssignment.project).joinedload(Project.customer),
+            joinedload(ProjectContractorAssignment.contractor),
+        )
+        .join(Project, Project.id == ProjectContractorAssignment.project_id)
+        .filter(
+            ProjectContractorAssignment.contractor_id == contractor_id,
+            Project.deleted_at.is_(None),
+        )
+    )
+    visible_projects = contractor_projects_query(contractor_id).with_entities(Project.id)
+    query = query.filter(ProjectContractorAssignment.project_id.in_(visible_projects))
+    if filters.get("project_id"):
+        if not contractor_projects_query(contractor_id).filter(Project.id == filters["project_id"]).with_entities(Project.id).first():
+            raise DashboardFilterError("Dự án không thuộc phạm vi nhà thầu này.")
+        query = query.filter(ProjectContractorAssignment.project_id == filters["project_id"])
+    status = filters.get("assignment_status", "")
+    if not status:
+        query = query.filter(ProjectContractorAssignment.status != ProjectContractorAssignmentStatus.ENDED.value)
+    elif status != "ALL":
+        query = query.filter(ProjectContractorAssignment.status == status)
+    return query
+
+
+def contractor_dashboard_context(contractor, filters):
+    """Context for a contractor, limited to assignment-backed visible projects."""
+    assignment_query = _contractor_assignments_query(contractor.id, filters)
+    assignments = assignment_query.order_by(
+        ProjectContractorAssignment.status != ProjectContractorAssignmentStatus.ENDED.value,
+        ProjectContractorAssignment.started_on.desc(),
+        ProjectContractorAssignment.id.desc(),
+    ).all()
+
+    active_assignment_query = _contractor_assignments_query(
+        contractor.id, {"project_id": filters.get("project_id"), "assignment_status": "ACTIVE"}
+    ).filter(Project.status == ProjectStatus.ACTIVE.value)
+    active_project_ids = active_assignment_query.with_entities(ProjectContractorAssignment.project_id).distinct().subquery()
+    active_projects = Project.query.options(joinedload(Project.customer)).filter(Project.id.in_(active_project_ids.select())).order_by(Project.code).all()
+    customer_count = (
+        db.session.query(func.count(func.distinct(Project.customer_id)))
+        .filter(Project.id.in_(active_project_ids.select()), Project.customer_id.is_not(None))
+        .scalar() or 0
+    )
+    active_role_rows = active_assignment_query.with_entities(
+        ProjectContractorAssignment.role, func.count(ProjectContractorAssignment.id)
+    ).group_by(ProjectContractorAssignment.role).all()
+    active_role_counts = {role: 0 for role in CONTRACTOR_ROLE_LABELS}
+    active_role_counts.update({role: int(count) for role, count in active_role_rows})
+
+    role_rows = assignment_query.with_entities(
+        ProjectContractorAssignment.role, func.count(ProjectContractorAssignment.id)
+    ).group_by(ProjectContractorAssignment.role).all()
+    status_rows = assignment_query.with_entities(
+        ProjectContractorAssignment.status, func.count(ProjectContractorAssignment.id)
+    ).group_by(ProjectContractorAssignment.status).all()
+    role_counts = {role: 0 for role in CONTRACTOR_ROLE_LABELS}
+    role_counts.update({role: int(count) for role, count in role_rows})
+    status_counts = {status: 0 for status in CONTRACTOR_ASSIGNMENT_STATUSES}
+    status_counts.update({status: int(count) for status, count in status_rows})
+
+    assignment_ids = assignment_query.with_entities(ProjectContractorAssignment.id).subquery()
+    project_ids = assignment_query.with_entities(ProjectContractorAssignment.project_id).distinct().subquery()
+    latest_update = (
+        ProjectUpdate.query.options(joinedload(ProjectUpdate.project))
+        .filter(ProjectUpdate.contractor_assignment_id.in_(assignment_ids.select()), ProjectUpdate.deleted_at.is_(None))
+        .order_by(ProjectUpdate.update_date.desc(), ProjectUpdate.created_at.desc(), ProjectUpdate.id.desc())
+        .first()
+    )
+    updates = (
+        ProjectUpdate.query.options(
+            joinedload(ProjectUpdate.project),
+            joinedload(ProjectUpdate.contractor_assignment).joinedload(ProjectContractorAssignment.contractor),
+        )
+        .filter(ProjectUpdate.contractor_assignment_id.in_(assignment_ids.select()), ProjectUpdate.deleted_at.is_(None))
+        .order_by(ProjectUpdate.update_date.desc(), ProjectUpdate.created_at.desc(), ProjectUpdate.id.desc())
+        .limit(30).all()
+    )
+
+    latest_report_dates = (
+        db.session.query(DailyReport.project_id, func.max(DailyReport.report_date).label("report_date"))
+        .filter(DailyReport.project_id.in_(project_ids.select()))
+        .group_by(DailyReport.project_id).subquery()
+    )
+    latest_reports = (
+        DailyReport.query.options(joinedload(DailyReport.project))
+        .join(latest_report_dates, (DailyReport.project_id == latest_report_dates.c.project_id) & (DailyReport.report_date == latest_report_dates.c.report_date))
+        .order_by(DailyReport.report_date.desc(), DailyReport.id.desc()).all()
+    )
+    from app.project_memberships import has_any_project_capability
+    can_view_issues = has_any_project_capability(current_user, ("can_view_issues",))
+    issues = (
+        PersistentIssue.query.options(joinedload(PersistentIssue.project))
+        .filter(PersistentIssue.project_id.in_(project_ids.select()), PersistentIssue.deleted_at.is_(None))
+        .order_by(PersistentIssue.opened_date.desc(), PersistentIssue.id.desc()).limit(20).all()
+        if can_view_issues else []
+    )
+    projects = contractor_projects_query(contractor.id).order_by(Project.code).all()
+    return {
+        "contractor": contractor,
+        "filters": filters,
+        "filter_projects": projects,
+        "assignments": assignments,
+        "active_projects": active_projects,
+        "updates": updates,
+        "latest_reports": latest_reports,
+        "issues": issues,
+        "can_view_issues": can_view_issues,
+        "role_counts": role_counts,
+        "status_counts": status_counts,
+        "role_labels": CONTRACTOR_ROLE_LABELS,
+        "status_labels": CONTRACTOR_STATUS_LABELS,
+        "cards": {
+            "active_projects": len(active_projects),
+            "customers": int(customer_count),
+            "construction": active_role_counts["CONSTRUCTION"],
+            "solution": active_role_counts["SOLUTION"],
+            "assignments": sum(status_counts.values()),
+        },
+        "latest_update": latest_update,
+    }
+
+
+def contractor_dashboard_payload(contractor, filters):
+    context = contractor_dashboard_context(contractor, filters)
+    projects_by_customer = {}
+    for project in context["active_projects"]:
+        key = project.customer.name if project.customer else "Chưa phân loại"
+        projects_by_customer[key] = projects_by_customer.get(key, 0) + 1
+    return {
+        "contractor": {"id": contractor.id, "name": contractor.name, "short_name": contractor.short_name, "is_active": contractor.is_active},
+        "filters": filters,
+        "cards": context["cards"],
+        "projects_by_customer": {"labels": list(projects_by_customer), "values": list(projects_by_customer.values())},
+        "assignment_roles": {"labels": [CONTRACTOR_ROLE_LABELS[key] for key in CONTRACTOR_ROLE_LABELS], "keys": list(CONTRACTOR_ROLE_LABELS), "values": [context["role_counts"][key] for key in CONTRACTOR_ROLE_LABELS]},
+        "assignment_statuses": {"labels": [CONTRACTOR_STATUS_LABELS[key] for key in CONTRACTOR_ASSIGNMENT_STATUSES], "keys": CONTRACTOR_ASSIGNMENT_STATUSES, "values": [context["status_counts"][key] for key in CONTRACTOR_ASSIGNMENT_STATUSES]},
+        "latest_update": {"id": context["latest_update"].id, "title": context["latest_update"].title, "date": context["latest_update"].update_date.isoformat()} if context["latest_update"] else None,
+    }
+
+
 def _section_status_counts(project_ids, selected_date):
     counts = {item.value: 0 for item in SectionStatus}
     if not project_ids:
@@ -448,122 +586,3 @@ def _recent_project_updates(project_ids):
         .limit(10)
         .all()
     )
-
-
-def status_chart_data(filters):
-    from app.ui import REPORT_STATUS_LABELS
-    counts = _status_counts(filtered_reports_query(filters))
-    statuses = [status.value for status in DailyReportStatus]
-    return {"labels": [REPORT_STATUS_LABELS[status] for status in statuses], "counts": [counts.get(status, 0) for status in statuses]}
-
-
-def report_count_chart_data(filters):
-    query = filtered_reports_query(filters)
-    group_format = "%Y-%m"
-    if filters.get("from_date") and filters.get("to_date"):
-        days = (filters["to_date"] - filters["from_date"]).days
-        if days <= 62:
-            group_format = "%Y-%m-%d"
-
-    if group_format == "%Y-%m-%d" and _is_sqlite():
-        label_expr = func.strftime("%Y-%m-%d", DailyReport.report_date)
-    elif group_format == "%Y-%m-%d":
-        label_expr = func.to_char(DailyReport.report_date, "YYYY-MM-DD")
-    elif _is_sqlite():
-        label_expr = func.strftime("%Y-%m", DailyReport.report_date)
-    else:
-        label_expr = func.to_char(DailyReport.report_date, "YYYY-MM")
-
-    rows = (
-        query.with_entities(label_expr.label("label"), func.count(DailyReport.id))
-        .group_by("label")
-        .order_by("label")
-        .all()
-    )
-    return {"labels": [row[0] for row in rows], "counts": [row[1] for row in rows]}
-
-
-def filtered_reports_query(filters):
-    query = DailyReport.query.join(DailyReport.project)
-    query = _apply_project_scope(query)
-    if filters.get("project_id"):
-        query = query.filter(DailyReport.project_id == filters["project_id"])
-    if filters.get("from_date"):
-        query = query.filter(DailyReport.report_date >= filters["from_date"])
-    if filters.get("to_date"):
-        query = query.filter(DailyReport.report_date <= filters["to_date"])
-    if filters.get("overall_status"):
-        query = query.filter(DailyReport.overall_status == filters["overall_status"])
-    if filters.get("reporter"):
-        query = query.filter(DailyReport.created_by_user_id == filters["reporter"])
-    return query
-
-
-def filtered_open_issues_query(filters):
-    return filtered_issues_query(filters).filter(PersistentIssue.status.in_(OPEN_ISSUE_STATUSES))
-
-
-def filtered_issues_query(filters):
-    query = (
-        PersistentIssue.query.filter(
-            PersistentIssue.deleted_at.is_(None),
-        )
-        .join(PersistentIssue.project)
-    )
-    query = _apply_project_scope(query)
-    if filters.get("project_id"):
-        query = query.filter(PersistentIssue.project_id == filters["project_id"])
-    if filters.get("from_date"):
-        query = query.filter(PersistentIssue.opened_date >= filters["from_date"])
-    if filters.get("to_date"):
-        query = query.filter(PersistentIssue.opened_date <= filters["to_date"])
-    if filters.get("overall_status") == DailyReportStatus.CRITICAL.value:
-        query = query.filter(PersistentIssue.severity == IssueSeverity.CRITICAL.value)
-    if filters.get("overall_status") == DailyReportStatus.PROCESSING.value:
-        query = query.filter(PersistentIssue.status == IssueStatus.PROCESSING.value)
-    return query
-
-
-def accessible_reporters():
-    query = User.query.filter(
-        User.is_active.is_(True),
-        User.deleted_at.is_(None),
-    )
-    project_ids = [project.id for project in accessible_projects_query().all()]
-    query = query.join(ProjectUser, ProjectUser.user_id == User.id).filter(
-        ProjectUser.project_id.in_(project_ids or [0]), ProjectUser.is_active.is_(True)
-    )
-    return query.order_by(User.full_name.asc()).all()
-
-
-def _status_counts(query):
-    rows = (
-        query.with_entities(DailyReport.overall_status, func.count(DailyReport.id))
-        .group_by(DailyReport.overall_status)
-        .all()
-    )
-    return {status: count for status, count in rows}
-
-
-def _apply_project_scope(query):
-    query = query.filter(Project.deleted_at.is_(None))
-    from app.project_memberships import accessible_project_ids
-    ids = accessible_project_ids(current_user, ("can_view_project",))
-    if ids is not None:
-        query = query.filter(Project.id.in_(ids or [0]))
-    return query
-
-
-def _parse_date(value, field_name):
-    if not value:
-        return None
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except ValueError as exc:
-        raise DashboardFilterError(f"{field_name} phải đúng định dạng YYYY-MM-DD.") from exc
-
-
-def _is_sqlite():
-    from app.extensions import db
-
-    return db.engine.name == "sqlite"
