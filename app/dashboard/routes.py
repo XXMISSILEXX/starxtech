@@ -8,8 +8,12 @@ from app.dashboard.services import (
     parse_filters,
     report_count_chart_data,
     status_chart_data,
+    project_section_status_payload,
 )
 from app.auth.permissions import can_access_reports_module
+from app.auth.permissions import can_read_project
+from app.models import Project
+from datetime import datetime
 
 
 @bp.get("")
@@ -38,6 +42,21 @@ def report_count_chart():
         abort(403)
     filters = _filters_or_400()
     return jsonify(report_count_chart_data(filters))
+
+
+@api_bp.get("/projects/<int:project_id>/section-status")
+def project_section_status(project_id):
+    if not can_access_reports_module(current_user) or not current_user.can("dashboards.project.view"):
+        abort(403)
+    project = Project.query.filter_by(id=project_id, deleted_at=None).first_or_404()
+    if not can_read_project(project.id):
+        abort(403)
+    raw_date = request.args.get("selected_date", "")
+    try:
+        selected_date = datetime.strptime(raw_date, "%Y-%m-%d").date() if raw_date else None
+    except ValueError:
+        abort(400, "selected_date phải theo YYYY-MM-DD")
+    return jsonify(project_section_status_payload(project, selected_date=selected_date))
 
 
 def _filters_or_400():

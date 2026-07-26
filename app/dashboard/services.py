@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from flask_login import current_user
 from sqlalchemy import func
@@ -6,12 +7,18 @@ from sqlalchemy import func
 from app.models import (
     DailyReport,
     DailyReportStatus,
+    DailyReportSection,
     IssueStatus,
     PersistentIssue,
     Project,
     ProjectUser,
     User,
+    ProjectContractorAssignment,
+    ProjectContractorAssignmentStatus,
+    ProjectUpdate,
+    SectionStatus,
 )
+from app.extensions import db
 from app.reports.services import accessible_projects_query
 
 
@@ -97,9 +104,54 @@ def project_dashboard_context(project):
             "project": project,
             "report_history": reports.limit(30).all(),
             "report_dates": [report.report_date for report in reports.limit(30).all()],
+            "project_dashboard": project_dashboard_metrics(project),
         }
     )
     return context
+
+
+def project_dashboard_metrics(project, selected_date=None, days=7):
+    """Project-only aggregates; section statuses remain their native five values."""
+    selected_date = selected_date or datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).date()
+    statuses = [item.value for item in SectionStatus]
+    rows = db.session.query(DailyReportSection.status, func.count(DailyReportSection.id)).join(
+        DailyReport, DailyReport.id == DailyReportSection.daily_report_id
+    ).filter(DailyReport.project_id == project.id, DailyReport.report_date == selected_date).group_by(DailyReportSection.status).all()
+    pie = {status: 0 for status in statuses}; pie.update(dict(rows))
+    start = selected_date - timedelta(days=days - 1)
+    trend_rows = db.session.query(DailyReport.report_date, DailyReportSection.status, func.count(DailyReportSection.id)).join(
+        DailyReportSection, DailyReportSection.daily_report_id == DailyReport.id
+    ).filter(DailyReport.project_id == project.id, DailyReport.report_date.between(start, selected_date)).group_by(DailyReport.report_date, DailyReportSection.status).order_by(DailyReport.report_date).all()
+    labels = [(start + timedelta(days=offset)).isoformat() for offset in range(days)]
+    datasets = {status: [0] * len(labels) for status in statuses}; positions = {label: index for index, label in enumerate(labels)}
+    for report_date, status, count in trend_rows: datasets[status][positions[report_date.isoformat()]] = count
+    assignments = ProjectContractorAssignment.query.filter(
+        ProjectContractorAssignment.project_id == project.id,
+        ProjectContractorAssignment.status == ProjectContractorAssignmentStatus.ACTIVE.value,
+    )
+    issue_counts = dict(db.session.query(PersistentIssue.status, func.count(PersistentIssue.id)).filter(
+        PersistentIssue.project_id == project.id, PersistentIssue.deleted_at.is_(None)
+    ).group_by(PersistentIssue.status).all())
+    return {"selected_date": selected_date, "section_pie": pie, "section_trend": {"labels": labels, "datasets": datasets},
+            "submitted_today": DailyReport.query.filter_by(project_id=project.id, report_date=selected_date).count() > 0,
+            "construction_active": assignments.filter_by(role="CONSTRUCTION").count(), "solution_active": assignments.filter_by(role="SOLUTION").count(),
+            "issue_counts": issue_counts, "latest_update": ProjectUpdate.query.filter(ProjectUpdate.project_id == project.id, ProjectUpdate.deleted_at.is_(None)).order_by(ProjectUpdate.update_date.desc(), ProjectUpdate.id.desc()).first()}
+
+
+def project_section_status_payload(project, selected_date=None):
+    metrics = project_dashboard_metrics(project, selected_date=selected_date)
+    keys = [item.value for item in SectionStatus]
+    labels = ["Thông tin", "Tốt", "Đang xử lý", "Cần chú ý", "Khẩn cấp"]
+    values = [int(metrics["section_pie"][key]) for key in keys]
+    latest = metrics["latest_update"]
+    report = DailyReport.query.filter_by(project_id=project.id, report_date=metrics["selected_date"]).first()
+    return {"selected_date": metrics["selected_date"].isoformat(), "timezone": "Asia/Ho_Chi_Minh",
+            "submission": {"submitted": report is not None, "report_id": report.id if report else None, "report_date": report.report_date.isoformat() if report else None},
+            "section_status": {"labels": labels, "keys": keys, "values": values, "total": sum(values)},
+            "trend": {"days": metrics["section_trend"]["labels"], "series": {key: [int(value) for value in metrics["section_trend"]["datasets"][key]] for key in keys}},
+            "contractors": {"construction_active": metrics["construction_active"], "solution_active": metrics["solution_active"]},
+            "persistent_issues": {"total": sum(metrics["issue_counts"].values()), "by_status": metrics["issue_counts"]},
+            "latest_project_update": {"id": latest.id, "date": latest.update_date.isoformat(), "title": latest.title} if latest else None}
 
 
 def status_chart_data(filters):

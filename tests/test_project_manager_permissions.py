@@ -34,7 +34,10 @@ def grant_pm(app, code):
         db.session.commit()
 
 
-def test_project_manager_accesses_only_assigned_projects(client):
+def test_project_manager_accesses_only_assigned_projects(client, app):
+    # Project Dashboard is now protected by its explicit Phase 9 permission;
+    # membership continues to provide the project scope.
+    grant_pm(app, "dashboards.project.view")
     login(client, "pm")
 
     assert client.get("/reports/projects/1/dashboard").status_code == 200

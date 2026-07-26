@@ -58,7 +58,11 @@ def index():
 @bp.get("/<int:project_id>/dashboard")
 def dashboard(project_id):
     project = _project_or_404(project_id)
-    if not can_read_project(project.id):
+    if (
+        not can_access_reports_module(current_user)
+        or not current_user.can("dashboards.project.view")
+        or not can_read_project(project.id)
+    ):
         abort(403)
     return render_template(
         "dashboard/project.html",

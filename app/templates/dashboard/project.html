@@ -16,6 +16,32 @@
 </div>
 
 <div class="row g-3 mb-4">
+  <div class="col-md-3"><div class="stat-card"><div><div class="stat-label">Nộp hôm nay</div><div class="stat-value">{{ 'Đã nộp' if project_dashboard.submitted_today else 'Chưa nộp' }}</div></div></div></div>
+  <div class="col-md-3"><div class="stat-card"><div><div class="stat-label">Thi công hoạt động</div><div class="stat-value">{{ project_dashboard.construction_active }}</div></div></div></div>
+  <div class="col-md-3"><div class="stat-card"><div><div class="stat-label">Giải pháp hoạt động</div><div class="stat-value">{{ project_dashboard.solution_active }}</div></div></div></div>
+  <div class="col-md-3"><div class="stat-card"><div><div class="stat-label">Vấn đề tồn đọng</div><div class="stat-value">{{ project_dashboard.issue_counts.values()|sum }}</div></div></div></div>
+</div>
+<div class="card mb-4" aria-label="Tóm tắt năm trạng thái section">
+  <div class="card-header">Tóm tắt section {{ project_dashboard.selected_date }}</div>
+  <div class="card-body">
+    <div class="d-flex flex-wrap gap-2" aria-label="Thông tin: {{ project_dashboard.section_pie['INFO'] }}; Tốt: {{ project_dashboard.section_pie['GOOD'] }}; Đang xử lý: {{ project_dashboard.section_pie['PROCESSING'] }}; Cần chú ý: {{ project_dashboard.section_pie['ATTENTION'] }}; Khẩn cấp: {{ project_dashboard.section_pie['CRITICAL'] }}">
+      <span class="badge text-bg-secondary">Thông tin: {{ project_dashboard.section_pie['INFO'] }}</span>
+      <span class="badge text-bg-success">Tốt: {{ project_dashboard.section_pie['GOOD'] }}</span>
+      <span class="badge text-bg-info">Đang xử lý: {{ project_dashboard.section_pie['PROCESSING'] }}</span>
+      <span class="badge text-bg-warning">Cần chú ý: {{ project_dashboard.section_pie['ATTENTION'] }}</span>
+      <span class="badge text-bg-danger">Khẩn cấp: {{ project_dashboard.section_pie['CRITICAL'] }}</span>
+    </div>
+    {% if not project_dashboard.submitted_today %}<p class="text-muted mt-3 mb-0">Chưa có báo cáo hôm nay; không đưa vào biểu đồ trạng thái.</p>{% endif %}
+  </div>
+</div>
+<div id="project-dashboard-charts" data-section-status-api="{{ url_for('dashboard_api.project_section_status', project_id=project.id) }}" class="row g-3 mb-4">
+  <div class="col-12"><p data-chart-error class="alert alert-danger d-none mb-0" role="alert">Không thể tải dữ liệu biểu đồ. Vui lòng tải lại trang.</p></div>
+  <div class="col-lg-5"><div class="card h-100"><div class="card-body"><h2 class="h6">Phân bố section hôm nay</h2><canvas id="project-section-pie" height="240" aria-label="Biểu đồ năm trạng thái section"></canvas><p data-chart-empty class="text-muted d-none mb-0">Chưa có section cho ngày được chọn.</p></div></div></div>
+  <div class="col-lg-7"><div class="card h-100"><div class="card-body"><h2 class="h6">Xu hướng 7 ngày</h2><canvas id="project-section-trend" height="240" aria-label="Biểu đồ xu hướng section 7 ngày"></canvas><p data-chart-trend-empty class="text-muted d-none mb-0">Chưa có section trong 7 ngày gần đây.</p></div></div></div>
+</div>
+{% block extra_scripts %}<script src="{{ url_for('static', filename='js/project-dashboard-charts.js', v=static_asset_version) }}"></script>{% endblock %}
+
+<div class="row g-3 mb-4">
   {% set card_items = [
     ('Tổng báo cáo', cards.total_reports, 'bi-journal-check', 'status-updated'),
     ('Tốt', cards.good_reports, 'bi-check-circle', 'status-good'),

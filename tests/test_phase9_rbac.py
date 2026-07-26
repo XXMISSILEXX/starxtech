@@ -76,6 +76,46 @@ def test_scope_all_grants_global_read_scope_but_not_project_mutation(client, app
     assert client.post("/test/projects/2/write").status_code == 403
 
 
+def test_project_dashboard_permission_does_not_bypass_project_scope(client, app):
+    user_id = _custom_user(
+        app,
+        role_code="PHASE9_DASHBOARD_UNSCOPED",
+        username="phase9-dashboard-unscoped",
+        permissions=("modules.reports.access", "dashboards.project.view"),
+    )
+
+    _login_as(client, user_id)
+    assert client.get("/reports/projects/1/dashboard").status_code == 403
+    assert client.get("/api/reports/dashboard/projects/1/section-status").status_code == 403
+
+
+def test_scope_all_does_not_grant_project_dashboard_permission(client, app):
+    user_id = _custom_user(
+        app,
+        role_code="PHASE9_SCOPE_WITHOUT_DASHBOARD",
+        username="phase9-scope-without-dashboard",
+        permissions=("modules.reports.access", "projects.scope_all"),
+    )
+
+    _login_as(client, user_id)
+    assert client.get("/reports/projects/1/dashboard").status_code == 403
+    assert client.get("/api/reports/dashboard/projects/1/section-status").status_code == 403
+
+
+def test_scope_all_and_dashboard_permission_allow_read_only_dashboard(client, app):
+    user_id = _custom_user(
+        app,
+        role_code="PHASE9_GLOBAL_DASHBOARD",
+        username="phase9-global-dashboard",
+        permissions=("modules.reports.access", "projects.scope_all", "dashboards.project.view"),
+    )
+
+    _login_as(client, user_id)
+    assert client.get("/reports/projects/2/dashboard").status_code == 200
+    assert client.get("/api/reports/dashboard/projects/2/section-status").status_code == 200
+    assert client.post("/reports/projects/2/reports/upload-sessions", json={}).status_code == 403
+
+
 def test_action_permission_without_scope_or_membership_cannot_access_project(app):
     user_id = _custom_user(
         app,
