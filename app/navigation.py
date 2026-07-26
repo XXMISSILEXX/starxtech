@@ -10,7 +10,7 @@ def get_active_module():
         "project_documents": "project_documents", "company_media": "company_media",
         "admin": "admin", "admin_storage": "admin", "account": "account",
         "dashboard": "reports", "dashboard_api": "reports", "projects": "reports", "reports": "reports",
-        "issues": "reports", "attachments": "reports",
+        "issues": "reports", "attachments": "reports", "customers": "reports",
     }
     return mapping.get(blueprint, session.get("active_module", "reports"))
 

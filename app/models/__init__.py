@@ -1,4 +1,5 @@
 from app.models.audit_log import AuditLog
+from app.models.customer import Customer
 from app.models.daily_report import DailyReport, DailyReportSection, ReportAttachment
 from app.models.enums import (
     DailyReportStatus,
@@ -31,6 +32,7 @@ from app.models.system_setting import SystemSetting
 
 __all__ = [
     "AuditLog",
+    "Customer",
     "Company",
     "CompanyDepartment",
     "DailyReport",

@@ -102,6 +102,7 @@ def register_blueprints(app):
     from app.projects import bp as projects_bp
     from app.project_documents import bp as project_documents_bp
     from app.company_media import bp as company_media_bp
+    from app.customers import bp as customers_bp
     from app.reports import bp as reports_bp
     from app.reports.create_v2 import bp as daily_report_create_v2_bp
     from app.users import bp as users_bp
@@ -119,6 +120,7 @@ def register_blueprints(app):
     app.register_blueprint(projects_bp)
     app.register_blueprint(project_documents_bp)
     app.register_blueprint(company_media_bp)
+    app.register_blueprint(customers_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(daily_report_create_v2_bp)
     app.register_blueprint(issues_bp)
@@ -171,7 +173,7 @@ def register_auth_guard(app):
         if not current_user.is_authenticated:
             return None
         endpoint = request.endpoint or ""
-        report_endpoints = ("dashboard.", "dashboard_api.", "projects.", "reports.", "issues.", "attachments.")
+        report_endpoints = ("dashboard.", "dashboard_api.", "projects.", "reports.", "issues.", "attachments.", "customers.")
         is_report_admin = endpoint in {
             "admin.projects_index", "admin.projects_new", "admin.projects_edit",
             "admin.projects_archive", "admin.projects_reporters", "admin.projects_memberships", "admin.categories_index",

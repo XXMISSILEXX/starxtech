@@ -24,6 +24,12 @@ class Project(TimestampMixin, SoftDeleteMixin, db.Model):
     )
     start_date = db.Column(db.Date, nullable=True)
     expected_end_date = db.Column(db.Date, nullable=True)
+    customer_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("customers.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     created_by_user_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=True)
 
     created_by = db.relationship(
@@ -31,6 +37,7 @@ class Project(TimestampMixin, SoftDeleteMixin, db.Model):
         back_populates="created_projects",
         foreign_keys=[created_by_user_id],
     )
+    customer = db.relationship("Customer", back_populates="projects")
     user_assignments = db.relationship(
         "ProjectUser",
         back_populates="project",

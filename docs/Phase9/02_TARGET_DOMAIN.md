@@ -11,3 +11,7 @@
 - `ProjectUpdate`: project, nullable assignment, type `GENERAL|PROGRESS|HANDOVER|CONTRACTOR|STATUS_CHANGE|NOTE`, title/content/date/audit/soft delete. Assignment phải thuộc cùng project và assignment ended không nhận update mới.
 
 Daily Report và `PersistentIssue` giữ quan hệ/lifecycle hiện tại. Không tạo `HealthStatus`, `OpenIssue`, `PersistentIssueObservation`, `DailyReportIssueLink`, `ContractorIssueResponsibility` hay `ProjectReportItem`.
+
+## Step 9.2 implementation
+
+Customer is now an independent `customers` domain. `projects.customer_id` is nullable and backfilled to `Khách hàng chưa phân loại`; existing Project IDs, reports, memberships and categories remain unchanged. Customer archive changes only `is_active`/`archived_at` and never deletes related projects.

@@ -1,6 +1,6 @@
 # Migration map and compatibility
 
-Current revision is `20260725_0026` and no migration is created in Step 9.0.
+Step 9.2 revision is `aa468094da4f` (`add customers and project grouping`). It creates Customer, adds nullable `projects.customer_id`, backfills the deterministic `Khách hàng chưa phân loại` Customer, and does not set the FK NOT NULL.
 
 | Planned migration | Additive change | Compatibility rule |
 | --- | --- | --- |

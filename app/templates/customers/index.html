@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Khách hàng - StarX{% endblock %}
+{% block page_title %}Khách hàng{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+  <form class="d-flex gap-2" method="get"><input class="form-control" name="q" value="{{ search }}" placeholder="Tìm khách hàng"><button class="btn btn-outline-secondary">Tìm</button></form>
+  {% if current_user.can('customers.create') %}<a class="btn btn-primary" href="{{ url_for('customers.create') }}">Tạo khách hàng</a>{% endif %}
+</div>
+<div class="table-card table-responsive"><table class="table table-hover align-middle"><thead><tr><th>Khách hàng</th><th>Trạng thái</th><th class="text-end"></th></tr></thead><tbody>
+{% for customer in customers %}<tr><td><a class="fw-semibold" href="{{ url_for('customers.detail', customer_id=customer.id) }}">{{ customer.name }}</a><div class="small text-muted">{{ customer.description or '' }}</div></td><td>{{ 'Hoạt động' if customer.is_active else 'Đã lưu trữ' }}</td><td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('customers.detail', customer_id=customer.id) }}">Xem</a></td></tr>
+{% else %}<tr><td colspan="3"><div class="empty-state">Chưa có khách hàng phù hợp.</div></td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}
