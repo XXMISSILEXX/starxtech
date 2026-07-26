@@ -22,10 +22,10 @@ def get_sidebar_items(user, active_module=None):
         if permission is None or user.can(permission):
             items.append({"label": label, "url": url_for(endpoint), "icon": icon, "endpoint": endpoint})
     if active_module == "reports":
+        add("Hôm nay", "reports.today", "bi-calendar-check", "reports.today.view")
         add("Quản lý dự án & nhà thầu", "project_operations.operations_index", "bi-diagram-3", "project_operations.view")
-        add("Bảng điều khiển", "dashboard.index", "bi-grid-1x2", "reports.view")
-        add("Dự án", "projects.index", "bi-building", "projects.view")
-        add("Báo cáo", "reports.index", "bi-journal-text", "reports.view")
+        add("Dashboard quản trị", "dashboard.index", "bi-grid-1x2", "reports.view")
+        add("Cấu hình", "reports.configuration_hub", "bi-gear", "reports.configuration.view")
     elif active_module == "partners":
         add("Tổng quan đối tác", "partners.dashboard", "bi-grid-1x2", "partners.view")
         add("Đối tác", "partners.index", "bi-person-vcard", "partners.view")

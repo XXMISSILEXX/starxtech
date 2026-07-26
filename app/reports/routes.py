@@ -1,9 +1,13 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from app.auth.permissions import can_access_reports_module, can_create_report, can_delete_report, can_edit_report, can_view_report
 from app.extensions import db
-from app.models import DailyReport, DailyReportStatus, Project, SectionStatus
+from app.models import Customer, DailyReport, DailyReportStatus, Project, SectionStatus
+from app.project_memberships import accessible_project_ids
 from app.reports import bp
 from app.reports.services import (
     ReportValidationError,
@@ -60,6 +64,43 @@ def index():
         can_write_by_project={report.id: can_edit_report(current_user, report) for report in reports},
         can_delete_by_report={report.id: _can_delete_report(report) for report in reports},
     )
+
+
+@bp.get("/today")
+def today():
+    if not current_user.can("reports.today.view"):
+        abort(403)
+    ids = accessible_project_ids(current_user, ("can_view_project",))
+    query = Project.query.outerjoin(Customer, Project.customer_id == Customer.id).filter(
+        Project.deleted_at.is_(None), Project.status == "active"
+    )
+    if ids is not None:
+        query = query.filter(Project.id.in_(ids or [0]))
+    projects = query.order_by(Customer.name.asc().nulls_last(), Project.name.asc()).all()
+    report_date = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).date()
+    reports = {item.project_id: item for item in DailyReport.query.filter(
+        DailyReport.project_id.in_([project.id for project in projects] or [0]),
+        DailyReport.report_date == report_date,
+    ).all()}
+    groups = {}
+    for project in projects:
+        customer = project.customer
+        groups.setdefault(customer.id if customer else 0, {"customer": customer, "projects": []})["projects"].append(
+            {"project": project, "report": reports.get(project.id), "can_create": can_create_report(current_user, project.id)}
+        )
+    return render_template("reports/today.html", groups=list(groups.values()), report_date=report_date)
+
+
+@bp.get("/config")
+def configuration_hub():
+    if not current_user.can("reports.configuration.view"):
+        abort(403)
+    links = []
+    if current_user.can("projects.view"): links.append(("Dự án", "admin.projects_index"))
+    if current_user.can("roles.view"): links.append(("Vai trò & phân quyền", "admin.roles_index"))
+    if current_user.can("customers.view"): links.append(("Khách hàng", "customers.index"))
+    if current_user.can("project_contractors.view"): links.append(("Nhà thầu dự án", "project_operations.contractors_index"))
+    return render_template("reports/configuration.html", links=links)
 
 
 @bp.get("/<int:report_id>")
