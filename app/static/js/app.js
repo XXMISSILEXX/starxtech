@@ -6,16 +6,31 @@ document.addEventListener("DOMContentLoaded", () => {
   initIconChoices();
   initReportFormValidation();
   initConfirmActions();
+  initAutoOpenModals();
   initPartnerDynamicFields();
   initDatePickers();
-  initDateValidation();
-  initVietnameseReportDates();
+  initVietnameseDates();
   initRequiredFormValidation();
   initPartnerDepartmentSelect();
   initPartnerHeadToggle();
   initRelationshipPartnerProfileDisplay();
   initPartnerOrgChartModal();
+  initDashboardSelectors();
 });
+
+function initDashboardSelectors() {
+  document.querySelectorAll("[data-dashboard-selector]").forEach((select) => select.addEventListener("change", () => {
+    if (select.value) window.location.assign(select.value);
+  }));
+  document.querySelectorAll("[data-dashboard-filter]").forEach((input) => {
+    const select = document.querySelector(input.dataset.dashboardFilter);
+    if (!select) return;
+    input.addEventListener("input", () => {
+      const term = input.value.trim().toLowerCase();
+      Array.from(select.options).forEach((option) => { option.hidden = Boolean(term) && !option.dataset.search.includes(term); });
+    });
+  });
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-permission-group]").forEach((group) => {
@@ -454,6 +469,7 @@ function clearFieldError(field) {
 function initConfirmActions() {
   const modalElement = document.querySelector("#confirmActionModal");
   const messageElement = modalElement ? modalElement.querySelector("[data-confirm-message]") : null;
+  const titleElement = modalElement ? modalElement.querySelector("[data-confirm-title]") : null;
   const acceptButton = modalElement ? modalElement.querySelector("[data-confirm-accept]") : null;
   const modal = modalElement && typeof bootstrap !== "undefined" ? new bootstrap.Modal(modalElement) : null;
   let pendingTrigger = null;
@@ -494,9 +510,13 @@ function initConfirmActions() {
     event.preventDefault();
     pendingTrigger = trigger;
     const message = trigger.dataset.confirm || "Bạn chắc chắn muốn tiếp tục?";
+    const title = trigger.dataset.confirmTitle || "Xác nhận thao tác";
+    const acceptLabel = trigger.dataset.confirmAccept || "Xác nhận";
     if (messageElement) {
       messageElement.textContent = message;
     }
+    if (titleElement) titleElement.textContent = title;
+    if (acceptButton) acceptButton.textContent = acceptLabel;
     if (modal) {
       modal.show();
       return;
@@ -510,6 +530,12 @@ function initConfirmActions() {
         window.location.href = trigger.href;
       }
     }
+  });
+}
+
+function initAutoOpenModals() {
+  document.querySelectorAll(".modal[data-open-on-load='1']").forEach((element) => {
+    if (typeof bootstrap !== "undefined") bootstrap.Modal.getOrCreateInstance(element).show();
   });
 }
 
@@ -553,7 +579,7 @@ function initPartnerDynamicFields() {
       return `<input class="form-control" type="number" step="any" name="${inputName}">`;
     }
     if (field.field_type === "date") {
-      return `<input class="form-control js-date-picker" type="text" name="${inputName}" placeholder="DD-MM-YYYY" data-date-picker>`;
+      return `<input class="form-control" type="text" name="${inputName}" placeholder="dd/mm/yyyy" data-vn-date>`;
     }
     if (field.field_type === "boolean") {
       return `<div class="form-check"><input class="form-check-input" type="checkbox" name="${inputName}"><label class="form-check-label">Có</label></div>`;
@@ -591,6 +617,7 @@ function initPartnerDynamicFields() {
     `;
     container.appendChild(row);
     initDatePickers(row);
+    initVietnameseDates(row);
   };
 
   if (addButton && fieldSelect) {
@@ -629,7 +656,7 @@ function initDatePickers(root = document) {
       return;
     }
     flatpickr(field, {
-      dateFormat: "d-m-Y",
+      dateFormat: "d/m/Y",
       allowInput: true,
     });
     field.dataset.datePickerReady = "1";
@@ -646,6 +673,42 @@ function initVietnameseReportDates(root = document) {
   });
 }
 
+function initVietnameseDates(root = document) {
+  root.querySelectorAll("[data-vn-date]").forEach((field) => {
+    if (field.dataset.datePickerReady === "1") return;
+    if (typeof flatpickr !== "undefined") {
+      flatpickr(field, {
+        dateFormat: "d/m/Y",
+        allowInput: true,
+        disableMobile: true,
+      });
+      field.dataset.datePickerReady = "1";
+    }
+  });
+  if (document.body.dataset.vnDateValidationReady === "1") return;
+  document.body.dataset.vnDateValidationReady = "1";
+  document.addEventListener("submit", (event) => {
+    const invalid = [];
+    event.target.querySelectorAll?.("[data-vn-date]").forEach((field) => {
+      if (!field.value.trim()) {
+        if (field.required) {
+          setFieldError(field, "Vui lòng nhập ngày theo định dạng DD/MM/YYYY.");
+          invalid.push(field);
+        } else clearFieldError(field);
+        return;
+      }
+      if (!window.StarXVietnameseDate?.parse(field.value)) {
+        setFieldError(field, "Ngày không hợp lệ. Vui lòng nhập theo định dạng DD/MM/YYYY.");
+        invalid.push(field);
+      } else clearFieldError(field);
+    });
+    if (invalid.length) {
+      event.preventDefault();
+      invalid[0].focus();
+    }
+  });
+}
+
 function initDateValidation() {
   document.addEventListener("submit", (event) => {
     const form = event.target;
@@ -658,8 +721,8 @@ function initDateValidation() {
         clearFieldError(field);
         return;
       }
-      if (!/^\d{2}-\d{2}-\d{4}$/.test(field.value.trim())) {
-        setFieldError(field, "Ngày không hợp lệ, vui lòng nhập theo định dạng DD-MM-YYYY.");
+      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(field.value.trim())) {
+        setFieldError(field, "Ngày không hợp lệ, vui lòng nhập theo định dạng DD/MM/YYYY.");
         invalid.push(field);
       } else {
         clearFieldError(field);

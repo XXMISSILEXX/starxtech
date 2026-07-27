@@ -8,7 +8,7 @@ from app.project_memberships import is_project_admin, is_viewer_admin, user_has_
 
 ADMIN_ROLES = {UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value}
 PARTNER_MODULE_DENY_MESSAGE = "Bạn không có quyền truy cập phân hệ Quản lý đối tác."
-REPORTS_MODULE_DENY_MESSAGE = "Bạn không có quyền truy cập phân hệ Báo cáo hàng ngày."
+REPORTS_MODULE_DENY_MESSAGE = "Bạn không có quyền truy cập phân hệ Quản lý dự án."
 
 
 def role_required(*roles):

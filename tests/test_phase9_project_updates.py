@@ -50,3 +50,21 @@ def test_soft_delete_hides_timeline_and_keeps_audit_without_report_issue_side_ef
         assert ProjectUpdate.query.filter_by(id=update.id).one().deleted_at is not None
         assert AuditLog.query.filter_by(action="project_update.delete", entity_id=update.id).count() == 1
         assert (DailyReport.query.count(), PersistentIssue.query.count()) == (report_count, issue_count)
+
+
+def test_project_update_ui_uses_vietnamese_labels_and_confirmation_modal(client, app):
+    assignment_id = _assignment(app)
+    with app.app_context():
+        assignment = db.session.get(ProjectContractorAssignment, assignment_id)
+        create_project_update(project=db.session.get(Project, 1), assignment=assignment, update_type="HANDOVER", title="Bàn giao", content="Nội dung", update_date=date.today(), actor_id=3)
+        db.session.commit()
+    client.post("/login", data={"username_or_email": "super", "password": "password123"})
+    form = client.get("/projects/1/updates/new")
+    assert form.status_code == 200
+    assert "Thêm cập nhật dự án".encode() in form.data
+    assert "Cập nhật chung".encode() in form.data and b">HANDOVER<" not in form.data
+    page = client.get("/projects/1/updates")
+    assert page.status_code == 200
+    assert "Bàn giao".encode() in page.data
+    assert 'data-confirm-title="Xóa cập nhật?"'.encode() in page.data
+    assert b"2026-" not in page.data

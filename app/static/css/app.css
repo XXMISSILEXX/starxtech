@@ -936,6 +936,16 @@ a:hover {
   padding: 1rem;
 }
 
+.dashboard-type-card { display: block; min-height: 132px; padding: 1rem; border: 1px solid var(--sx-border); border-radius: .75rem; background: var(--sx-surface); color: inherit; text-decoration: none; transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease; }
+.dashboard-type-card i { display: inline-block; margin-bottom: .6rem; font-size: 1.4rem; color: var(--sx-primary); }
+.dashboard-type-card:hover, .dashboard-type-card:focus-visible, .dashboard-type-card.active { color: inherit; border-color: var(--sx-primary); box-shadow: 0 0 0 .2rem rgb(37 99 235 / .14); transform: translateY(-1px); }
+.dashboard-type-card.disabled { opacity: .64; cursor: not-allowed; }
+.dashboard-resource-selector { max-width: 38rem; }
+.workspace-card { display: block; min-height: 175px; padding: 1.25rem; border: 1px solid var(--sx-border); border-radius: .75rem; background: var(--sx-surface); color: inherit; text-decoration: none; }
+.workspace-card:hover, .workspace-card:focus-visible { color: inherit; border-color: var(--sx-primary); box-shadow: 0 0 0 .2rem rgb(37 99 235 / .14); }
+.workspace-card .workspace-card-icon { color: var(--sx-primary); font-size: 1.5rem; }
+@media (prefers-reduced-motion: reduce) { .dashboard-type-card, .workspace-card { transition: none; } }
+
 .stat-icon {
   display: grid;
   flex: 0 0 auto;

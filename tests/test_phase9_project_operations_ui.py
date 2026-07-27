@@ -33,11 +33,13 @@ def test_operations_scope_search_counts_and_accessibility(client, app):
     assert client.get("/project-operations?q=P001").status_code == 200
 
 
-def test_workspace_scope_and_tabs_are_permission_aware(client, app):
+def test_workspace_scope_and_cards_are_permission_aware(client, app):
     grant(app, "reporter", "project_operations.view", "dashboards.project.view", "reports.view", "project_updates.view", "issues.view", "contractor_assignments.view")
     login(client, "reporter")
     allowed = client.get("/projects/1/workspace")
     assert allowed.status_code == 200 and b"B\xc3\xa1o c\xc3\xa1o xuy\xc3\xaan su\xe1\xbb\x91t" in allowed.data
+    assert allowed.data.count(b'class="workspace-card"') == 6
+    assert b"nav nav-tabs" not in allowed.data
     assert client.get("/projects/2/workspace").status_code == 403
 
 

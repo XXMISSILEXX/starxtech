@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard nhà thầu - StarX Daily Report{% endblock %}
-{% block page_title %}Dashboard nhà thầu{% endblock %}
+{% block title %}Dashboard đối tác - StarX Daily Report{% endblock %}
+{% block page_title %}Dashboard đối tác{% endblock %}
 
 {% block content %}
 {% set contractor_name = contractor.short_name or contractor.name %}
 <div id="contractor-dashboard-charts" data-dashboard-api="{{ url_for('dashboard_api.contractor_dashboard_payload_api', contractor_id=contractor.id, project_id=filters.project_id, assignment_status=filters.assignment_status) }}">
+  {% include "dashboard/_type_navigation.html" %}
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
     <div>
       <h2 class="h4 mb-1">{{ contractor_name }}</h2>
@@ -15,10 +16,10 @@
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('projects.index') }}"><i class="bi bi-arrow-left me-1"></i>Danh sách dự án</a>
   </div>
 
-  <form class="card card-body mb-4" method="get" aria-label="Bộ lọc dashboard nhà thầu">
+  <form class="card card-body mb-4" method="get" aria-label="Bộ lọc dashboard đối tác">
     <div class="row g-3 align-items-end">
       <div class="col-md-5"><label class="form-label" for="contractor-project">Dự án</label><select class="form-select" id="contractor-project" name="project_id"><option value="">Tất cả dự án trong phạm vi</option>{% for project in filter_projects %}<option value="{{ project.id }}" {% if filters.project_id == project.id %}selected{% endif %}>{{ project.code }} · {{ project.name }}</option>{% endfor %}</select></div>
-      <div class="col-md-4"><label class="form-label" for="contractor-assignment-status">Trạng thái assignment</label><select class="form-select" id="contractor-assignment-status" name="assignment_status"><option value="" {% if not filters.assignment_status %}selected{% endif %}>Hiện hành (trừ đã kết thúc)</option><option value="ACTIVE" {% if filters.assignment_status == 'ACTIVE' %}selected{% endif %}>Đang hoạt động</option><option value="PAUSED" {% if filters.assignment_status == 'PAUSED' %}selected{% endif %}>Tạm dừng</option><option value="COMPLETED" {% if filters.assignment_status == 'COMPLETED' %}selected{% endif %}>Hoàn thành</option><option value="ENDED" {% if filters.assignment_status == 'ENDED' %}selected{% endif %}>Đã kết thúc</option><option value="ALL" {% if filters.assignment_status == 'ALL' %}selected{% endif %}>Tất cả, gồm lịch sử</option></select></div>
+      <div class="col-md-4"><label class="form-label" for="contractor-assignment-status">Trạng thái liên kết</label><select class="form-select" id="contractor-assignment-status" name="assignment_status"><option value="" {% if not filters.assignment_status %}selected{% endif %}>Hiện hành (trừ đã kết thúc)</option><option value="ACTIVE" {% if filters.assignment_status == 'ACTIVE' %}selected{% endif %}>Đang hoạt động</option><option value="PAUSED" {% if filters.assignment_status == 'PAUSED' %}selected{% endif %}>Tạm dừng</option><option value="COMPLETED" {% if filters.assignment_status == 'COMPLETED' %}selected{% endif %}>Hoàn thành</option><option value="ENDED" {% if filters.assignment_status == 'ENDED' %}selected{% endif %}>Đã kết thúc</option><option value="ALL" {% if filters.assignment_status == 'ALL' %}selected{% endif %}>Tất cả, gồm lịch sử</option></select></div>
       <div class="col-md-3"><button class="btn btn-primary w-100" type="submit">Áp dụng</button></div>
     </div>
   </form>
@@ -26,20 +27,20 @@
   <div class="row g-3 mb-4">
     <div class="col-sm-6 col-xl"><div class="stat-card"><div><div class="stat-label">Dự án đang tham gia</div><div class="stat-value">{{ cards.active_projects }}</div></div></div></div>
     <div class="col-sm-6 col-xl"><div class="stat-card"><div><div class="stat-label">Khách hàng liên quan</div><div class="stat-value">{{ cards.customers }}</div></div></div></div>
-    <div class="col-sm-6 col-xl"><div class="stat-card"><div><div class="stat-label">Assignment thi công</div><div class="stat-value">{{ cards.construction }}</div></div></div></div>
-    <div class="col-sm-6 col-xl"><div class="stat-card"><div><div class="stat-label">Assignment giải pháp</div><div class="stat-value">{{ cards.solution }}</div></div></div></div>
-    <div class="col-sm-6 col-xl"><div class="stat-card"><div><div class="stat-label">Assignment theo bộ lọc</div><div class="stat-value">{{ cards.assignments }}</div></div></div></div>
+    <div class="col-sm-6 col-xl"><div class="stat-card"><div><div class="stat-label">Đối tác thi công</div><div class="stat-value">{{ cards.construction }}</div></div></div></div>
+    <div class="col-sm-6 col-xl"><div class="stat-card"><div><div class="stat-label">Đối tác giải pháp</div><div class="stat-value">{{ cards.solution }}</div></div></div></div>
+    <div class="col-sm-6 col-xl"><div class="stat-card"><div><div class="stat-label">Liên kết theo bộ lọc</div><div class="stat-value">{{ cards.assignments }}</div></div></div></div>
   </div>
 
   <div class="row g-3 mb-4">
     <section class="col-lg-6"><div class="card h-100"><div class="card-header">Dự án theo khách hàng</div><div class="card-body"><canvas id="contractor-projects-by-customer" aria-label="Biểu đồ dự án theo khách hàng"></canvas><p data-chart-summary class="small text-muted mb-0"></p></div></div></section>
-    <section class="col-lg-3"><div class="card h-100"><div class="card-header">Vai trò assignment</div><div class="card-body"><canvas id="contractor-assignment-roles" aria-label="Biểu đồ assignment theo vai trò"></canvas><p data-chart-summary class="small text-muted mb-0"></p></div></div></section>
-    <section class="col-lg-3"><div class="card h-100"><div class="card-header">Trạng thái assignment</div><div class="card-body"><canvas id="contractor-assignment-statuses" aria-label="Biểu đồ assignment theo trạng thái"></canvas><p data-chart-summary class="small text-muted mb-0"></p></div></div></section>
+    <section class="col-lg-3"><div class="card h-100"><div class="card-header">Vai trò đối tác</div><div class="card-body"><canvas id="contractor-assignment-roles" aria-label="Biểu đồ đối tác theo vai trò"></canvas><p data-chart-summary class="small text-muted mb-0"></p></div></div></section>
+    <section class="col-lg-3"><div class="card h-100"><div class="card-header">Trạng thái liên kết</div><div class="card-body"><canvas id="contractor-assignment-statuses" aria-label="Biểu đồ đối tác theo trạng thái"></canvas><p data-chart-summary class="small text-muted mb-0"></p></div></div></section>
   </div>
 
   <div class="row g-3 mb-4">
-    <section class="col-lg-7"><div class="card h-100"><div class="card-header">Lịch sử dự án và assignment</div><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Dự án</th><th>Khách hàng</th><th>Vai trò</th><th>Trạng thái</th><th>Thời gian</th></tr></thead><tbody>{% for assignment in assignments %}<tr><td>{{ assignment.project.code }} · {{ assignment.project.name }}</td><td>{{ assignment.project.customer.name if assignment.project.customer else 'Chưa phân loại' }}</td><td>{{ role_labels[assignment.role] }}</td><td>{{ status_labels[assignment.status] }}</td><td>{{ assignment.started_on or '—' }}{% if assignment.ended_on %} → {{ assignment.ended_on }}{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="text-muted">Không có assignment phù hợp.</td></tr>{% endfor %}</tbody></table></div></div></section>
-    <section class="col-lg-5"><div class="card h-100"><div class="card-header">Cập nhật theo nhà thầu</div><div class="list-group list-group-flush">{% for update in updates %}<div class="list-group-item"><div class="fw-semibold">{{ update.title }}</div><div class="small text-muted">{{ update.project.code }} · {{ update.update_date.strftime('%d/%m/%Y') }}</div><div class="small">{{ update.content }}</div></div>{% else %}<div class="list-group-item text-muted">Chưa có cập nhật gắn với assignment của nhà thầu.</div>{% endfor %}</div></div></section>
+    <section class="col-lg-7"><div class="card h-100"><div class="card-header d-flex justify-content-between"><span>Lịch sử dự án và liên kết đối tác</span>{% if assignments_total > assignments|length %}<a class="small" href="{{ url_for('project_operations.contractor_detail', contractor_id=contractor.id) }}">Xem tất cả</a>{% endif %}</div><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Dự án</th><th>Khách hàng</th><th>Vai trò</th><th>Trạng thái</th><th>Thời gian</th></tr></thead><tbody>{% for assignment in assignments %}<tr><td>{{ assignment.project.code }} · {{ assignment.project.name }}</td><td>{{ assignment.project.customer.name if assignment.project.customer else 'Chưa phân loại' }}</td><td>{{ role_labels[assignment.role] }}</td><td>{{ status_labels[assignment.status] }}</td><td>{{ assignment.started_on|vn_date or '—' }}{% if assignment.ended_on %} → {{ assignment.ended_on|vn_date }}{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="text-muted">Không có liên kết phù hợp.</td></tr>{% endfor %}</tbody></table></div></div></section>
+    <section class="col-lg-5"><div class="card h-100"><div class="card-header d-flex justify-content-between"><span>Cập nhật theo đối tác</span>{% if updates_total > updates|length %}<a class="small" href="{{ url_for('project_operations.project_updates_index', contractor_id=contractor.id) }}">Xem tất cả cập nhật</a>{% endif %}</div><div class="list-group list-group-flush">{% for update in updates %}<div class="list-group-item"><div><span class="badge text-bg-secondary me-1">{{ update.update_type|project_update_type_label }}</span><span class="fw-semibold">{{ update.title }}</span></div><div class="small text-muted">{{ update.project.code }} · {{ update.update_date|vn_date }}{% if update.contractor_assignment %} · {{ update.contractor_assignment.role|contractor_role_label }}{% endif %}</div><div class="small">{{ update.content }}</div></div>{% else %}<div class="list-group-item text-muted">Chưa có cập nhật dự án.</div>{% endfor %}</div></div></section>
   </div>
 
   <div class="row g-3">

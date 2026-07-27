@@ -13,6 +13,8 @@
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('modules.index') }}"><i class="bi bi-arrow-left me-1"></i>Đổi phân hệ</a>
   </div>
 
+  {% include "dashboard/_type_navigation.html" %}
+
   <div class="row g-3 mb-4">
     {% if dashboard_kind == 'system' %}
       <div class="col-md-4 col-xl-2"><div class="stat-card"><div><div class="stat-label">Khách hàng</div><div class="stat-value">{{ cards.customers }}</div></div></div></div>
@@ -20,7 +22,7 @@
     <div class="col-md-4 col-xl-2"><div class="stat-card"><div><div class="stat-label">Dự án đang chạy</div><div class="stat-value">{{ cards.active_projects }}</div></div></div></div>
     <div class="col-md-4 col-xl-2"><div class="stat-card"><div><div class="stat-label">Tỷ lệ nộp</div><div class="stat-value">{{ cards.submission_rate }}%</div><div class="small text-muted">{{ cards.submitted_reports }}/{{ cards.active_projects }} dự án</div></div></div></div>
     <div class="col-md-4 col-xl-2"><div class="stat-card"><div><div class="stat-label">Chưa nộp</div><div class="stat-value">{{ cards.missing_reports }}</div></div></div></div>
-    <div class="col-md-4 col-xl-2"><div class="stat-card"><div><div class="stat-label">Nhà thầu khác nhau</div><div class="stat-value">{{ cards.distinct_contractors }}</div></div></div></div>
+    <div class="col-md-4 col-xl-2"><div class="stat-card"><div><div class="stat-label">Đối tác khác nhau</div><div class="stat-value">{{ cards.distinct_contractors }}</div></div></div></div>
     <div class="col-md-4 col-xl-2"><div class="stat-card"><div><div class="stat-label">Vấn đề tồn đọng</div><div class="stat-value">{{ cards.persistent_issues }}</div></div></div></div>
   </div>
 
@@ -28,14 +30,14 @@
     <li class="nav-item" role="presentation"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#scoped-overview" type="button" role="tab">Tổng quan</button></li>
     <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scoped-reports" type="button" role="tab">Báo cáo</button></li>
     <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scoped-issues" type="button" role="tab">Vấn đề tồn đọng</button></li>
-    <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scoped-contractors" type="button" role="tab">Nhà thầu</button></li>
+    <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scoped-contractors" type="button" role="tab">Đối tác</button></li>
   </ul>
 
   <div class="tab-content">
     <section class="tab-pane fade show active" id="scoped-overview" role="tabpanel">
       <div class="row g-3">
-        <div class="col-lg-7"><div class="card h-100"><div class="card-header">Dự án đang chạy</div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Dự án</th><th>Khách hàng</th><th>Nộp hôm nay</th><th>Vấn đề</th></tr></thead><tbody>{% for row in projects %}<tr><td>{{ row.project.code }} · {{ row.project.name }}</td><td>{{ row.project.customer.name if row.project.customer else 'Chưa phân loại' }}</td><td>{% if row.submitted %}<span class="badge text-bg-success">Đã nộp</span>{% else %}<span class="badge text-bg-warning">Chưa nộp</span>{% endif %}</td><td>{{ issue_counts.by_project.get(row.project.id, 0) }}</td></tr>{% else %}<tr><td colspan="4" class="text-muted">Không có dự án đang chạy trong phạm vi này.</td></tr>{% endfor %}</tbody></table></div></div></div>
-        <div class="col-lg-5"><div class="card h-100"><div class="card-header">Cập nhật dự án gần đây</div><div class="list-group list-group-flush">{% for update in recent_updates %}<div class="list-group-item"><div class="fw-semibold">{{ update.title }}</div><div class="small text-muted">{{ update.project.code }} · {{ update.update_date.strftime('%d/%m/%Y') }}{% if update.contractor_assignment %} · {{ update.contractor_assignment.contractor.name }}{% endif %}</div></div>{% else %}<div class="list-group-item text-muted">Chưa có cập nhật dự án.</div>{% endfor %}</div></div></div>
+        <div class="col-lg-7"><div class="card h-100"><div class="card-header d-flex justify-content-between"><span>Dự án đang chạy</span>{% if active_projects_total > recent_projects|length %}<a href="{{ url_for('projects.index') }}" class="small">Xem tất cả dự án</a>{% endif %}</div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Dự án</th><th>Khách hàng</th><th>Nộp hôm nay</th><th>Vấn đề</th></tr></thead><tbody>{% for row in recent_projects %}<tr><td>{{ row.project.code }} · {{ row.project.name }}</td><td>{{ row.project.customer.name if row.project.customer else 'Chưa phân loại' }}</td><td>{% if row.submitted %}<span class="badge text-bg-success">Đã nộp</span>{% else %}<span class="badge text-bg-warning">Chưa nộp</span>{% endif %}</td><td>{{ issue_counts.by_project.get(row.project.id, 0) }}</td></tr>{% else %}<tr><td colspan="4" class="text-muted">Không có dự án đang chạy trong phạm vi này.</td></tr>{% endfor %}</tbody></table></div></div></div>
+        <div class="col-lg-5"><div class="card h-100"><div class="card-header d-flex justify-content-between"><span>Cập nhật dự án gần đây</span>{% if recent_updates_total > recent_updates|length %}<a class="small" href="{{ url_for('project_operations.project_updates_index', customer_id=scope.customer_id if dashboard_kind == 'customer' else none) }}">Xem tất cả cập nhật</a>{% endif %}</div><div class="list-group list-group-flush">{% for update in recent_updates %}<div class="list-group-item"><div><span class="badge text-bg-secondary me-1">{{ update.update_type|project_update_type_label }}</span><span class="fw-semibold">{{ update.title }}</span></div><div class="small text-muted">{% if dashboard_kind == 'system' %}{{ update.project.customer.name if update.project.customer else 'Chưa phân loại' }} · {% endif %}{{ update.project.code }} · {{ update.update_date|vn_date }}{% if update.contractor_assignment %} · {{ update.contractor_assignment.contractor.name }}{% endif %}</div></div>{% else %}<div class="list-group-item text-muted">Chưa có cập nhật dự án.</div>{% endfor %}</div></div></div>
       </div>
     </section>
 
@@ -48,10 +50,10 @@
     </section>
 
     <section class="tab-pane fade" id="scoped-contractors" role="tabpanel">
-      <div class="row g-3"><div class="col-lg-5"><div class="card h-100"><div class="card-header">Assignment đang hoạt động theo vai trò</div><div class="card-body"><canvas id="scoped-contractors-role"></canvas></div></div></div><div class="col-lg-7"><div class="card h-100"><div class="card-header">Danh sách chưa nộp báo cáo</div><div class="list-group list-group-flush">{% for project in missing_projects %}<div class="list-group-item">{{ project.code }} · {{ project.name }}</div>{% else %}<div class="list-group-item text-muted">Tất cả dự án đang chạy đã nộp báo cáo.</div>{% endfor %}</div></div></div></div>
+      <div class="row g-3"><div class="col-lg-5"><div class="card h-100"><div class="card-header">Đối tác đang hoạt động theo vai trò</div><div class="card-body"><canvas id="scoped-contractors-role"></canvas></div></div></div><div class="col-lg-7"><div class="card h-100"><div class="card-header">Danh sách chưa nộp báo cáo</div><div class="list-group list-group-flush">{% for project in missing_projects %}<div class="list-group-item">{{ project.code }} · {{ project.name }}</div>{% else %}<div class="list-group-item text-muted">Tất cả dự án đang chạy đã nộp báo cáo.</div>{% endfor %}</div></div></div></div>
     </section>
   </div>
-  <p class="text-muted small mt-3 mb-0">Mẫu số báo cáo là dự án có trạng thái ACTIVE; dự án tạm dừng, hoàn thành, lưu trữ không bị tính là chưa nộp.</p>
+  <p class="text-muted small mt-3 mb-0">Mẫu số báo cáo là dự án đang hoạt động; dự án tạm dừng, hoàn thành, lưu trữ không bị tính là chưa nộp.</p>
 </div>
 {% endblock %}
 

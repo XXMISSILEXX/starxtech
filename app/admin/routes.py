@@ -159,7 +159,7 @@ def role_permissions(role_id):
         "modules": "Phân hệ", "users": "Người dùng/Vai trò", "roles": "Người dùng/Vai trò",
         "security": "Quản trị hệ thống", "system": "Quản trị hệ thống", "project_assignments": "Quản lý dự án / cấu hình dự án",
         "projects": "Quản lý dự án / cấu hình dự án", "categories": "Quản lý dự án / cấu hình dự án",
-        "reports": "Báo cáo hàng ngày", "attachments": "Báo cáo hàng ngày", "report_attachments": "Báo cáo hàng ngày", "issues": "Báo cáo hàng ngày",
+        "reports": "Quản lý dự án", "attachments": "Quản lý dự án", "report_attachments": "Quản lý dự án", "issues": "Quản lý dự án",
         "project_documents": "Hồ sơ dự án", "project_document_folders": "Hồ sơ dự án", "project_document_files": "Hồ sơ dự án",
         "company_media": "Thư viện ảnh/video công ty", "company_media_albums": "Thư viện ảnh/video công ty", "company_media_files": "Thư viện ảnh/video công ty",
         "partners": "Quản lý đối tác", "partner_companies": "Quản lý đối tác", "partner_fields": "Quản lý đối tác", "partner_field_collections": "Quản lý đối tác", "partner_relations": "Quản lý đối tác",
@@ -524,7 +524,7 @@ def _save_project(project=None):
         start_date = parse_date(request.form.get("start_date"))
         expected_end_date = parse_date(request.form.get("expected_end_date"))
     except ValueError:
-        errors.append("Ngày phải đúng định dạng YYYY-MM-DD.")
+        errors.append("Ngày phải đúng định dạng DD/MM/YYYY.")
         start_date = None
         expected_end_date = None
 

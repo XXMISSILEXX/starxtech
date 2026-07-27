@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-status-icon-sprite="{{ url_for('static', filename='vendor/status-icons/sprite.svg', v=static_asset_version) }}">
+<html lang="vi" data-status-icon-sprite="{{ url_for('static', filename='vendor/status-icons/sprite.svg', v=static_asset_version) }}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -43,8 +43,8 @@
             {% if current_user.can('partner_relations.view') %}<a class="nav-link {% if endpoint.startswith('partner_relations.') %}active{% endif %}" href="{{ url_for('partner_relations.index') }}"><i class="bi bi-diagram-3"></i><span>Sơ đồ quan hệ</span></a>{% endif %}
           {% elif active_module == 'reports' %}
             {% if current_user.can('reports.today.view') %}<a class="nav-link {% if endpoint == 'reports.today' %}active{% endif %}" href="{{ url_for('reports.today') }}"><i class="bi bi-calendar-check"></i><span>Hôm nay</span></a>{% endif %}
-            {% if current_user.can('project_operations.view') %}<a class="nav-link {% if endpoint.startswith('project_operations.') %}active{% endif %}" href="{{ url_for('project_operations.operations_index') }}"><i class="bi bi-diagram-3"></i><span>Quản lý dự án & nhà thầu</span></a>{% endif %}
-            {% if current_user.can('dashboards.system.view') and current_user.can('projects.scope_all') %}<a class="nav-link {% if endpoint.startswith('dashboard.') %}active{% endif %}" href="{{ url_for('dashboard.system_dashboard') }}"><i class="bi bi-grid-1x2"></i><span>Dashboard quản trị</span></a>{% endif %}
+            {% if current_user.can('project_operations.view') %}<a class="nav-link {% if endpoint.startswith('project_operations.') %}active{% endif %}" href="{{ url_for('project_operations.operations_index') }}"><i class="bi bi-diagram-3"></i><span>Quản lý dự án &amp; đối tác</span></a>{% endif %}
+            {% if current_user.can('dashboards.system.view') and current_user.can('projects.scope_all') %}<a class="nav-link {% if endpoint.startswith('dashboard.') or endpoint == 'projects.dashboard' %}active{% endif %}" href="{{ url_for('dashboard.system_dashboard') }}"><i class="bi bi-grid-1x2"></i><span>Dashboard quản trị</span></a>{% endif %}
             {% if current_user.can('reports.configuration.view') %}<a class="nav-link {% if endpoint == 'reports.configuration_hub' %}active{% endif %}" href="{{ url_for('reports.configuration_hub') }}"><i class="bi bi-gear"></i><span>Cấu hình</span></a>{% endif %}
           {% elif active_module == 'project_documents' %}
             {% if can_access_project_documents_module() %}<a class="nav-link active" href="{{ url_for('project_documents.index') }}"><i class="bi bi-folder2-open"></i><span>Hồ sơ dự án</span></a>{% endif %}
@@ -96,8 +96,8 @@
               {% if current_user.can('partner_relations.view') %}<a class="nav-link {% if endpoint.startswith('partner_relations.') %}active{% endif %}" href="{{ url_for('partner_relations.index') }}"><i class="bi bi-diagram-3"></i><span>Sơ đồ quan hệ</span></a>{% endif %}
             {% elif active_module == 'reports' %}
               {% if current_user.can('reports.today.view') %}<a class="nav-link {% if endpoint == 'reports.today' %}active{% endif %}" href="{{ url_for('reports.today') }}"><i class="bi bi-calendar-check"></i><span>Hôm nay</span></a>{% endif %}
-              {% if current_user.can('project_operations.view') %}<a class="nav-link {% if endpoint.startswith('project_operations.') %}active{% endif %}" href="{{ url_for('project_operations.operations_index') }}"><i class="bi bi-diagram-3"></i><span>Quản lý dự án & nhà thầu</span></a>{% endif %}
-              {% if current_user.can('dashboards.system.view') and current_user.can('projects.scope_all') %}<a class="nav-link {% if endpoint.startswith('dashboard.') %}active{% endif %}" href="{{ url_for('dashboard.system_dashboard') }}"><i class="bi bi-grid-1x2"></i><span>Dashboard quản trị</span></a>{% endif %}
+              {% if current_user.can('project_operations.view') %}<a class="nav-link {% if endpoint.startswith('project_operations.') %}active{% endif %}" href="{{ url_for('project_operations.operations_index') }}"><i class="bi bi-diagram-3"></i><span>Quản lý dự án &amp; đối tác</span></a>{% endif %}
+              {% if current_user.can('dashboards.system.view') and current_user.can('projects.scope_all') %}<a class="nav-link {% if endpoint.startswith('dashboard.') or endpoint == 'projects.dashboard' %}active{% endif %}" href="{{ url_for('dashboard.system_dashboard') }}"><i class="bi bi-grid-1x2"></i><span>Dashboard quản trị</span></a>{% endif %}
               {% if current_user.can('reports.configuration.view') %}<a class="nav-link {% if endpoint == 'reports.configuration_hub' %}active{% endif %}" href="{{ url_for('reports.configuration_hub') }}"><i class="bi bi-gear"></i><span>Cấu hình</span></a>{% endif %}
             {% elif active_module == 'project_documents' %}
               {% if can_access_project_documents_module() %}<a class="nav-link active" href="{{ url_for('project_documents.index') }}"><i class="bi bi-folder2-open"></i><span>Hồ sơ dự án</span></a>{% endif %}
@@ -192,7 +192,7 @@
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header">
-            <h2 class="modal-title h6" id="confirmActionModalLabel">Xác nhận thao tác</h2>
+            <h2 class="modal-title h6" id="confirmActionModalLabel" data-confirm-title>Xác nhận thao tác</h2>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
           </div>
           <div class="modal-body" data-confirm-message>Bạn chắc chắn muốn tiếp tục?</div>
@@ -212,6 +212,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     {% block extra_scripts %}{% endblock %}
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="{{ url_for('static', filename='js/vietnamese-date.js', v=static_asset_version) }}"></script>
     <script src="{{ url_for('static', filename='js/app.js', v=static_asset_version) }}"></script>
     <script src="{{ url_for('static', filename='js/display-image-picker.js', v=static_asset_version) }}"></script>
     {% if daily_report_legacy_edit_enabled|default(false) %}

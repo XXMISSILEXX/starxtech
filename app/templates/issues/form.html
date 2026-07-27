@@ -47,12 +47,12 @@
     </div>
     <div class="col-md-3">
       <label class="form-label" for="opened_date">Ngày mở</label>
-      <input class="form-control {% if form_errors.get('opened_date') %}is-invalid{% endif %}" id="opened_date" name="opened_date" type="date" value="{{ issue.opened_date or '' }}" {% if not can_write %}disabled{% endif %} required>
+      <input class="form-control {% if form_errors.get('opened_date') %}is-invalid{% endif %}" id="opened_date" name="opened_date" type="text" data-vn-date placeholder="dd/mm/yyyy" value="{{ issue.opened_date|vn_date }}" {% if not can_write %}disabled{% endif %} required>
       {% if form_errors.get('opened_date') %}<div class="invalid-feedback">{{ form_errors.get('opened_date') }}</div>{% endif %}
     </div>
     <div class="col-md-3">
       <label class="form-label" for="due_date">Hạn xử lý</label>
-      <input class="form-control {% if form_errors.get('due_date') %}is-invalid{% endif %}" id="due_date" name="due_date" type="date" value="{{ issue.due_date or '' }}" {% if not can_write %}disabled{% endif %}>
+      <input class="form-control {% if form_errors.get('due_date') %}is-invalid{% endif %}" id="due_date" name="due_date" type="text" data-vn-date placeholder="dd/mm/yyyy" value="{{ issue.due_date|vn_date }}" {% if not can_write %}disabled{% endif %}>
       {% if form_errors.get('due_date') %}<div class="invalid-feedback">{{ form_errors.get('due_date') }}</div>{% endif %}
     </div>
     <div class="col-md-6">

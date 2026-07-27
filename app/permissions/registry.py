@@ -23,12 +23,12 @@ _RESOURCES = {
     "company_media": "Thư viện ảnh/video công ty", "company_media_albums": "Album công ty", "company_media_files": "Media công ty",
     "storage": "Dung lượng & băng thông",
     "settings": "Cấu hình giao diện",
-    "project_operations": "Quản lý dự án & nhà thầu",
+    "project_operations": "Quản lý dự án & đối tác",
     "customers": "Khách hàng",
-    "project_contractors": "Nhà thầu dự án",
-    "contractor_assignments": "Assignment nhà thầu",
+    "project_contractors": "Đối tác dự án",
+    "contractor_assignments": "Liên kết đối tác",
     "project_updates": "Báo cáo xuyên suốt",
-    "dashboards": "Dashboard",
+    "dashboards": "Dashboard quản trị",
 }
 
 def _permission(code, name, *, dangerous=False, sort_order=0):
@@ -53,7 +53,7 @@ PERMISSIONS = [
     _permission("security.audit", "Xem nhật ký bảo mật", dangerous=True),
     _permission("system.settings", "Cấu hình hệ thống", dangerous=True),
     _permission("project_assignments.manage", "Quản lý phân quyền dự án", dangerous=True),
-    _permission("modules.reports.access", "Truy cập phân hệ Báo cáo hàng ngày"),
+    _permission("modules.reports.access", "Truy cập phân hệ Quản lý dự án"),
     _permission("modules.partners.access", "Truy cập phân hệ Quản lý đối tác"),
     _permission("modules.project_documents.access", "Truy cập phân hệ Hồ sơ tài liệu dự án"),
     _permission("project_documents.custom_roots.create", "Tạo mục hồ sơ tài liệu khác", dangerous=True),
@@ -74,23 +74,23 @@ PERMISSIONS = [
     _permission("settings.branding.view", "Xem nhận diện hệ thống"),
     _permission("settings.branding.manage", "Quản lý nhận diện hệ thống", dangerous=True),
     _permission("reports.today.view", "Xem Hôm nay"),
-    _permission("project_operations.view", "Xem Quản lý dự án & nhà thầu"),
+    _permission("project_operations.view", "Xem Quản lý dự án & đối tác"),
     _permission("reports.configuration.view", "Xem cấu hình Báo cáo"),
-    _permission("projects.scope_all", "Xem tất cả dự án trong scope Reports"),
+    _permission("projects.scope_all", "Xem tất cả dự án trong phạm vi Báo cáo"),
     *[_permission(f"dashboards.{action}.view", f"Xem Dashboard {label}")
       for action, label in (
           ("system", "toàn hệ thống"),
           ("customer", "khách hàng"),
           ("project", "dự án"),
-          ("contractor", "nhà thầu"),
+          ("contractor", "đối tác"),
       )],
     *[_permission(f"customers.{action}", f"{label} Khách hàng", dangerous=action == "archive")
       for action, label in (("view", "Xem"), ("create", "Tạo"), ("edit", "Sửa"), ("archive", "Lưu trữ"))],
-    *[_permission(f"project_contractors.{action}", f"{label} Nhà thầu dự án", dangerous=action == "archive")
+    *[_permission(f"project_contractors.{action}", f"{label} Đối tác dự án", dangerous=action == "archive")
       for action, label in (("view", "Xem"), ("create", "Tạo"), ("edit", "Sửa"), ("archive", "Lưu trữ"))],
-    _permission("contractor_assignments.view", "Xem Assignment nhà thầu"),
-    _permission("contractor_assignments.manage", "Quản lý Assignment nhà thầu", dangerous=True),
-    _permission("contractor_assignments.end", "Kết thúc Assignment nhà thầu", dangerous=True),
+    _permission("contractor_assignments.view", "Xem liên kết đối tác"),
+    _permission("contractor_assignments.manage", "Quản lý liên kết đối tác", dangerous=True),
+    _permission("contractor_assignments.end", "Gỡ liên kết đối tác khỏi dự án", dangerous=True),
     *[_permission(f"project_updates.{action}", f"{label} Báo cáo xuyên suốt", dangerous=action == "delete")
       for action, label in (("view", "Xem"), ("create", "Tạo"), ("edit", "Sửa"), ("edit_all", "Sửa tất cả"), ("delete", "Xóa"))],
 ]

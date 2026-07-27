@@ -2,7 +2,18 @@ import re
 
 from markupsafe import Markup, escape
 
-from app.models import DailyReportStatus, IssueSeverity, IssueStatus, SectionStatus, UserRole
+from app.models import (
+    DailyReportStatus,
+    IssueSeverity,
+    IssueStatus,
+    ProjectStatus,
+    ProjectContractorAssignmentStatus,
+    ProjectContractorRole,
+    ProjectUpdateType,
+    SectionStatus,
+    UserRole,
+)
+from app.date_utils import format_vn_date
 
 
 ROLE_LABELS = {
@@ -14,7 +25,7 @@ ROLE_LABELS = {
 }
 
 MODULE_LABELS = {
-    "reports": "Báo cáo hàng ngày",
+    "reports": "Quản lý dự án",
     "partners": "Quản lý đối tác",
     "project_documents": "Hồ sơ tài liệu",
     "company_media": "Thư viện ảnh/video công ty",
@@ -38,6 +49,29 @@ STATUS_LABELS = {
     IssueSeverity.LOW.value: "Thấp",
     IssueSeverity.MEDIUM.value: "Trung bình",
     IssueSeverity.HIGH.value: "Cao",
+    ProjectStatus.ACTIVE.value: "Đang hoạt động",
+    ProjectStatus.PAUSED.value: "Tạm dừng",
+    ProjectStatus.COMPLETED.value: "Hoàn thành",
+    ProjectStatus.ARCHIVED.value: "Đã lưu trữ",
+}
+
+PROJECT_UPDATE_TYPE_LABELS = {
+    ProjectUpdateType.GENERAL.value: "Cập nhật chung",
+    ProjectUpdateType.PROGRESS.value: "Tiến độ",
+    ProjectUpdateType.HANDOVER.value: "Bàn giao",
+    ProjectUpdateType.CONTRACTOR.value: "Cập nhật đối tác",
+    ProjectUpdateType.STATUS_CHANGE.value: "Thay đổi trạng thái",
+    ProjectUpdateType.NOTE.value: "Ghi chú",
+}
+CONTRACTOR_ROLE_LABELS = {
+    ProjectContractorRole.CONSTRUCTION.value: "Đối tác thi công",
+    ProjectContractorRole.SOLUTION.value: "Đối tác giải pháp",
+}
+ASSIGNMENT_STATUS_LABELS = {
+    ProjectContractorAssignmentStatus.ACTIVE.value: "Đang hoạt động",
+    ProjectContractorAssignmentStatus.PAUSED.value: "Tạm dừng",
+    ProjectContractorAssignmentStatus.COMPLETED.value: "Hoàn thành",
+    ProjectContractorAssignmentStatus.ENDED.value: "Đã kết thúc",
 }
 
 STATUS_ICON_KEYS = {
@@ -116,6 +150,22 @@ def status_label(value):
     return STATUS_LABELS.get(value, value or "-")
 
 
+def project_update_type_label(value):
+    return PROJECT_UPDATE_TYPE_LABELS.get(value, value or "-")
+
+
+def contractor_role_label(value):
+    return CONTRACTOR_ROLE_LABELS.get(value, value or "-")
+
+
+def assignment_status_label(value):
+    return ASSIGNMENT_STATUS_LABELS.get(value, value or "-")
+
+
+def vn_datetime(value):
+    return value.strftime("%d/%m/%Y lúc %H:%M") if value else "—"
+
+
 def status_icon(value):
     return STATUS_ICON_KEYS.get(value, "info-circle-fill")
 
@@ -169,6 +219,10 @@ def register_template_helpers(app):
     app.jinja_env.filters["partner_field_value"] = display_field_value
     app.jinja_env.filters["vn_date"] = format_vn_date
     app.jinja_env.filters["status_label"] = status_label
+    app.jinja_env.filters["project_update_type_label"] = project_update_type_label
+    app.jinja_env.filters["contractor_role_label"] = contractor_role_label
+    app.jinja_env.filters["assignment_status_label"] = assignment_status_label
+    app.jinja_env.filters["vn_datetime"] = vn_datetime
     app.jinja_env.filters["status_icon"] = status_icon
     app.jinja_env.filters["status_tone"] = status_tone
     app.jinja_env.filters["issue_severity_label"] = issue_severity_label

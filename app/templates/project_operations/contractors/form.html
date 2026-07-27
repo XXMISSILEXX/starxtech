@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}{{ 'Sửa' if contractor else 'Tạo' }} nhà thầu - StarX{% endblock %}
-{% block page_title %}{{ 'Sửa' if contractor else 'Tạo' }} nhà thầu{% endblock %}
+{% block title %}{{ 'Sửa' if contractor else 'Tạo' }} đối tác - StarX{% endblock %}
+{% block page_title %}{{ 'Sửa' if contractor else 'Tạo' }} đối tác{% endblock %}
 {% block content %}
 <form method="post" class="card card-body gap-3"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div><label class="form-label">Tên nhà thầu</label><input class="form-control" name="name" required value="{{ contractor.name if contractor else '' }}"></div>
+  <div><label class="form-label">Tên đối tác</label><input class="form-control" name="name" required value="{{ contractor.name if contractor else '' }}"></div>
   <div><label class="form-label">Tên viết tắt</label><input class="form-control" name="short_name" value="{{ contractor.short_name if contractor and contractor.short_name else '' }}"></div>
   <div><label class="form-label">Mô tả</label><textarea class="form-control" name="description">{{ contractor.description if contractor and contractor.description else '' }}</textarea></div>
   <div class="row"><div class="col-md-4"><label class="form-label">Điện thoại</label><input class="form-control" name="phone" value="{{ contractor.phone if contractor and contractor.phone else '' }}"></div><div class="col-md-4"><label class="form-label">Email</label><input class="form-control" type="email" name="email" value="{{ contractor.email if contractor and contractor.email else '' }}"></div><div class="col-md-4"><label class="form-label">Địa chỉ</label><input class="form-control" name="address" value="{{ contractor.address if contractor and contractor.address else '' }}"></div></div>

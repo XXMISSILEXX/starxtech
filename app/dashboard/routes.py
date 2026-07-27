@@ -15,7 +15,8 @@ from app.dashboard.services import (
 )
 from app.auth.permissions import can_access_reports_module
 from app.auth.permissions import can_read_project
-from app.models import Customer, Project, ProjectContractor
+from app.models import Customer, Project, ProjectContractor, ProjectStatus
+from app.models import ProjectContractorAssignment
 from datetime import datetime
 
 
@@ -27,6 +28,7 @@ def system_dashboard():
         dashboard_title="Dashboard toàn hệ thống",
         dashboard_kind="system",
         dashboard_api=url_for("dashboard_api.system_dashboard_payload"),
+        **dashboard_navigation_context("system"),
         **dashboard_scope_context(DashboardScope.system()),
     )
 
@@ -43,6 +45,7 @@ def customer_dashboard(customer_id):
         dashboard_kind="customer",
         customer=customer,
         dashboard_api=url_for("dashboard_api.customer_dashboard_payload", customer_id=customer.id),
+        **dashboard_navigation_context("customer", customer_id=customer.id),
         **dashboard_scope_context(DashboardScope.customer(customer.id)),
     )
 
@@ -56,7 +59,8 @@ def contractor_dashboard(contractor_id):
         context = contractor_dashboard_context(contractor, filters)
     except DashboardFilterError as exc:
         abort(404, str(exc))
-    return render_template("dashboard/contractor.html", **context)
+    context["dashboard_kind"] = "contractor"
+    return render_template("dashboard/contractor.html", **context, **dashboard_navigation_context("contractor", contractor_id=contractor.id))
 
 
 @api_bp.get("/projects/<int:project_id>/section-status")
@@ -124,3 +128,46 @@ def _require_dashboard_scope(permission):
         or not current_user.can("projects.scope_all")
     ):
         abort(403)
+
+
+def dashboard_navigation_context(kind, *, customer_id=None, project_id=None, contractor_id=None):
+    """Permission-aware canonical dashboard navigation without resource leakage."""
+    can_system = current_user.can("dashboards.system.view") and current_user.can("projects.scope_all")
+    can_customer = current_user.can("dashboards.customer.view") and current_user.can("projects.scope_all")
+    can_project = current_user.can("dashboards.project.view")
+    can_contractor = current_user.can("dashboards.contractor.view")
+    visible_project_ids = DashboardScope.system().projects_query().with_entities(Project.id)
+    customers = (
+        Customer.query.join(Project, Project.customer_id == Customer.id)
+        .filter(Customer.is_active.is_(True), Project.id.in_(visible_project_ids))
+        .distinct().order_by(Customer.normalized_name.asc(), Customer.id.asc()).all() if can_customer else []
+    )
+    projects = (
+        Project.query.filter(Project.id.in_(visible_project_ids))
+        .order_by(Project.status != ProjectStatus.ACTIVE.value, Project.code.asc(), Project.name.asc(), Project.id.asc()).all()
+        if can_project else []
+    )
+    contractors = (
+        ProjectContractor.query.join(ProjectContractorAssignment)
+        .join(Project, Project.id == ProjectContractorAssignment.project_id)
+        .filter(Project.id.in_(visible_project_ids)).distinct().order_by(ProjectContractor.normalized_name.asc(), ProjectContractor.id.asc()).all()
+        if can_contractor else []
+    )
+    cards = [
+        {"kind": "system", "label": "Dashboard toàn hệ thống", "description": "Theo dõi tình hình tổng hợp của các dự án.", "icon": "bi-grid-1x2", "href": url_for("dashboard.system_dashboard") if can_system else None, "enabled": can_system},
+        {"kind": "customer", "label": "Dashboard khách hàng", "description": "Theo dõi các dự án theo từng khách hàng.", "icon": "bi-people", "href": url_for("dashboard.customer_dashboard", customer_id=customers[0].id) if customers else None, "enabled": bool(customers)},
+        {"kind": "project", "label": "Dashboard dự án", "description": "Xem số liệu và tiến độ của một dự án.", "icon": "bi-kanban", "href": url_for("projects.dashboard", project_id=projects[0].id) if projects else None, "enabled": bool(projects)},
+        {"kind": "contractor", "label": "Dashboard đối tác", "description": "Theo dõi đối tác trong phạm vi dự án được cấp quyền.", "icon": "bi-buildings", "href": url_for("dashboard.contractor_dashboard", contractor_id=contractors[0].id) if contractors else None, "enabled": bool(contractors)},
+    ]
+    return {
+        "dashboard_navigation": cards,
+        "dashboard_customers": customers,
+        "dashboard_projects": projects,
+        "dashboard_contractors": contractors,
+        "selected_dashboard_customer_id": customer_id,
+        "selected_dashboard_project_id": project_id,
+        "selected_dashboard_contractor_id": contractor_id,
+        "can_customer_dashboard": can_customer,
+        "can_project_dashboard": can_project,
+        "can_contractor_dashboard": can_contractor,
+    }

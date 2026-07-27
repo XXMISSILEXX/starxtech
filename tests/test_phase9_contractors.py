@@ -22,6 +22,7 @@ from app.project_operations.services import (
     archive_contractor,
     assign_contractor,
     end_assignment,
+    update_assignment,
 )
 
 
@@ -150,3 +151,49 @@ def test_custom_assignment_manager_needs_project_scope_and_can_mutate_only_assig
         assert assignment.status == ProjectContractorAssignmentStatus.ACTIVE.value
         assert assignment.role == ProjectContractorRole.CONSTRUCTION.value
         assert AuditLog.query.filter_by(action="project_contractor_assignment.create", entity_id=assignment.id).count() == 1
+
+
+def test_assignment_page_uses_modal_vietnamese_labels_and_removal_confirmation(client, app):
+    contractor_id = _contractor(app, "Modal contractor")
+    with app.app_context():
+        assignment = assign_contractor(project=db.session.get(Project, 1), contractor=db.session.get(ProjectContractor, contractor_id), role="CONSTRUCTION", status="ACTIVE", actor_id=1)
+        db.session.commit()
+        assignment_id = assignment.id
+    login(client, "super")
+    page = client.get("/projects/1/contractors/construction")
+    assert page.status_code == 200
+    assert "Thêm đối tác".encode() in page.data
+    assert b"addContractorModal" in page.data
+    assert "Đối tác thi công".encode() in page.data
+    assert "Đang hoạt động".encode() in page.data
+    assert "Gỡ đối tác khỏi dự án".encode() in page.data
+    assert b"editAssignmentModal" in page.data
+    assert "Chỉnh sửa đối tác trong dự án".encode() in page.data
+    assert b"data-vn-date" in page.data
+    response = client.post(f"/project-operations/assignments/{assignment_id}/end")
+    assert response.status_code == 302
+    with app.app_context():
+        assert db.session.get(ProjectContractorAssignment, assignment_id).status == "ENDED"
+
+
+def test_assignment_lifecycle_dates_are_nullable_and_validate_status_policy(app):
+    with app.app_context():
+        contractor = ProjectContractor(name="Lifecycle contractor", normalized_name="lifecycle contractor")
+        db.session.add(contractor); db.session.flush()
+        assignment = assign_contractor(project=db.session.get(Project, 1), contractor=contractor, role="CONSTRUCTION", status="ACTIVE")
+        db.session.commit()
+
+        update_assignment(assignment, status="COMPLETED", started_on=None, ended_on=None, note="done")
+        db.session.commit()
+        assert assignment.started_on is None and assignment.ended_on is None
+        with pytest.raises(ValueError, match="trước ngày bắt đầu"):
+            update_assignment(assignment, status="COMPLETED", started_on=date(2026, 7, 20), ended_on=date(2026, 7, 19))
+        with pytest.raises(ValueError, match="xóa ngày kết thúc"):
+            update_assignment(assignment, status="PAUSED", started_on=None, ended_on=date(2026, 7, 20))
+
+        end_assignment(assignment, ended_on=None)
+        db.session.commit()
+        assert assignment.status == "ENDED" and assignment.ended_on is None
+        update_assignment(assignment, status="ENDED", started_on=None, ended_on=None, note="history corrected")
+        db.session.commit()
+        assert assignment.note == "history corrected"

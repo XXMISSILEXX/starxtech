@@ -13,6 +13,7 @@ from app.auth.permissions import (
     can_access_reports_module,
     can_view_issue,
 )
+from app.dashboard.routes import dashboard_navigation_context
 from app.dashboard.services import project_dashboard_context
 from app.extensions import db
 from app.issues.services import (
@@ -66,7 +67,9 @@ def dashboard(project_id):
         abort(403)
     return render_template(
         "dashboard/project.html",
+        dashboard_kind="project",
         can_write=can_create_report(current_user, project.id),
+        **dashboard_navigation_context("project", project_id=project.id),
         **project_dashboard_context(project),
     )
 

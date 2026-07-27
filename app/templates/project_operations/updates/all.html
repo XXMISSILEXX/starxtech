@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Báo cáo xuyên suốt - Quản lý dự án{% endblock %}
+{% block page_title %}Báo cáo xuyên suốt{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="{{ url_for('project_operations.operations_index') }}">Quản lý dự án</a></li><li class="breadcrumb-item active" aria-current="page">Báo cáo xuyên suốt</li></ol></nav>
+<div class="card"><div class="list-group list-group-flush">{% for update in updates %}<a class="list-group-item list-group-item-action" href="{{ url_for('project_operations.project_updates', project_id=update.project_id) }}"><strong>{{ update.title }}</strong><span class="d-block small text-muted">{{ update.project.code }} · {{ update.update_date.strftime('%d/%m/%Y') }}</span></a>{% else %}<div class="list-group-item text-muted">Chưa có cập nhật trong phạm vi được phân quyền.</div>{% endfor %}</div></div>
+{% endblock %}

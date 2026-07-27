@@ -16,7 +16,7 @@ def select_reports():
     if not can_access_reports_module(current_user):
         abort(403)
     session["active_module"] = "reports"
-    flash("Đã chuyển sang phân hệ Báo cáo hàng ngày.", "success")
+    flash("Đã chuyển sang phân hệ Quản lý dự án.", "success")
     if current_user.can("dashboards.system.view") and current_user.can("projects.scope_all"):
         return redirect(url_for("dashboard.system_dashboard"))
     return redirect(url_for("projects.index"))

@@ -213,7 +213,7 @@ def test_partner_detail_shows_empty_company_note_text(client, app):
     assert "Chưa có ghi chú.".encode() in response.data
 
 
-def test_partner_birth_date_displays_dd_mm_yyyy(client, app):
+def test_partner_birth_date_displays_dd_slash_mm_slash_yyyy(client, app):
     with app.app_context():
         partner = Partner(id=100, full_name="Date Person", birth_date=__import__("datetime").date(1990, 5, 24))
         db.session.add(partner)
@@ -223,16 +223,16 @@ def test_partner_birth_date_displays_dd_mm_yyyy(client, app):
     response = client.get("/partners/100")
 
     assert response.status_code == 200
-    assert "24-05-1990".encode() in response.data
+    assert "24/05/1990".encode() in response.data
 
 
-def test_partner_create_accepts_dd_mm_yyyy(client, app):
+def test_partner_create_accepts_dd_slash_mm_slash_yyyy(client, app):
     with app.app_context():
         company_id, department_id = create_company_department()
     login(client, "admin")
     response = client.post(
         "/partners/new",
-        data={"full_name": "Ngày Sinh", "company_id": str(company_id), "department_id": str(department_id), "position": "Giám đốc", "birth_date": "24-05-1990"},
+        data={"full_name": "Ngày Sinh", "company_id": str(company_id), "department_id": str(department_id), "position": "Giám đốc", "birth_date": "24/05/1990"},
     )
 
     assert response.status_code == 302
@@ -247,11 +247,10 @@ def test_partner_create_form_contains_birth_date_picker(client):
 
     assert response.status_code == 200
     assert b'name="birth_date"' in response.data
-    assert b"js-date-picker" in response.data
-    assert b"data-date-picker" in response.data
+    assert b"data-vn-date" in response.data
 
 
-def test_partner_edit_form_displays_birth_date_dd_mm_yyyy(client, app):
+def test_partner_edit_form_displays_birth_date_dd_slash_mm_slash_yyyy(client, app):
     with app.app_context():
         partner = Partner(id=120, full_name="Edit Date", birth_date=__import__("datetime").date(1991, 6, 25))
         db.session.add(partner)
@@ -261,7 +260,7 @@ def test_partner_edit_form_displays_birth_date_dd_mm_yyyy(client, app):
     response = client.get("/partners/120/edit")
 
     assert response.status_code == 200
-    assert b'value="25-06-1991"' in response.data
+    assert b'value="25/06/1991"' in response.data
 
 
 def test_invalid_birth_date_shows_vietnamese_error_and_preserves_form(client):
@@ -272,7 +271,7 @@ def test_invalid_birth_date_shows_vietnamese_error_and_preserves_form(client):
     )
 
     assert response.status_code == 400
-    assert "Ngày sinh phải có định dạng DD-MM-YYYY.".encode() in response.data
+    assert "Ngày sinh phải có định dạng DD/MM/YYYY.".encode() in response.data
     assert "Sai Ngày".encode() in response.data
     assert "Giám đốc".encode() in response.data
 
@@ -288,11 +287,11 @@ def test_dynamic_date_field_renders_picker_accepts_and_rejects_dates(client, app
         data={
             "full_name": "",
             "fields[0][field_definition_id]": str(date_field_id),
-            "fields[0][value]": "31-12-2026",
+            "fields[0][value]": "31/12/2026",
         },
     )
-    assert b"js-date-picker" in form.data
-    assert b"31-12-2026" in form.data
+    assert b"data-vn-date" in form.data
+    assert b"31/12/2026" in form.data
 
     invalid = client.post(
         "/partners/new",
@@ -306,7 +305,7 @@ def test_dynamic_date_field_renders_picker_accepts_and_rejects_dates(client, app
         },
     )
     assert invalid.status_code == 400
-    assert "Ngày không hợp lệ, vui lòng nhập theo định dạng DD-MM-YYYY.".encode() in invalid.data
+    assert "Ngày không hợp lệ, vui lòng nhập theo định dạng DD/MM/YYYY.".encode() in invalid.data
     assert b"2026/12/31" in invalid.data
 
     created = client.post(
@@ -317,7 +316,7 @@ def test_dynamic_date_field_renders_picker_accepts_and_rejects_dates(client, app
             "department_id": str(department_id),
             "position": "Giám đốc",
             "fields[0][field_definition_id]": str(date_field_id),
-            "fields[0][value]": "31-12-2026",
+            "fields[0][value]": "31/12/2026",
         },
     )
     assert created.status_code == 302

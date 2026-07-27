@@ -1,9 +1,8 @@
 {% extends "base.html" %}
-{% block title %}{{ project.name }} — Workspace{% endblock %}
-{% block page_title %}Project Workspace{% endblock %}
+{% block title %}{{ project.name }} — Quản lý dự án{% endblock %}
+{% block page_title %}Không gian dự án{% endblock %}
 {% block content %}
-<nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="{{ url_for('project_operations.operations_index') }}">Quản lý dự án & nhà thầu</a></li><li class="breadcrumb-item active" aria-current="page">{{ project.code }}</li></ol></nav>
-<header class="mb-3"><h2 class="h4 mb-1">{{ project.name }}</h2><div class="text-muted">{{ project.customer.name if project.customer else 'Khách hàng chưa phân loại' }} · {{ project.code }}</div><span class="badge text-bg-secondary mt-2">{{ project.status }}</span></header>
-<div class="nav nav-tabs flex-wrap" role="tablist" aria-label="Khu vực dự án">{% for key, label, permission, href in tabs %}<a class="nav-link {% if loop.first %}active{% endif %}" href="{{ href }}" role="tab">{{ label }}</a>{% endfor %}</div>
-<section class="card card-body border-top-0 rounded-top-0"><p class="mb-0">Chọn một tab để mở chức năng đã được phân quyền cho dự án này.</p></section>
+<nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="{{ url_for('project_operations.operations_index') }}">Quản lý dự án &amp; đối tác</a></li><li class="breadcrumb-item active" aria-current="page">{{ project.code }}</li></ol></nav>
+<header class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4"><div><h2 class="h4 mb-1">{{ project.name }}</h2><div class="text-muted">{{ project.code }} · {{ project.customer.name if project.customer else 'Khách hàng chưa phân loại' }}</div><span class="badge text-bg-secondary mt-2">{{ project.status|status_label }}</span></div><a class="btn btn-outline-secondary" href="{{ url_for('project_operations.operations_index') }}"><i class="bi bi-arrow-left me-1"></i>Quay lại Quản lý dự án</a></header>
+<div class="row g-3">{% for key, label, description, icon, permission, href, summary in cards %}<div class="col-md-6 col-xl-4"><a class="workspace-card" href="{{ href }}"><i class="bi {{ icon }} workspace-card-icon" aria-hidden="true"></i><h2 class="h5 mt-3">{{ label }}</h2><p class="text-muted mb-2">{{ description }}</p>{% if summary %}<span class="small fw-semibold">{{ summary }}</span>{% endif %}<span class="small d-block mt-3">Mở <i class="bi bi-arrow-right" aria-hidden="true"></i></span></a></div>{% endfor %}</div>
 {% endblock %}

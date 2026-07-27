@@ -1,0 +1,24 @@
+<section class="dashboard-type-navigation mb-4" aria-labelledby="dashboard-type-navigation-title">
+  <h2 class="h5 mb-3" id="dashboard-type-navigation-title">Điều hướng Dashboard quản trị</h2>
+  <div class="row g-3">
+    {% for item in dashboard_navigation %}
+      <div class="col-md-6 col-xl-3">
+        {% if item.enabled %}
+          <a class="dashboard-type-card {% if dashboard_kind == item.kind %}active{% endif %}" href="{{ item.href }}" {% if dashboard_kind == item.kind %}aria-current="page"{% endif %}>
+            <i class="bi {{ item.icon }}" aria-hidden="true"></i><span class="fw-semibold d-block">{{ item.label }}</span><span class="small text-muted">{{ item.description }}</span>
+          </a>
+        {% else %}
+          <div class="dashboard-type-card disabled" aria-disabled="true"><i class="bi {{ item.icon }}" aria-hidden="true"></i><span class="fw-semibold d-block">{{ item.label }}</span><span class="small text-muted">Bạn chưa có dữ liệu trong phạm vi được phân quyền.</span></div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if dashboard_kind == 'customer' %}
+  <div class="dashboard-resource-selector mb-4"><label class="form-label" for="dashboard-customer-select">Khách hàng</label>{% if dashboard_customers %}<select class="form-select" id="dashboard-customer-select" data-dashboard-selector aria-label="Chuyển Dashboard khách hàng">{% for item in dashboard_customers %}<option value="{{ url_for('dashboard.customer_dashboard', customer_id=item.id) }}" {% if selected_dashboard_customer_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>{% else %}<p class="text-muted mb-0">Bạn chưa có khách hàng nào trong phạm vi được phân quyền.</p>{% endif %}</div>
+{% elif dashboard_kind == 'project' %}
+  <div class="dashboard-resource-selector mb-4"><label class="form-label" for="dashboard-project-filter">Tìm dự án</label>{% if dashboard_projects %}<input class="form-control mb-2" id="dashboard-project-filter" type="search" placeholder="Tìm theo mã hoặc tên dự án" data-dashboard-filter="#dashboard-project-select" aria-label="Tìm dự án theo mã hoặc tên"><label class="form-label" for="dashboard-project-select">Dự án</label><select class="form-select" id="dashboard-project-select" data-dashboard-selector aria-label="Chuyển Dashboard dự án">{% for item in dashboard_projects %}<option value="{{ url_for('projects.dashboard', project_id=item.id) }}" data-search="{{ item.code|lower }} {{ item.name|lower }}" {% if selected_dashboard_project_id == item.id %}selected{% endif %}>{{ item.code }} · {{ item.name }}</option>{% endfor %}</select>{% else %}<p class="text-muted mb-0">Bạn chưa có dự án nào trong phạm vi được phân quyền.</p>{% endif %}</div>
+{% elif dashboard_kind == 'contractor' %}
+  <div class="dashboard-resource-selector mb-4"><label class="form-label" for="dashboard-contractor-select">Đối tác</label>{% if dashboard_contractors %}<select class="form-select" id="dashboard-contractor-select" data-dashboard-selector aria-label="Chuyển Dashboard đối tác">{% for item in dashboard_contractors %}<option value="{{ url_for('dashboard.contractor_dashboard', contractor_id=item.id) }}" {% if selected_dashboard_contractor_id == item.id %}selected{% endif %}>{{ item.short_name or item.name }}</option>{% endfor %}</select>{% else %}<p class="text-muted mb-0">Bạn chưa có đối tác nào trong phạm vi được phân quyền.</p>{% endif %}</div>
+{% endif %}

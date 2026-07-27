@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from flask import current_app
 from sqlalchemy import case, func, select
 
+from app.date_utils import parse_vn_date
 from app.extensions import db
 from app.models import BulkDownloadJob, DownloadEvent, StorageDerivative, StorageObject, User
 
@@ -36,10 +37,10 @@ def parse_filters(args):
         start, end = today - timedelta(days=29), today
     else:
         try:
-            start = datetime.strptime(args.get("from", ""), "%Y-%m-%d").date()
-            end = datetime.strptime(args.get("to", ""), "%Y-%m-%d").date()
+            start = parse_vn_date(args.get("from"), field_label="Từ ngày", allow_empty=False)
+            end = parse_vn_date(args.get("to"), field_label="Đến ngày", allow_empty=False)
         except ValueError as exc:
-            raise StorageDashboardFilterError("Nhập ngày theo định dạng YYYY-MM-DD.") from exc
+            raise StorageDashboardFilterError("Nhập ngày theo định dạng DD/MM/YYYY.") from exc
         if start > end:
             raise StorageDashboardFilterError("Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.")
     return {
@@ -85,7 +86,7 @@ MODULE_LABELS = {
     "project_documents": "Hồ sơ tài liệu",
     "company-media": "Thư viện ảnh/video công ty",
     "company_media": "Thư viện ảnh/video công ty",
-    "daily-reports": "Báo cáo hàng ngày",
+    "daily-reports": "Báo cáo ngày",
     "partner-management": "Quản lý đối tác",
 }
 SOURCE_TYPE_LABELS = {

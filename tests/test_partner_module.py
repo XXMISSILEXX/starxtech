@@ -15,7 +15,7 @@ def test_module_selection_sets_active_module_and_sidebar(client):
 
     response = client.get("/modules/")
     assert response.status_code == 200
-    assert "Báo cáo hàng ngày".encode() in response.data
+    assert "Quản lý dự án".encode() in response.data
     assert "Quản lý đối tác".encode() in response.data
 
     selected = client.get("/modules/select/partners")

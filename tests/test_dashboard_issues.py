@@ -1,11 +1,11 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import event
 
 from app.extensions import db
 from app.models import AuditLog, Customer, DailyReport, DailyReportSection, IssueStatus, PersistentIssue, Permission, Project, ProjectContractor, ProjectContractorAssignment, ProjectUpdate, ReportCategory, Role, RolePermission, User
-from app.dashboard.services import project_section_status_payload
+from app.dashboard.services import project_dashboard_context, project_section_status_payload
 
 
 def login(client, username_or_email, password="password123"):
@@ -121,6 +121,88 @@ def test_project_dashboard_uses_project_context_issue_wording(client, app):
     assert response.status_code == 200
     assert "Vấn đề tồn đọng".encode() in response.data
     assert "Vấn đề đang mở".encode() not in response.data
+
+
+def test_project_dashboard_aggregates_multiple_report_dates_without_invalid_grouping(client, app):
+    with app.app_context():
+        seed_dashboard_data()
+        db.session.add(
+            DailyReport(
+                id=104,
+                project_id=1,
+                report_date=date(2026, 7, 4),
+                overall_status="GOOD",
+                highlight="A later good report",
+                created_by_user_id=3,
+            )
+        )
+        db.session.commit()
+
+    login(client, "viewer")
+    response = client.get("/reports/projects/1/dashboard")
+    assert response.status_code == 200
+
+    statements = []
+
+    def capture(_connection, _cursor, statement, _parameters, _context, _executemany):
+        if "GROUP BY daily_reports.overall_status" in statement:
+            statements.append(statement)
+
+    with app.app_context():
+        event.listen(db.engine, "before_cursor_execute", capture)
+        try:
+            with app.test_request_context("/reports/projects/1/dashboard"):
+                from flask_login import login_user
+
+                login_user(db.session.get(User, 2))
+                context = project_dashboard_context(db.session.get(Project, 1))
+        finally:
+            event.remove(db.engine, "before_cursor_execute", capture)
+
+    assert context["cards"]["total_reports"] == 3
+    assert context["cards"]["good_reports"] == 2
+    assert context["cards"]["processing_reports"] == 1
+    assert len(statements) == 1
+    assert "ORDER BY daily_reports.overall_status" in statements[0]
+    assert "ORDER BY daily_reports.report_date" not in statements[0]
+
+
+def test_project_dashboard_shows_recent_updates_with_sql_limit_and_full_list_link(client, app):
+    with app.app_context():
+        for index in range(6):
+            db.session.add(ProjectUpdate(
+                id=800 + index, project_id=1, update_type="NOTE", title=f"Update {index}", content="x",
+                update_date=date(2026, 7, index + 1), created_by_id=3,
+            ))
+        db.session.add(ProjectUpdate(id=899, project_id=1, update_type="GENERAL", title="Deleted", content="x", update_date=date(2026, 8, 1), created_by_id=3, deleted_at=datetime.utcnow()))
+        db.session.commit()
+    login(client, "viewer")
+    page = client.get("/reports/projects/1/dashboard")
+    assert page.status_code == 200
+    assert "Cập nhật dự án gần đây".encode() in page.data
+    assert page.data.count(b"Update ") == 5
+    assert b"Update 5" in page.data and b"Update 0" not in page.data
+    assert b"Deleted" not in page.data
+    assert "Xem tất cả cập nhật".encode() in page.data
+    assert client.get("/projects/1/updates").status_code == 200
+
+
+def test_project_dashboard_selector_is_scoped_sorted_and_uses_canonical_urls(client, app):
+    with app.app_context():
+        db.session.add_all([
+            Project(id=810, code="Z99", name="Zulu", status="active"),
+            Project(id=811, code="A01", name="Alpha", status="active"),
+            Project(id=812, code="000", name="Paused first by code", status="paused"),
+        ])
+        db.session.commit()
+    login(client, "viewer")
+    page = client.get("/reports/projects/1/dashboard")
+    assert page.status_code == 200
+    assert b"dashboard-project-select" in page.data
+    assert b"dashboard-project-filter" in page.data
+    assert b"/reports/projects/811/dashboard" in page.data
+    assert page.data.index(b"A01") < page.data.index(b"Z99") < page.data.index(b"Paused first by code")
+    assert client.get("/reports/projects/811/dashboard").status_code == 200
 
 
 def test_reporter_cannot_mutate_persistent_issues_by_default(client, app):
@@ -456,3 +538,23 @@ def test_contractor_dashboard_payload_query_count_is_not_linear(client, app):
     small = payload_queries(1, 910)
     large = payload_queries(20, 1000)
     assert large == small
+
+
+def test_system_dashboard_hub_exposes_permission_aware_canonical_dashboard_cards(client, app):
+    with app.app_context():
+        customer = Customer(id=990, name="Hub customer", normalized_name="hub customer")
+        contractor = ProjectContractor(id=990, name="Hub contractor", normalized_name="hub contractor")
+        db.session.add_all([customer, contractor]); db.session.flush()
+        db.session.get(Project, 1).customer_id = customer.id
+        db.session.add(ProjectContractorAssignment(id=990, project_id=1, contractor_id=contractor.id, role="CONSTRUCTION", status="ACTIVE"))
+        db.session.commit()
+    login(client, "viewer")
+    page = client.get("/reports/dashboard/system")
+    assert page.status_code == 200
+    assert "Điều hướng Dashboard quản trị".encode() in page.data
+    assert "Dashboard toàn hệ thống".encode() in page.data
+    assert "Dashboard khách hàng".encode() in page.data
+    assert "Dashboard dự án".encode() in page.data
+    assert "Dashboard đối tác".encode() in page.data
+    assert b"dashboard-customer-select" not in page.data
+    assert b'href="/reports/dashboard"' not in page.data

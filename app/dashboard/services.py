@@ -23,6 +23,8 @@ from app.models import (
     SectionStatus,
 )
 from app.extensions import db
+from app.ui import ASSIGNMENT_STATUS_LABELS, CONTRACTOR_ROLE_LABELS
+RECENT_DASHBOARD_LIMIT = 5
 SECTION_STATUS_LABELS = {
     "INFO": "Thông tin",
     "GOOD": "Tốt",
@@ -102,8 +104,17 @@ def project_dashboard_context(project):
         DailyReport.report_date.desc(),
         DailyReport.id.desc(),
     )
-    report_history = reports.limit(30).all()
-    rows = reports.with_entities(DailyReport.overall_status, func.count(DailyReport.id)).group_by(DailyReport.overall_status).all()
+    report_history = reports.limit(RECENT_DASHBOARD_LIMIT).all()
+    report_history_total = reports.order_by(None).count()
+    # Keep aggregation independent from the report-history ordering. PostgreSQL
+    # rejects an ORDER BY report_date on this GROUP BY overall_status query.
+    rows = (
+        db.session.query(DailyReport.overall_status, func.count(DailyReport.id))
+        .filter(DailyReport.project_id == project.id)
+        .group_by(DailyReport.overall_status)
+        .order_by(DailyReport.overall_status)
+        .all()
+    )
     status_counts = {status: int(count) for status, count in rows}
     from app.project_memberships import user_has_project_capability
     can_view_issues = user_has_project_capability(current_user, project.id, "can_view_issues")
@@ -112,16 +123,27 @@ def project_dashboard_context(project):
             PersistentIssue.project_id == project.id,
             PersistentIssue.deleted_at.is_(None),
             PersistentIssue.status.in_([IssueStatus.OPEN.value, IssueStatus.PROCESSING.value]),
-        ).order_by(PersistentIssue.severity.desc(), PersistentIssue.opened_date.desc(), PersistentIssue.id.desc()).limit(10).all()
+        ).order_by(PersistentIssue.severity.desc(), PersistentIssue.opened_date.desc(), PersistentIssue.id.desc()).limit(RECENT_DASHBOARD_LIMIT).all()
         if can_view_issues else []
     )
+    recent_updates_query = ProjectUpdate.query.options(
+        joinedload(ProjectUpdate.contractor_assignment).joinedload(ProjectContractorAssignment.contractor),
+        joinedload(ProjectUpdate.created_by),
+    ).filter(
+        ProjectUpdate.project_id == project.id,
+        ProjectUpdate.deleted_at.is_(None),
+    ).order_by(ProjectUpdate.update_date.desc(), ProjectUpdate.created_at.desc(), ProjectUpdate.id.desc())
+    recent_updates = recent_updates_query.limit(RECENT_DASHBOARD_LIMIT).all()
     return {
         "project": project,
         "report_history": report_history,
+        "report_history_total": report_history_total,
         "report_dates": [report.report_date for report in report_history],
         "project_dashboard": project_dashboard_metrics(project),
         "can_view_issues": can_view_issues,
         "open_issues": open_issues,
+        "recent_updates": recent_updates,
+        "recent_updates_total": recent_updates_query.order_by(None).count(),
         "cards": {
             "total_reports": sum(status_counts.values()),
             "good_reports": status_counts.get(DailyReportStatus.GOOD.value, 0),
@@ -208,6 +230,10 @@ def dashboard_scope_context(scope, selected_date=None, days=7):
         }
         for project in active_projects
     ]
+    recent_project_rows = [
+        {"project": project, "report": reports_by_project.get(project.id), "submitted": project.id in reports_by_project}
+        for project in effective_projects.filter(Project.status == ProjectStatus.ACTIVE.value).order_by(Project.code).limit(RECENT_DASHBOARD_LIMIT).all()
+    ]
     missing_projects = [row["project"] for row in project_rows if not row["submitted"]]
 
     section_pie = _section_status_counts(active_project_ids, selected_date)
@@ -215,6 +241,7 @@ def dashboard_scope_context(scope, selected_date=None, days=7):
     issue_counts = _issue_dashboard_counts(all_project_ids)
     contractor_counts = _active_contractor_counts(all_project_ids)
     updates = _recent_project_updates(all_project_ids)
+    recent_updates_total = ProjectUpdate.query.filter(ProjectUpdate.project_id.in_(all_project_ids or [0]), ProjectUpdate.deleted_at.is_(None)).count()
 
     expected_count = len(active_project_ids)
     submitted_count = len(reports_by_project)
@@ -232,8 +259,11 @@ def dashboard_scope_context(scope, selected_date=None, days=7):
         "selected_date": selected_date,
         "timezone": "Asia/Ho_Chi_Minh",
         "projects": project_rows,
+        "recent_projects": recent_project_rows,
+        "active_projects_total": len(active_project_ids),
         "missing_projects": missing_projects,
         "recent_updates": updates,
+        "recent_updates_total": recent_updates_total,
         "section_pie": section_pie,
         "section_trend": section_trend,
         "issue_counts": issue_counts,
@@ -307,13 +337,7 @@ def dashboard_scope_payload(scope, selected_date=None, days=7):
 
 
 CONTRACTOR_ASSIGNMENT_STATUSES = [item.value for item in ProjectContractorAssignmentStatus]
-CONTRACTOR_ROLE_LABELS = {"CONSTRUCTION": "Thi công", "SOLUTION": "Giải pháp"}
-CONTRACTOR_STATUS_LABELS = {
-    "ACTIVE": "Đang hoạt động",
-    "PAUSED": "Tạm dừng",
-    "COMPLETED": "Hoàn thành",
-    "ENDED": "Đã kết thúc",
-}
+CONTRACTOR_STATUS_LABELS = ASSIGNMENT_STATUS_LABELS
 
 
 def parse_contractor_dashboard_filters(args):
@@ -325,7 +349,7 @@ def parse_contractor_dashboard_filters(args):
     """
     assignment_status = args.get("assignment_status", "").strip().upper()
     if assignment_status and assignment_status not in {*CONTRACTOR_ASSIGNMENT_STATUSES, "ALL"}:
-        raise DashboardFilterError("Bộ lọc trạng thái assignment không hợp lệ.")
+        raise DashboardFilterError("Bộ lọc trạng thái liên kết không hợp lệ.")
     return {"project_id": args.get("project_id", type=int), "assignment_status": assignment_status}
 
 
@@ -364,7 +388,7 @@ def _contractor_assignments_query(contractor_id, filters):
     query = query.filter(ProjectContractorAssignment.project_id.in_(visible_projects))
     if filters.get("project_id"):
         if not contractor_projects_query(contractor_id).filter(Project.id == filters["project_id"]).with_entities(Project.id).first():
-            raise DashboardFilterError("Dự án không thuộc phạm vi nhà thầu này.")
+            raise DashboardFilterError("Dự án không thuộc phạm vi đối tác này.")
         query = query.filter(ProjectContractorAssignment.project_id == filters["project_id"])
     status = filters.get("assignment_status", "")
     if not status:
@@ -377,11 +401,12 @@ def _contractor_assignments_query(contractor_id, filters):
 def contractor_dashboard_context(contractor, filters):
     """Context for a contractor, limited to assignment-backed visible projects."""
     assignment_query = _contractor_assignments_query(contractor.id, filters)
+    assignments_total = assignment_query.order_by(None).count()
     assignments = assignment_query.order_by(
         ProjectContractorAssignment.status != ProjectContractorAssignmentStatus.ENDED.value,
         ProjectContractorAssignment.started_on.desc(),
         ProjectContractorAssignment.id.desc(),
-    ).all()
+    ).limit(RECENT_DASHBOARD_LIMIT).all()
 
     active_assignment_query = _contractor_assignments_query(
         contractor.id, {"project_id": filters.get("project_id"), "assignment_status": "ACTIVE"}
@@ -418,6 +443,7 @@ def contractor_dashboard_context(contractor, filters):
         .order_by(ProjectUpdate.update_date.desc(), ProjectUpdate.created_at.desc(), ProjectUpdate.id.desc())
         .first()
     )
+    updates_total = ProjectUpdate.query.filter(ProjectUpdate.contractor_assignment_id.in_(assignment_ids.select()), ProjectUpdate.deleted_at.is_(None)).count()
     updates = (
         ProjectUpdate.query.options(
             joinedload(ProjectUpdate.project),
@@ -425,7 +451,7 @@ def contractor_dashboard_context(contractor, filters):
         )
         .filter(ProjectUpdate.contractor_assignment_id.in_(assignment_ids.select()), ProjectUpdate.deleted_at.is_(None))
         .order_by(ProjectUpdate.update_date.desc(), ProjectUpdate.created_at.desc(), ProjectUpdate.id.desc())
-        .limit(30).all()
+        .limit(RECENT_DASHBOARD_LIMIT).all()
     )
 
     latest_report_dates = (
@@ -436,14 +462,14 @@ def contractor_dashboard_context(contractor, filters):
     latest_reports = (
         DailyReport.query.options(joinedload(DailyReport.project))
         .join(latest_report_dates, (DailyReport.project_id == latest_report_dates.c.project_id) & (DailyReport.report_date == latest_report_dates.c.report_date))
-        .order_by(DailyReport.report_date.desc(), DailyReport.id.desc()).all()
+        .order_by(DailyReport.report_date.desc(), DailyReport.id.desc()).limit(RECENT_DASHBOARD_LIMIT).all()
     )
     from app.project_memberships import has_any_project_capability
     can_view_issues = has_any_project_capability(current_user, ("can_view_issues",))
     issues = (
         PersistentIssue.query.options(joinedload(PersistentIssue.project))
         .filter(PersistentIssue.project_id.in_(project_ids.select()), PersistentIssue.deleted_at.is_(None))
-        .order_by(PersistentIssue.opened_date.desc(), PersistentIssue.id.desc()).limit(20).all()
+        .order_by(PersistentIssue.opened_date.desc(), PersistentIssue.id.desc()).limit(RECENT_DASHBOARD_LIMIT).all()
         if can_view_issues else []
     )
     projects = contractor_projects_query(contractor.id).order_by(Project.code).all()
@@ -452,8 +478,10 @@ def contractor_dashboard_context(contractor, filters):
         "filters": filters,
         "filter_projects": projects,
         "assignments": assignments,
+        "assignments_total": assignments_total,
         "active_projects": active_projects,
         "updates": updates,
+        "updates_total": updates_total,
         "latest_reports": latest_reports,
         "issues": issues,
         "can_view_issues": can_view_issues,
@@ -579,10 +607,12 @@ def _recent_project_updates(project_ids):
     return (
         ProjectUpdate.query.options(
             joinedload(ProjectUpdate.project),
+            joinedload(ProjectUpdate.project).joinedload(Project.customer),
             joinedload(ProjectUpdate.contractor_assignment).joinedload(ProjectContractorAssignment.contractor),
+            joinedload(ProjectUpdate.created_by),
         )
         .filter(ProjectUpdate.project_id.in_(project_ids), ProjectUpdate.deleted_at.is_(None))
         .order_by(ProjectUpdate.update_date.desc(), ProjectUpdate.created_at.desc(), ProjectUpdate.id.desc())
-        .limit(10)
+        .limit(RECENT_DASHBOARD_LIMIT)
         .all()
     )

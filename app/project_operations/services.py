@@ -106,7 +106,7 @@ def assignment_snapshot(assignment):
 
 def create_or_update_contractor(contractor, *, name, short_name=None, description=None, phone=None, email=None, address=None, actor_id=None):
     if not contractor_name_is_available(name, contractor.id if contractor else None):
-        raise ValueError("Tên nhà thầu đã tồn tại.")
+        raise ValueError("Tên đối tác đã tồn tại.")
     is_new = contractor is None
     old_values = contractor_snapshot(contractor) if contractor else None
     if contractor is None:
@@ -136,7 +136,7 @@ def archive_contractor(contractor, *, actor_id=None):
         contractor_id=contractor.id,
         status=ProjectContractorAssignmentStatus.ACTIVE.value,
     ).first():
-        raise ValueError("Không thể lưu trữ nhà thầu khi còn assignment đang hoạt động.")
+        raise ValueError("Không thể lưu trữ đối tác khi còn liên kết đang hoạt động.")
     if not contractor.is_active:
         return contractor
     old_values = contractor_snapshot(contractor)
@@ -151,7 +151,7 @@ def restore_contractor(contractor, *, actor_id=None):
     if contractor.is_active:
         return contractor
     if not contractor_name_is_available(contractor.name, contractor.id):
-        raise ValueError("Không thể khôi phục vì tên nhà thầu đã được dùng.")
+        raise ValueError("Không thể khôi phục vì tên đối tác đã được dùng.")
     old_values = contractor_snapshot(contractor)
     contractor.is_active = True
     contractor.archived_at = None
@@ -162,9 +162,13 @@ def restore_contractor(contractor, *, actor_id=None):
 
 def assign_contractor(*, project, contractor, role, status, started_on=None, note=None, actor_id=None):
     if project.deleted_at is not None or project.status != "active":
-        raise ValueError("Chỉ có thể gán nhà thầu cho dự án đang hoạt động.")
+        raise ValueError("Chỉ có thể gán đối tác cho dự án đang hoạt động.")
     if not contractor.is_active:
-        raise ValueError("Không thể gán nhà thầu đã lưu trữ.")
+        raise ValueError("Không thể gán đối tác đã lưu trữ.")
+    if status not in {item.value for item in ProjectContractorAssignmentStatus}:
+        raise ValueError("Trạng thái đối tác không hợp lệ.")
+    if status == ProjectContractorAssignmentStatus.ENDED.value:
+        raise ValueError("Đối tác mới không thể ở trạng thái đã kết thúc.")
     duplicate = ProjectContractorAssignment.query.filter(
         ProjectContractorAssignment.project_id == project.id,
         ProjectContractorAssignment.contractor_id == contractor.id,
@@ -172,7 +176,7 @@ def assign_contractor(*, project, contractor, role, status, started_on=None, not
         ProjectContractorAssignment.status != ProjectContractorAssignmentStatus.ENDED.value,
     ).first()
     if duplicate:
-        raise ValueError("Nhà thầu đã có assignment chưa kết thúc với vai trò này.")
+        raise ValueError("Đối tác đã có liên kết chưa kết thúc với vai trò này.")
     assignment = ProjectContractorAssignment(
         project_id=project.id,
         contractor_id=contractor.id,
@@ -190,18 +194,21 @@ def assign_contractor(*, project, contractor, role, status, started_on=None, not
 
 
 def update_assignment(assignment, *, status, started_on=None, ended_on=None, note=None, actor_id=None):
-    if assignment.status == ProjectContractorAssignmentStatus.ENDED.value:
-        raise ValueError("Assignment đã kết thúc không thể cập nhật. Hãy tạo assignment mới khi cần.")
-    if status == ProjectContractorAssignmentStatus.ENDED.value:
-        raise ValueError("Dùng thao tác kết thúc assignment để lưu ngày kết thúc.")
+    if status not in {item.value for item in ProjectContractorAssignmentStatus}:
+        raise ValueError("Trạng thái đối tác không hợp lệ.")
+    if started_on and ended_on and ended_on < started_on:
+        raise ValueError("Ngày kết thúc không được trước ngày bắt đầu.")
+    if status in {
+        ProjectContractorAssignmentStatus.ACTIVE.value,
+        ProjectContractorAssignmentStatus.PAUSED.value,
+    } and ended_on is not None:
+        raise ValueError("Trạng thái đang hoạt động hoặc tạm dừng không được có ngày kết thúc. Hãy xóa ngày kết thúc trước khi lưu.")
     old_values = assignment_snapshot(assignment)
     assignment.status = status
     assignment.started_on = started_on
     assignment.ended_on = ended_on
     assignment.note = (note or "").strip() or None
     assignment.updated_by_id = actor_id
-    if status == ProjectContractorAssignmentStatus.ENDED.value and assignment.ended_on is None:
-        assignment.ended_on = date.today()
     log_audit("project_contractor_assignment.update", "ProjectContractorAssignment", assignment.id, old_values=old_values, new_values=assignment_snapshot(assignment))
     return assignment
 
@@ -211,7 +218,9 @@ def end_assignment(assignment, *, ended_on=None, actor_id=None):
         return assignment
     old_values = assignment_snapshot(assignment)
     assignment.status = ProjectContractorAssignmentStatus.ENDED.value
-    assignment.ended_on = ended_on or date.today()
+    if assignment.started_on and ended_on and ended_on < assignment.started_on:
+        raise ValueError("Ngày kết thúc không được trước ngày bắt đầu.")
+    assignment.ended_on = ended_on
     assignment.updated_by_id = actor_id
     log_audit("project_contractor_assignment.end", "ProjectContractorAssignment", assignment.id, old_values=old_values, new_values=assignment_snapshot(assignment))
     return assignment
@@ -258,11 +267,11 @@ def validate_update_values(*, project, assignment, update_type, title, content, 
         raise ValueError("Ngày cập nhật không được ở tương lai.")
     if assignment is not None:
         if assignment.project_id != project.id:
-            raise ValueError("Assignment không thuộc dự án này.")
+            raise ValueError("Đối tác không thuộc dự án này.")
         if assignment.status == ProjectContractorAssignmentStatus.ENDED.value:
-            raise ValueError("Không thể thêm cập nhật cho assignment đã kết thúc.")
+            raise ValueError("Không thể thêm cập nhật cho đối tác đã kết thúc.")
         if not assignment.contractor.is_active:
-            raise ValueError("Không thể thêm cập nhật cho nhà thầu đã lưu trữ.")
+            raise ValueError("Không thể thêm cập nhật cho đối tác đã lưu trữ.")
 
 
 def create_project_update(*, project, assignment=None, update_type, title, content, update_date, actor_id):

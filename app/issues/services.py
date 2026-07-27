@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from flask_login import current_user
 
 from app.admin.services import add_with_sqlite_id, audit
+from app.date_utils import parse_vn_date
 from app.extensions import db
 from app.models import IssueSeverity, IssueStatus, PersistentIssue, ProjectUser, User
 
@@ -135,9 +136,9 @@ def _parse_optional_date(value, label):
 
 def _parse_date(value, label):
     try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
+        return parse_vn_date(value, field_label=label, allow_empty=False)
     except ValueError as exc:
-        raise IssueValidationError(f"{label} phải đúng định dạng YYYY-MM-DD.") from exc
+        raise IssueValidationError(str(exc)) from exc
 
 
 def _parse_owner(value, project_id):
@@ -185,15 +186,15 @@ def validate_issue_form(form):
         errors["opened_date"] = "Vui lòng chọn ngày mở."
     else:
         try:
-            opened_date = datetime.strptime(opened_date_raw, "%Y-%m-%d").date()
-        except ValueError:
-            errors["opened_date"] = "Ngày mở phải đúng định dạng YYYY-MM-DD."
+            opened_date = parse_vn_date(opened_date_raw, field_label="Ngày mở", allow_empty=False)
+        except ValueError as exc:
+            errors["opened_date"] = str(exc)
 
     if due_date_raw:
         try:
-            due_date = datetime.strptime(due_date_raw, "%Y-%m-%d").date()
-        except ValueError:
-            errors["due_date"] = "Hạn xử lý phải đúng định dạng YYYY-MM-DD."
+            due_date = parse_vn_date(due_date_raw, field_label="Hạn xử lý", allow_empty=False)
+        except ValueError as exc:
+            errors["due_date"] = str(exc)
 
     if opened_date and due_date and due_date < opened_date:
         errors["due_date"] = "Ngày hạn xử lý không được trước ngày mở."

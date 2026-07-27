@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 from flask_login import current_user
 from sqlalchemy import func, or_
 
+from app.date_utils import format_vn_date as format_shared_vn_date
 from app.extensions import db
 from app.models import Company, CompanyDepartment, Partner, PartnerFieldCollection, PartnerFieldDefinition, PartnerFieldValue
 
@@ -323,7 +324,7 @@ def _validate_partner_data(data, partner=None):
     if not data["department_id"]:
         errors["department_id"] = "Vui lòng chọn phòng ban."
     if data["birth_date_raw"] and data["birth_date"] is None:
-        errors["birth_date"] = "Ngày sinh phải có định dạng DD-MM-YYYY."
+        errors["birth_date"] = "Ngày sinh phải có định dạng DD/MM/YYYY."
     company = db.session.get(Company, data["company_id"]) if data["company_id"] else None
     if data["company_id"] and not company:
         errors["company_id"] = "Công ty không hợp lệ."
@@ -354,7 +355,7 @@ def _validate_field_value_rows(rows):
     errors = {}
     for row in rows:
         if row["field_type"] == "date" and row["value"] and parse_vn_date(row["value"]) is None:
-            errors[f"field_{row['field_definition_id']}"] = "Ngày không hợp lệ, vui lòng nhập theo định dạng DD-MM-YYYY."
+            errors[f"field_{row['field_definition_id']}"] = "Ngày không hợp lệ, vui lòng nhập theo định dạng DD/MM/YYYY."
     return errors
 
 
@@ -368,7 +369,7 @@ def parse_vn_date(value):
     value = (value or "").strip()
     if not value:
         return None
-    for pattern in ("%d-%m-%Y", "%Y-%m-%d"):
+    for pattern in ("%d/%m/%Y", "%Y-%m-%d"):
         try:
             return datetime.strptime(value, pattern).date()
         except ValueError:
@@ -377,7 +378,7 @@ def parse_vn_date(value):
 
 
 def format_vn_date(value):
-    return value.strftime("%d-%m-%Y") if value else ""
+    return format_shared_vn_date(value)
     try:
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError:
