@@ -3,6 +3,7 @@ from datetime import date, timedelta
 import pytest
 
 from app.extensions import db
+from app.date_utils import local_today
 from app.models import AuditLog, DailyReport, PersistentIssue, Project, ProjectContractor, ProjectContractorAssignment, ProjectUpdate
 from app.project_operations.services import create_project_update, end_assignment, soft_delete_project_update, updates_query
 
@@ -38,6 +39,13 @@ def test_cross_project_and_ended_assignment_are_rejected_without_side_effects(ap
         with pytest.raises(ValueError, match="đã kết thúc"):
             create_project_update(project=db.session.get(Project, 2), assignment=assignment, update_type="HANDOVER", title="Blocked", content="Blocked", update_date=date.today(), actor_id=1)
         assert ProjectUpdate.query.count() == before
+
+
+def test_project_update_rejects_future_date_in_application_timezone(app):
+    with app.app_context():
+        project = db.session.get(Project, 1)
+        with pytest.raises(ValueError, match="không được lớn hơn ngày hôm nay"):
+            create_project_update(project=project, update_type="GENERAL", title="Tương lai", content="Không hợp lệ", update_date=local_today() + timedelta(days=1), actor_id=1)
 
 
 def test_soft_delete_hides_timeline_and_keeps_audit_without_report_issue_side_effects(app):

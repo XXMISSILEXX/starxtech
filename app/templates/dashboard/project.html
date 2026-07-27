@@ -24,7 +24,7 @@
 </div>
 
 <section class="card mb-4">
-  <div class="card-header d-flex justify-content-between align-items-center"><h2 class="h6 mb-0">Cập nhật dự án gần đây</h2>{% if recent_updates_total > recent_updates|length %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('project_operations.project_updates', project_id=project.id) }}">Xem tất cả cập nhật</a>{% endif %}</div>
+  <div class="card-header d-flex justify-content-between align-items-center"><h2 class="h6 mb-0">Báo cáo xuyên suốt gần đây</h2>{% if recent_updates_total > recent_updates|length %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('project_operations.project_updates', project_id=project.id) }}">Xem tất cả báo cáo xuyên suốt</a>{% endif %}</div>
   <div class="list-group list-group-flush">
     {% for update in recent_updates %}<div class="list-group-item"><div class="d-flex flex-wrap justify-content-between gap-2"><div><span class="badge text-bg-secondary me-1">{{ update.update_type|project_update_type_label }}</span><span class="fw-semibold">{{ update.title }}</span></div><span class="small text-muted">{{ update.update_date|vn_date }}</span></div><div class="small text-muted mt-1">{% if update.contractor_assignment %}{{ update.contractor_assignment.contractor.name }} · {{ update.contractor_assignment.role|contractor_role_label }} · {% endif %}{{ update.created_by.full_name if update.created_by else '—' }}</div></div>{% else %}<div class="list-group-item text-muted">Chưa có cập nhật dự án.</div>{% endfor %}
   </div>
@@ -92,7 +92,7 @@
   <div class="col-lg-9">
     <div class="card">
       <div class="card-header py-3">
-        <h2 class="h6 mb-0">Lịch sử báo cáo</h2>{% if report_history_total > report_history|length %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('projects.reports', project_id=project.id) }}">Xem tất cả báo cáo</a>{% endif %}
+        <h2 class="h6 mb-0">Báo cáo ngày gần đây</h2>{% if report_history_total > report_history|length %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('projects.reports', project_id=project.id) }}">Xem tất cả báo cáo ngày</a>{% endif %}
       </div>
         <div class="table-responsive">
           <table class="table table-hover align-middle">

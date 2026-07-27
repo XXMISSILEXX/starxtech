@@ -169,7 +169,7 @@ def test_assignment_page_uses_modal_vietnamese_labels_and_removal_confirmation(c
     assert "Gỡ đối tác khỏi dự án".encode() in page.data
     assert b"editAssignmentModal" in page.data
     assert "Chỉnh sửa đối tác trong dự án".encode() in page.data
-    assert b"data-vn-date" in page.data
+    assert b'type="date"' in page.data
     response = client.post(f"/project-operations/assignments/{assignment_id}/end")
     assert response.status_code == 302
     with app.app_context():

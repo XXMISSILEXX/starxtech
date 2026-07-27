@@ -8,6 +8,12 @@
 - Reports: `/reports...`; attachments `/attachments...`; issues `/reports/issues...` and `/projects/<id>/issues...`.
 - Configuration: `/admin/projects...`, memberships and categories.
 
+Project-domain configuration has a permanent Reports presentation context:
+`/admin/projects...`, `/customers...`, and `/project-operations/contractors...`
+render the **Quản lý dự án** shell and make **Cấu hình** active.  Their original
+URLs remain canonical. `/admin/roles...` is deliberately excluded and remains
+in the System Admin shell.
+
 ## Planned additive route family
 
 `/reports/today`, `/project-operations`, Customer/project/role/update/contractor subroutes below `/project-operations`, dashboard scope routes below `/reports/dashboard`, and `/reports/config`.

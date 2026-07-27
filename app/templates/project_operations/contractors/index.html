@@ -2,8 +2,9 @@
 {% block title %}Danh mục đối tác - StarX{% endblock %}
 {% block page_title %}Danh mục đối tác{% endblock %}
 {% block content %}
+<nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="{{ url_for('reports.configuration_hub') }}">Cấu hình</a></li><li class="breadcrumb-item active" aria-current="page">Nhà thầu/Đối tác dự án</li></ol></nav>
 <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
-  <form class="d-flex gap-2" method="get"><input class="form-control" name="q" value="{{ search }}" placeholder="Tìm đối tác"><button class="btn btn-outline-secondary">Tìm</button></form>
+  <div class="d-flex flex-wrap gap-2"><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('reports.configuration_hub') }}"><i class="bi bi-arrow-left me-1"></i>Quay lại Cấu hình</a><form class="d-flex gap-2" method="get"><input class="form-control" name="q" value="{{ search }}" placeholder="Tìm đối tác"><button class="btn btn-outline-secondary">Tìm</button></form></div>
   {% if current_user.can('project_contractors.create') %}<a class="btn btn-primary" href="{{ url_for('project_operations.contractor_create') }}">Tạo đối tác</a>{% endif %}
 </div>
 <div class="table-card table-responsive"><table class="table table-hover align-middle"><thead><tr><th>Đối tác</th><th>Liên hệ</th><th>Trạng thái</th><th></th></tr></thead><tbody>

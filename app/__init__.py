@@ -74,10 +74,11 @@ def create_app(config_class=Config):
     register_upload_error_handlers(app)
     register_template_helpers(app)
     from app.branding import get_current_branding
-    from app.navigation import get_active_module, get_sidebar_items
+    from app.navigation import get_active_module, get_sidebar_items, is_project_configuration_endpoint
     @app.context_processor
     def inject_shell_context():
         return {"branding": get_current_branding(), "nav_active_module": get_active_module(),
+                "nav_project_configuration": is_project_configuration_endpoint(),
                 "sidebar_items": get_sidebar_items(current_user) if current_user.is_authenticated else []}
     register_cli(app)
 

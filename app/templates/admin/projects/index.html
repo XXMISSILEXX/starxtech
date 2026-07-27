@@ -4,8 +4,9 @@
 {% block page_title %}Quản lý dự án{% endblock %}
 
 {% block content %}
+<nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="{{ url_for('reports.configuration_hub') }}">Cấu hình</a></li><li class="breadcrumb-item active" aria-current="page">Dự án</li></ol></nav>
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <div class="text-muted">Quản lý dự án và phân quyền người báo cáo/quản lý dự án.</div>
+  <div><div class="text-muted">Quản lý dự án và phân quyền người báo cáo/quản lý dự án.</div><a class="btn btn-sm btn-outline-secondary mt-2" href="{{ url_for('reports.configuration_hub') }}"><i class="bi bi-arrow-left me-1"></i>Quay lại Cấu hình</a></div>
   {% if current_user.role_code == 'SUPER_ADMIN' %}
     <a class="btn btn-primary" href="{{ url_for('admin.projects_new') }}"><i class="bi bi-plus-lg me-1"></i>Tạo dự án</a>
   {% endif %}

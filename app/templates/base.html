@@ -9,7 +9,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/app.css', v=static_asset_version) }}" rel="stylesheet">
   </head>
   <body>
@@ -19,7 +18,6 @@
     {% set initials = (current_user.full_name or current_user.username or 'U').split()|map('first')|join('')|upper %}
     {% set can_view_admin_users = current_user.can('users.view') %}
     {% set can_view_roles = current_user.can('roles.view') %}
-    {% set can_view_report_admin = current_user.can('projects.view') %}
     {% set can_view_storage_dashboard = current_user.can('storage.dashboard.view') %}
     <div class="app-shell min-vh-100">
       <aside class="sidebar d-none d-lg-flex">
@@ -42,10 +40,10 @@
             {% endif %}
             {% if current_user.can('partner_relations.view') %}<a class="nav-link {% if endpoint.startswith('partner_relations.') %}active{% endif %}" href="{{ url_for('partner_relations.index') }}"><i class="bi bi-diagram-3"></i><span>Sơ đồ quan hệ</span></a>{% endif %}
           {% elif active_module == 'reports' %}
+            {% if current_user.can('dashboards.system.view') and current_user.can('projects.scope_all') %}<a class="nav-link {% if endpoint.startswith('dashboard.') or endpoint == 'projects.dashboard' %}active{% endif %}" href="{{ url_for('dashboard.system_dashboard') }}"><i class="bi bi-grid-1x2"></i><span>Dashboard quản trị</span></a>{% endif %}
             {% if current_user.can('reports.today.view') %}<a class="nav-link {% if endpoint == 'reports.today' %}active{% endif %}" href="{{ url_for('reports.today') }}"><i class="bi bi-calendar-check"></i><span>Hôm nay</span></a>{% endif %}
             {% if current_user.can('project_operations.view') %}<a class="nav-link {% if endpoint.startswith('project_operations.') %}active{% endif %}" href="{{ url_for('project_operations.operations_index') }}"><i class="bi bi-diagram-3"></i><span>Quản lý dự án &amp; đối tác</span></a>{% endif %}
-            {% if current_user.can('dashboards.system.view') and current_user.can('projects.scope_all') %}<a class="nav-link {% if endpoint.startswith('dashboard.') or endpoint == 'projects.dashboard' %}active{% endif %}" href="{{ url_for('dashboard.system_dashboard') }}"><i class="bi bi-grid-1x2"></i><span>Dashboard quản trị</span></a>{% endif %}
-            {% if current_user.can('reports.configuration.view') %}<a class="nav-link {% if endpoint == 'reports.configuration_hub' %}active{% endif %}" href="{{ url_for('reports.configuration_hub') }}"><i class="bi bi-gear"></i><span>Cấu hình</span></a>{% endif %}
+            {% if current_user.can('reports.configuration.view') %}<a class="nav-link {% if endpoint == 'reports.configuration_hub' or nav_project_configuration %}active{% endif %}" href="{{ url_for('reports.configuration_hub') }}"><i class="bi bi-gear"></i><span>Cấu hình</span></a>{% endif %}
           {% elif active_module == 'project_documents' %}
             {% if can_access_project_documents_module() %}<a class="nav-link active" href="{{ url_for('project_documents.index') }}"><i class="bi bi-folder2-open"></i><span>Hồ sơ dự án</span></a>{% endif %}
           {% elif active_module == 'company_media' %}
@@ -53,7 +51,6 @@
           {% endif %}
           {% if active_module == 'admin' %}
             {% if can_view_admin_users %}<a class="nav-link" href="{{ url_for('admin.users_index') }}"><i class="bi bi-people"></i><span>Người dùng</span></a>{% endif %}
-            {% if can_view_report_admin %}<a class="nav-link" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-kanban"></i><span>Quản lý dự án</span></a>{% endif %}
             {% if can_view_storage_dashboard %}<a class="nav-link" href="{{ url_for('admin_storage.index') }}"><i class="bi bi-device-ssd"></i><span>Dung lượng & băng thông</span></a>{% endif %}
             {% if can_view_roles %}<a class="nav-link {% if request.path.startswith('/admin/roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>{% endif %}
             {% if current_user.can('settings.branding.view') %}<a class="nav-link" href="{{ url_for('admin.branding') }}"><i class="bi bi-palette"></i><span>Nhận diện hệ thống</span></a>{% endif %}
@@ -95,20 +92,19 @@
               {% endif %}
               {% if current_user.can('partner_relations.view') %}<a class="nav-link {% if endpoint.startswith('partner_relations.') %}active{% endif %}" href="{{ url_for('partner_relations.index') }}"><i class="bi bi-diagram-3"></i><span>Sơ đồ quan hệ</span></a>{% endif %}
             {% elif active_module == 'reports' %}
+              {% if current_user.can('dashboards.system.view') and current_user.can('projects.scope_all') %}<a class="nav-link {% if endpoint.startswith('dashboard.') or endpoint == 'projects.dashboard' %}active{% endif %}" href="{{ url_for('dashboard.system_dashboard') }}"><i class="bi bi-grid-1x2"></i><span>Dashboard quản trị</span></a>{% endif %}
               {% if current_user.can('reports.today.view') %}<a class="nav-link {% if endpoint == 'reports.today' %}active{% endif %}" href="{{ url_for('reports.today') }}"><i class="bi bi-calendar-check"></i><span>Hôm nay</span></a>{% endif %}
               {% if current_user.can('project_operations.view') %}<a class="nav-link {% if endpoint.startswith('project_operations.') %}active{% endif %}" href="{{ url_for('project_operations.operations_index') }}"><i class="bi bi-diagram-3"></i><span>Quản lý dự án &amp; đối tác</span></a>{% endif %}
-              {% if current_user.can('dashboards.system.view') and current_user.can('projects.scope_all') %}<a class="nav-link {% if endpoint.startswith('dashboard.') or endpoint == 'projects.dashboard' %}active{% endif %}" href="{{ url_for('dashboard.system_dashboard') }}"><i class="bi bi-grid-1x2"></i><span>Dashboard quản trị</span></a>{% endif %}
-              {% if current_user.can('reports.configuration.view') %}<a class="nav-link {% if endpoint == 'reports.configuration_hub' %}active{% endif %}" href="{{ url_for('reports.configuration_hub') }}"><i class="bi bi-gear"></i><span>Cấu hình</span></a>{% endif %}
+              {% if current_user.can('reports.configuration.view') %}<a class="nav-link {% if endpoint == 'reports.configuration_hub' or nav_project_configuration %}active{% endif %}" href="{{ url_for('reports.configuration_hub') }}"><i class="bi bi-gear"></i><span>Cấu hình</span></a>{% endif %}
             {% elif active_module == 'project_documents' %}
               {% if can_access_project_documents_module() %}<a class="nav-link active" href="{{ url_for('project_documents.index') }}"><i class="bi bi-folder2-open"></i><span>Hồ sơ dự án</span></a>{% endif %}
             {% elif active_module == 'company_media' %}
               {% if can_access_company_media_module() %}<a class="nav-link active" href="{{ url_for('company_media.index') }}"><i class="bi bi-images"></i><span>Thư viện ảnh/video công ty</span></a>{% endif %}
             {% endif %}
             {% if active_module == 'admin' %}
-              {% if can_view_report_admin or can_view_roles or can_view_storage_dashboard %}
+              {% if can_view_admin_users or can_view_roles or can_view_storage_dashboard %}
                 <div class="nav-section">Quản trị</div>
                 {% if can_view_admin_users %}<a class="nav-link {% if endpoint.startswith('admin.users') %}active{% endif %}" href="{{ url_for('admin.users_index') }}"><i class="bi bi-people"></i><span>Người dùng</span></a>{% endif %}
-                {% if can_view_report_admin %}<a class="nav-link {% if endpoint.startswith('admin.projects') or endpoint.startswith('admin.categories') %}active{% endif %}" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-kanban"></i><span>Quản lý dự án</span></a>{% endif %}
                 {% if can_view_storage_dashboard %}<a class="nav-link {% if endpoint.startswith('admin_storage.') %}active{% endif %}" href="{{ url_for('admin_storage.index') }}"><i class="bi bi-device-ssd"></i><span>Dung lượng & băng thông</span></a>{% endif %}
                 {% if can_view_roles %}<a class="nav-link {% if request.path.startswith('/admin/roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>{% endif %}
               {% endif %}
@@ -211,8 +207,6 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     {% block extra_scripts %}{% endblock %}
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-    <script src="{{ url_for('static', filename='js/vietnamese-date.js', v=static_asset_version) }}"></script>
     <script src="{{ url_for('static', filename='js/app.js', v=static_asset_version) }}"></script>
     <script src="{{ url_for('static', filename='js/display-image-picker.js', v=static_asset_version) }}"></script>
     {% if daily_report_legacy_edit_enabled|default(false) %}

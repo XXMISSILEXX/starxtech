@@ -1,6 +1,7 @@
 from uuid import uuid4
 
 from app.extensions import db
+from app.date_utils import local_today
 from app.models import DailyReport
 from app.models import UploadSelectionSession, StorageObject
 from app.models import DailyReportStatus, SectionStatus
@@ -71,6 +72,22 @@ def test_v2_preflight_duplicate_date_returns_409_without_upload_side_effect(clie
     assert response.get_json()["error"]["code"] == "duplicate_report_date"
     with app.app_context():
         assert UploadSelectionSession.query.count() == 0
+
+
+def test_v2_preflight_and_finalize_reject_future_report_dates_without_upload_state(client, app):
+    _login(client)
+    future = (local_today() + __import__("datetime").timedelta(days=1)).isoformat()
+    preflight = _payload(report_date=future)
+    preflight["sections"][0]["category_id"] = preflight["sections"][0].pop("report_category_id")
+    preflight["files"] = []
+    response = client.post("/api/projects/1/daily-reports/preflight", json=preflight)
+    assert response.status_code == 422
+    assert response.get_json()["error"]["message"] == "Ngày báo cáo không được lớn hơn ngày hôm nay."
+    with app.app_context():
+        assert UploadSelectionSession.query.count() == StorageObject.query.count() == DailyReport.query.count() == 0
+    final = client.post("/api/projects/1/daily-reports/finalize", json=_payload(report_date=future))
+    assert final.status_code == 422
+    assert final.get_json()["error"]["code"] == "future_report_date"
 
 
 def test_v2_requires_uuid_section_identity(client):

@@ -50,7 +50,7 @@
         </div>
         <div class="col-md-4"><label class="form-label">Điện thoại</label><input class="form-control" name="phone" value="{{ form_data.get('phone') or '' }}"></div>
         <div class="col-md-4"><label class="form-label">Email</label><input class="form-control" type="email" name="email" value="{{ form_data.get('email') or '' }}"></div>
-        <div class="col-md-4"><label class="form-label">Ngày sinh</label><input class="form-control {% if form_errors.get('birth_date') %}is-invalid{% endif %}" type="text" name="birth_date" value="{{ form_data.get('birth_date_raw') or '' }}" placeholder="dd/mm/yyyy" data-vn-date>{% if form_errors.get('birth_date') %}<div class="invalid-feedback">{{ form_errors.birth_date }}</div>{% endif %}</div>
+        <div class="col-md-4"><label class="form-label">Ngày sinh</label><input class="form-control {% if form_errors.get('birth_date') %}is-invalid{% endif %}" type="date" name="birth_date" value="{{ form_data.get('birth_date_raw') or '' }}">{% if form_errors.get('birth_date') %}<div class="invalid-feedback">{{ form_errors.birth_date }}</div>{% endif %}</div>
         <div class="col-md-6"><label class="form-label">Địa chỉ</label><textarea class="form-control" name="address" rows="3">{{ form_data.get('address') or '' }}</textarea></div>
         <div class="col-md-6"><label class="form-label">Ghi chú</label><textarea class="form-control" name="notes" rows="3">{{ form_data.get('notes') or '' }}</textarea></div>
       </div>

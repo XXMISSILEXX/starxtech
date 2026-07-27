@@ -1,10 +1,8 @@
-from datetime import date
-
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from app.auth.permissions import can_read_project
-from app.date_utils import format_vn_date, parse_vn_date
+from app.date_utils import local_today, parse_iso_date
 from app.extensions import db
 from sqlalchemy import func, or_
 from sqlalchemy.orm import contains_eager, joinedload
@@ -62,7 +60,7 @@ def operations_index():
         query = query.filter(or_(Project.code.ilike(f"%{search}%"), Project.name.ilike(f"%{search}%"), Customer.name.ilike(f"%{search}%")))
     projects = query.order_by(Customer.name.asc().nulls_last(), Project.name.asc(), Project.id.asc()).all()
     ids = [project.id for project in projects]
-    today = date.today()
+    today = local_today()
     role_counts = {(row[0], row[1]): row[2] for row in db.session.query(ProjectContractorAssignment.project_id, ProjectContractorAssignment.role, func.count(ProjectContractorAssignment.id)).filter(ProjectContractorAssignment.project_id.in_(ids or [0]), ProjectContractorAssignment.status != "ENDED").group_by(ProjectContractorAssignment.project_id, ProjectContractorAssignment.role).all()}
     submitted = {row[0] for row in db.session.query(DailyReport.project_id).filter(DailyReport.project_id.in_(ids or [0]), DailyReport.report_date == today)}
     groups = {}
@@ -115,7 +113,7 @@ def project_workspace(project_id):
 
 
 def _date_from_form(field):
-    return parse_vn_date(request.form.get(field), field_label="Ngày")
+    return parse_iso_date(request.form.get(field), field_label="Ngày")
 
 
 def _assignments_for_project(project, role, status=None):
@@ -148,7 +146,7 @@ def _render_project_role(project, role, *, form_values=None, form_error=None, op
         open_add_modal=open_add_modal,
         edit_assignment_id=edit_assignment_id,
         open_end_modal_id=open_end_modal_id,
-        today_vn=format_vn_date(date.today()),
+        today_iso=local_today().isoformat(),
         can_contractor_dashboard=current_user.can("dashboards.contractor.view"),
     )
 
@@ -350,13 +348,13 @@ def _update_form(project, update=None, assignment=None, *, form_values=None, for
     values = form_values or {
         "update_type": update.update_type if update else ProjectUpdateType.GENERAL.value,
         "contractor_assignment_id": assignment.id if assignment else "",
-        "update_date": format_vn_date(update.update_date) if update else "",
+        "update_date": update.update_date.isoformat() if update else "",
         "title": update.title if update else "",
         "content": update.content if update else "",
     }
     return render_template("project_operations/updates/form.html", project=project, update=update,
                            locked_assignment=assignment, assignments=assignments, types=ProjectUpdateType,
-                           form_values=values, form_error=form_error)
+                           form_values=values, form_error=form_error, today_iso=local_today().isoformat())
 
 
 @bp.get("/projects/<int:project_id>/updates")

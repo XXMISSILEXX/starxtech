@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from flask_login import current_user
 
 from app.admin.services import add_with_sqlite_id, audit
-from app.date_utils import parse_vn_date
+from app.date_utils import local_today, parse_iso_date
 from app.extensions import db
 from app.models import IssueSeverity, IssueStatus, PersistentIssue, ProjectUser, User
 
@@ -51,7 +51,7 @@ def update_issue(issue, form):
     old_values = issue_snapshot(issue)
     _assign_issue_fields(issue, form, issue.project_id)
     if issue.status in {IssueStatus.CLOSED.value, IssueStatus.RESOLVED.value} and not issue.closed_date:
-        issue.closed_date = date.today()
+        issue.closed_date = local_today()
     if issue.status in {IssueStatus.OPEN.value, IssueStatus.PROCESSING.value}:
         issue.closed_date = None
     audit("issue.update", "PersistentIssue", issue.id, old_values, issue_snapshot(issue))
@@ -62,7 +62,7 @@ def update_issue(issue, form):
 def close_issue(issue):
     old_values = issue_snapshot(issue)
     issue.status = IssueStatus.CLOSED.value
-    issue.closed_date = date.today()
+    issue.closed_date = local_today()
     audit("issue.close", "PersistentIssue", issue.id, old_values, issue_snapshot(issue))
     db.session.commit()
 
@@ -136,7 +136,7 @@ def _parse_optional_date(value, label):
 
 def _parse_date(value, label):
     try:
-        return parse_vn_date(value, field_label=label, allow_empty=False)
+        return parse_iso_date(value, field_label=label, allow_empty=False)
     except ValueError as exc:
         raise IssueValidationError(str(exc)) from exc
 
@@ -186,13 +186,13 @@ def validate_issue_form(form):
         errors["opened_date"] = "Vui lòng chọn ngày mở."
     else:
         try:
-            opened_date = parse_vn_date(opened_date_raw, field_label="Ngày mở", allow_empty=False)
+            opened_date = parse_iso_date(opened_date_raw, field_label="Ngày mở", allow_empty=False)
         except ValueError as exc:
             errors["opened_date"] = str(exc)
 
     if due_date_raw:
         try:
-            due_date = parse_vn_date(due_date_raw, field_label="Hạn xử lý", allow_empty=False)
+            due_date = parse_iso_date(due_date_raw, field_label="Hạn xử lý", allow_empty=False)
         except ValueError as exc:
             errors["due_date"] = str(exc)
 

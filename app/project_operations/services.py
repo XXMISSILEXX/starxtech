@@ -1,12 +1,13 @@
 import re
 import unicodedata
-from datetime import date, datetime
+from datetime import datetime
 
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 
 from app.audit import log_audit
 from app.extensions import db
+from app.date_utils import local_today
 from app.models import (
     Project,
     ProjectContractor,
@@ -263,8 +264,8 @@ def validate_update_values(*, project, assignment, update_type, title, content, 
         raise ValueError("Tiêu đề là bắt buộc và tối đa 255 ký tự.")
     if not content or len(content.strip()) > 10000:
         raise ValueError("Nội dung là bắt buộc và tối đa 10000 ký tự.")
-    if update_date > date.today():
-        raise ValueError("Ngày cập nhật không được ở tương lai.")
+    if update_date > local_today():
+        raise ValueError("Ngày cập nhật không được lớn hơn ngày hôm nay.")
     if assignment is not None:
         if assignment.project_id != project.id:
             raise ValueError("Đối tác không thuộc dự án này.")

@@ -4,13 +4,8 @@
 {% block page_title %}Hạng mục: {{ project.code }}{% endblock %}
 
 {% block content %}
-<div class="mb-3 d-flex gap-2">
-  {% if current_user.role_code in ['SUPER_ADMIN', 'VIEWER_ADMIN'] %}
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.projects_index') }}"><i class="bi bi-arrow-left me-1"></i>Quay lại dự án</a>
-  {% else %}
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('projects.dashboard', project_id=project.id) }}"><i class="bi bi-arrow-left me-1"></i>Quay lại bảng điều khiển</a>
-  {% endif %}
-</div>
+<nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="{{ url_for('reports.configuration_hub') }}">Cấu hình</a></li><li class="breadcrumb-item"><a href="{{ url_for('admin.projects_index') }}">Dự án</a></li><li class="breadcrumb-item active" aria-current="page">Hạng mục báo cáo · {{ project.code }}</li></ol></nav>
+<div class="mb-3 d-flex gap-2"><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('reports.configuration_hub') }}"><i class="bi bi-arrow-left me-1"></i>Quay lại Cấu hình</a></div>
 
 {% if can_manage %}
   {% set form_category = edit_category if edit_category is defined else none %}

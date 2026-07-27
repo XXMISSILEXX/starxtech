@@ -14,6 +14,7 @@ from app.auth.permissions import (
     can_view_issue,
 )
 from app.dashboard.routes import dashboard_navigation_context
+from app.date_utils import local_today
 from app.dashboard.services import project_dashboard_context
 from app.extensions import db
 from app.issues.services import (
@@ -92,7 +93,7 @@ def reports(project_id):
         if date_to:
             query = query.filter(DailyReport.report_date <= parse_report_date(date_to))
     except ReportValidationError:
-        flash("Ngày lọc phải đúng định dạng DD/MM/YYYY.", "warning")
+        flash("Ngày lọc phải theo định dạng YYYY-MM-DD.", "warning")
 
     reports = query.order_by(DailyReport.report_date.desc(), DailyReport.id.desc()).all()
     return render_template(
@@ -256,6 +257,7 @@ def _render_create_form(project, report, form_data=None, form_errors=None):
         direct_upload_limits={"enabled": current_app.config["DAILY_REPORT_DIRECT_UPLOAD_ENABLED"], "max_files": current_app.config["DAILY_REPORT_MAX_FILES"], "max_files_per_section": current_app.config["DAILY_REPORT_MAX_FILES_PER_SECTION"], "max_file_bytes": current_app.config["DAILY_REPORT_MAX_FILE_BYTES"], "max_total_bytes": current_app.config["DAILY_REPORT_MAX_TOTAL_BYTES"], "concurrency": current_app.config["DAILY_REPORT_UPLOAD_CONCURRENCY"]},
         daily_report_create_v2_enabled=True,
         create_v2_api_base=f"/api/projects/{project.id}/daily-reports",
+        today_iso=local_today().isoformat(),
     )
 
 

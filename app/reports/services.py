@@ -13,6 +13,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.admin.services import add_with_sqlite_id, audit
+from app.date_utils import local_today, parse_iso_date
 from app.extensions import db
 from app.models import (
     DailyReport,
@@ -76,9 +77,11 @@ def validate_daily_report_create_v2_payload(*, project, payload, preflight=False
         raise DailyReportCreateV2Error("invalid_payload", "Dữ liệu báo cáo không hợp lệ.")
     client_request_id = _v2_uuid(payload.get("client_request_id"), "client_request_id")
     try:
-        report_date = datetime.strptime(str(payload.get("report_date", "")), "%Y-%m-%d").date()
+        report_date = parse_iso_date(str(payload.get("report_date", "")), field_label="Ngày báo cáo", allow_empty=False)
     except ValueError as exc:
         raise DailyReportCreateV2Error("invalid_report_date", "Ngày báo cáo phải theo định dạng YYYY-MM-DD.", errors={"report_date": "Ngày không hợp lệ."}) from exc
+    if report_date > local_today():
+        raise DailyReportCreateV2Error("future_report_date", "Ngày báo cáo không được lớn hơn ngày hôm nay.", errors={"report_date": "Ngày báo cáo không được lớn hơn ngày hôm nay."})
     status = str(payload.get("overall_status", "")).strip()
     highlight = str(payload.get("highlight", "")).strip()
     summary_note = str(payload.get("summary_note", "")).strip() or None
@@ -253,15 +256,13 @@ def categories_for_report(report):
 def parse_report_date(value):
     if not value:
         raise ReportValidationError("Vui lòng chọn ngày báo cáo.", {"report_date": "Vui lòng chọn ngày báo cáo."})
-    for pattern in ("%d/%m/%Y", "%Y-%m-%d"):  # ISO remains accepted for API/backwards compatibility.
-        try:
-            return datetime.strptime(value, pattern).date()
-        except ValueError:
-            pass
     try:
-        raise ValueError(value)
+        report_date = parse_iso_date(value, field_label="Ngày báo cáo", allow_empty=False)
     except ValueError as exc:
-        raise ReportValidationError("Ngày báo cáo phải đúng định dạng DD/MM/YYYY.", {"report_date": "Ngày báo cáo phải đúng định dạng DD/MM/YYYY."}) from exc
+        raise ReportValidationError("Ngày báo cáo phải theo định dạng YYYY-MM-DD.", {"report_date": "Ngày báo cáo phải theo định dạng YYYY-MM-DD."}) from exc
+    if report_date > local_today():
+        raise ReportValidationError("Ngày báo cáo không được lớn hơn ngày hôm nay.", {"report_date": "Ngày báo cáo không được lớn hơn ngày hôm nay."})
+    return report_date
 
 
 def format_report_date(value):
@@ -793,8 +794,8 @@ def validate_report_form(form, project_id):
     else:
         try:
             parse_report_date(report_date_raw)
-        except (ValueError, ReportValidationError):
-            errors["report_date"] = "Ngày báo cáo phải đúng định dạng DD/MM/YYYY."
+        except ReportValidationError as exc:
+            errors["report_date"] = exc.errors["report_date"]
 
     if overall_status not in [item.value for item in DailyReportStatus]:
         errors["overall_status"] = "Vui lòng chọn trạng thái."

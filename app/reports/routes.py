@@ -5,6 +5,7 @@ from flask import abort, flash, jsonify, redirect, render_template, request, url
 from flask_login import current_user
 
 from app.auth.permissions import can_access_reports_module, can_create_report, can_delete_report, can_edit_report, can_view_report
+from app.date_utils import local_today
 from app.extensions import db
 from app.models import Customer, DailyReport, DailyReportStatus, Project, SectionStatus
 from app.project_memberships import accessible_project_ids
@@ -45,7 +46,7 @@ def index():
         if date_to:
             query = query.filter(DailyReport.report_date <= parse_report_date(date_to))
     except ReportValidationError:
-        flash("Ngày lọc phải đúng định dạng DD/MM/YYYY.", "warning")
+        flash("Ngày lọc phải theo định dạng YYYY-MM-DD.", "warning")
 
     reports = query.order_by(DailyReport.report_date.desc(), DailyReport.id.desc()).all()
     return render_template(
@@ -97,9 +98,8 @@ def configuration_hub():
         abort(403)
     links = []
     if current_user.can("projects.view"): links.append(("Dự án", "admin.projects_index"))
-    if current_user.can("roles.view"): links.append(("Vai trò & phân quyền", "admin.roles_index"))
     if current_user.can("customers.view"): links.append(("Khách hàng", "customers.index"))
-    if current_user.can("project_contractors.view"): links.append(("Nhà thầu dự án", "project_operations.contractors_index"))
+    if current_user.can("project_contractors.view"): links.append(("Nhà thầu/Đối tác dự án", "project_operations.contractors_index"))
     return render_template("reports/configuration.html", links=links)
 
 
@@ -178,6 +178,7 @@ def _render_form(report, form_data=None, form_errors=None):
         can_delete_attachment=current_user.can("report_attachments.delete") and can_edit_report(current_user, report),
         direct_upload_limits=_direct_upload_limits(),
         daily_report_legacy_edit_enabled=True,
+        today_iso=local_today().isoformat(),
     )
 
 

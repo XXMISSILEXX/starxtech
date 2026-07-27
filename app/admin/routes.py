@@ -524,7 +524,7 @@ def _save_project(project=None):
         start_date = parse_date(request.form.get("start_date"))
         expected_end_date = parse_date(request.form.get("expected_end_date"))
     except ValueError:
-        errors.append("Ngày phải đúng định dạng DD/MM/YYYY.")
+        errors.append("Ngày phải đúng định dạng YYYY-MM-DD.")
         start_date = None
         expected_end_date = None
 

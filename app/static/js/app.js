@@ -8,9 +8,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initConfirmActions();
   initAutoOpenModals();
   initPartnerDynamicFields();
-  initDatePickers();
-  initVietnameseDates();
   initRequiredFormValidation();
+  initProjectUpdateDateValidation();
   initPartnerDepartmentSelect();
   initPartnerHeadToggle();
   initRelationshipPartnerProfileDisplay();
@@ -579,7 +578,7 @@ function initPartnerDynamicFields() {
       return `<input class="form-control" type="number" step="any" name="${inputName}">`;
     }
     if (field.field_type === "date") {
-      return `<input class="form-control" type="text" name="${inputName}" placeholder="dd/mm/yyyy" data-vn-date>`;
+      return `<input class="form-control" type="date" name="${inputName}">`;
     }
     if (field.field_type === "boolean") {
       return `<div class="form-check"><input class="form-check-input" type="checkbox" name="${inputName}"><label class="form-check-label">Có</label></div>`;
@@ -616,8 +615,6 @@ function initPartnerDynamicFields() {
       ${inputHtml(field, `fields[${index}][value]`)}
     `;
     container.appendChild(row);
-    initDatePickers(row);
-    initVietnameseDates(row);
   };
 
   if (addButton && fieldSelect) {
@@ -642,96 +639,6 @@ function initPartnerDynamicFields() {
     remove.closest("[data-field-row]").remove();
     if (!container.querySelector("[data-field-row]")) {
       container.innerHTML = '<div class="text-muted small" data-empty-fields>Chưa có thông tin mở rộng.</div>';
-    }
-  });
-}
-
-function initDatePickers(root = document) {
-  const fields = root.querySelectorAll("[data-date-picker]");
-  if (typeof flatpickr === "undefined") {
-    return;
-  }
-  fields.forEach((field) => {
-    if (field.dataset.datePickerReady === "1") {
-      return;
-    }
-    flatpickr(field, {
-      dateFormat: "d/m/Y",
-      allowInput: true,
-    });
-    field.dataset.datePickerReady = "1";
-  });
-}
-
-function initVietnameseReportDates(root = document) {
-  root.querySelectorAll("[data-vn-report-date]").forEach((field) => {
-    if (field.dataset.datePickerReady === "1") return;
-    if (typeof flatpickr !== "undefined") {
-      flatpickr(field, { dateFormat: "d/m/Y", allowInput: true });
-      field.dataset.datePickerReady = "1";
-    }
-  });
-}
-
-function initVietnameseDates(root = document) {
-  root.querySelectorAll("[data-vn-date]").forEach((field) => {
-    if (field.dataset.datePickerReady === "1") return;
-    if (typeof flatpickr !== "undefined") {
-      flatpickr(field, {
-        dateFormat: "d/m/Y",
-        allowInput: true,
-        disableMobile: true,
-      });
-      field.dataset.datePickerReady = "1";
-    }
-  });
-  if (document.body.dataset.vnDateValidationReady === "1") return;
-  document.body.dataset.vnDateValidationReady = "1";
-  document.addEventListener("submit", (event) => {
-    const invalid = [];
-    event.target.querySelectorAll?.("[data-vn-date]").forEach((field) => {
-      if (!field.value.trim()) {
-        if (field.required) {
-          setFieldError(field, "Vui lòng nhập ngày theo định dạng DD/MM/YYYY.");
-          invalid.push(field);
-        } else clearFieldError(field);
-        return;
-      }
-      if (!window.StarXVietnameseDate?.parse(field.value)) {
-        setFieldError(field, "Ngày không hợp lệ. Vui lòng nhập theo định dạng DD/MM/YYYY.");
-        invalid.push(field);
-      } else clearFieldError(field);
-    });
-    if (invalid.length) {
-      event.preventDefault();
-      invalid[0].focus();
-    }
-  });
-}
-
-function initDateValidation() {
-  document.addEventListener("submit", (event) => {
-    const form = event.target;
-    if (!(form instanceof HTMLFormElement)) {
-      return;
-    }
-    const invalid = [];
-    form.querySelectorAll("[data-date-picker]").forEach((field) => {
-      if (!field.value.trim()) {
-        clearFieldError(field);
-        return;
-      }
-      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(field.value.trim())) {
-        setFieldError(field, "Ngày không hợp lệ, vui lòng nhập theo định dạng DD/MM/YYYY.");
-        invalid.push(field);
-      } else {
-        clearFieldError(field);
-      }
-    });
-    if (invalid.length) {
-      event.preventDefault();
-      invalid[0].scrollIntoView({ behavior: "smooth", block: "center" });
-      invalid[0].focus({ preventScroll: true });
     }
   });
 }
@@ -764,6 +671,34 @@ function initRequiredFormValidation() {
       invalid[0].scrollIntoView({ behavior: "smooth", block: "center" });
       invalid[0].focus({ preventScroll: true });
     }
+  });
+}
+
+function initProjectUpdateDateValidation() {
+  document.querySelectorAll("[data-project-update-form]").forEach((form) => {
+    const field = form.querySelector("[data-project-update-date]");
+    if (!field) {
+      return;
+    }
+    const validate = () => {
+      const isFutureDate = Boolean(field.value && field.max && field.value > field.max);
+      if (isFutureDate) {
+        setFieldError(field, "Ngày cập nhật không được lớn hơn ngày hôm nay.");
+      } else {
+        clearFieldError(field);
+      }
+      return isFutureDate;
+    };
+    field.addEventListener("input", validate);
+    field.addEventListener("change", validate);
+    form.addEventListener("submit", (event) => {
+      if (!validate()) {
+        return;
+      }
+      event.preventDefault();
+      field.scrollIntoView({ behavior: "smooth", block: "center" });
+      field.focus({ preventScroll: true });
+    });
   });
 }
 

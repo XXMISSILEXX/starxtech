@@ -3,7 +3,7 @@ from datetime import date, datetime, time
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
 
-from app.date_utils import parse_vn_date
+from app.date_utils import parse_iso_date
 from sqlalchemy import func
 
 from app.auth.permissions import (
@@ -47,12 +47,12 @@ def dashboard():
     created_to = request.args.get("date_to", "").strip()
     if created_from:
         try:
-            query = query.filter(Partner.created_at >= datetime.combine(parse_vn_date(created_from, field_label="Từ ngày", allow_empty=False), time.min))
+            query = query.filter(Partner.created_at >= datetime.combine(parse_iso_date(created_from, field_label="Từ ngày", allow_empty=False), time.min))
         except ValueError:
             pass
     if created_to:
         try:
-            query = query.filter(Partner.created_at <= datetime.combine(parse_vn_date(created_to, field_label="Đến ngày", allow_empty=False), time.max))
+            query = query.filter(Partner.created_at <= datetime.combine(parse_iso_date(created_to, field_label="Đến ngày", allow_empty=False), time.max))
         except ValueError:
             pass
     recent_partners = (

@@ -56,3 +56,6 @@ are covered by 404 regression tests.
 - Assignment edit and removal remain POST-only modal actions; no new GET
   mutation route was introduced.
 - No API-only or mutation-only route was promoted into the main navigation.
+- The System overview API has additive `system_analytics` data only for the
+  System scope. It covers customer share, contractor coverage, project status,
+  and project activity; Customer API output does not expand its scope.

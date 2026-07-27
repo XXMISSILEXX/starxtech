@@ -5,7 +5,7 @@
 
 {% block content %}
 {% set form_errors = form_errors if form_errors is defined else {} %}
-{% set report_date_value = form_data.report_date if form_data else (report.report_date|vn_date if report.report_date else '') %}
+{% set report_date_value = form_data.report_date if form_data else (report.report_date.isoformat() if report.report_date else '') %}
 {% set overall_status_value = form_data.overall_status if form_data else report.overall_status %}
 {% set highlight_value = form_data.highlight if form_data else (report.highlight or '') %}
 {% set summary_note_value = form_data.summary_note if form_data else (report.summary_note or '') %}
@@ -22,7 +22,7 @@
   <div class="form-card row g-3 mb-4">
     <div class="col-md-4">
       <label class="form-label" for="report_date">Ngày báo cáo</label>
-      <input class="form-control {% if form_errors.get('report_date') %}is-invalid{% endif %}" id="report_date" name="report_date" type="text" data-vn-report-date value="{{ report_date_value }}" placeholder="DD/MM/YYYY" {% if not can_write %}disabled{% endif %} required>
+      <input class="form-control {% if form_errors.get('report_date') %}is-invalid{% endif %}" id="report_date" name="report_date" type="date" value="{{ report_date_value }}" max="{{ today_iso }}" {% if not can_write %}disabled{% endif %} required>
       {% if form_errors.get('report_date') %}<div class="invalid-feedback">{{ form_errors.get('report_date') }}</div>{% endif %}
     </div>
     <div class="col-md-4">

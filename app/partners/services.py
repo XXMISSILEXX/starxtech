@@ -1,11 +1,10 @@
 import re
-from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from flask_login import current_user
 from sqlalchemy import func, or_
 
-from app.date_utils import format_vn_date as format_shared_vn_date
+from app.date_utils import format_vn_date as format_shared_vn_date, parse_iso_date
 from app.extensions import db
 from app.models import Company, CompanyDepartment, Partner, PartnerFieldCollection, PartnerFieldDefinition, PartnerFieldValue
 
@@ -128,7 +127,7 @@ def build_partner_form_data(form, partner=None):
             "is_department_head": form.get("is_department_head") == "on" if "is_department_head" in form else (partner.is_department_head if partner else False),
             "phone": _optional_text(form.get("phone")),
             "email": _optional_text(form.get("email")),
-            "birth_date": parse_vn_date(form.get("birth_date")),
+            "birth_date": _parse_iso_date_or_none(form.get("birth_date")),
             "birth_date_raw": form.get("birth_date", "").strip(),
             "address": _optional_text(form.get("address")),
             "notes": _optional_text(form.get("notes")),
@@ -145,7 +144,7 @@ def build_partner_form_data(form, partner=None):
         "phone": partner.phone,
         "email": partner.email,
         "birth_date": partner.birth_date,
-        "birth_date_raw": format_vn_date(partner.birth_date),
+        "birth_date_raw": partner.birth_date.isoformat() if partner.birth_date else "",
         "address": partner.address,
         "notes": partner.notes,
     }
@@ -164,7 +163,7 @@ def build_field_form_rows(form=None, partner=None):
                 "label": value.field_label_snapshot,
                 "field_type": value.field_type_snapshot,
                 "group_name": value.group_name_snapshot,
-                "value": display_field_value(value),
+                "value": form_field_value(value),
                 "options": _options_for_value(value),
                 "sort_order": value.sort_order,
             }
@@ -275,6 +274,13 @@ def display_field_value(value):
     return value.value_text or ""
 
 
+def form_field_value(value):
+    """Return native form values; readable views continue to use vn_date."""
+    if value.field_type_snapshot == "date":
+        return value.value_date.isoformat() if value.value_date else ""
+    return display_field_value(value)
+
+
 def _populate_field_value(value, row):
     value.field_definition_id = row["field_definition_id"]
     value.field_label_snapshot = row["label"]
@@ -299,7 +305,7 @@ def _assign_typed_value(value, field_type, raw_value):
         except (InvalidOperation, ValueError):
             value.value_number = None
     elif field_type == "date":
-        value.value_date = parse_vn_date(raw_value)
+        value.value_date = _parse_iso_date_or_none(raw_value)
     elif field_type == "boolean":
         value.value_boolean = raw_value in {True, "on", "1", "true", "yes"}
     elif field_type == "multi_select":
@@ -324,7 +330,7 @@ def _validate_partner_data(data, partner=None):
     if not data["department_id"]:
         errors["department_id"] = "Vui lòng chọn phòng ban."
     if data["birth_date_raw"] and data["birth_date"] is None:
-        errors["birth_date"] = "Ngày sinh phải có định dạng DD/MM/YYYY."
+        errors["birth_date"] = "Ngày sinh phải có định dạng YYYY-MM-DD."
     company = db.session.get(Company, data["company_id"]) if data["company_id"] else None
     if data["company_id"] and not company:
         errors["company_id"] = "Công ty không hợp lệ."
@@ -354,8 +360,8 @@ def _department_name(department_id):
 def _validate_field_value_rows(rows):
     errors = {}
     for row in rows:
-        if row["field_type"] == "date" and row["value"] and parse_vn_date(row["value"]) is None:
-            errors[f"field_{row['field_definition_id']}"] = "Ngày không hợp lệ, vui lòng nhập theo định dạng DD/MM/YYYY."
+        if row["field_type"] == "date" and row["value"] and _parse_iso_date_or_none(row["value"]) is None:
+            errors[f"field_{row['field_definition_id']}"] = "Ngày không hợp lệ, vui lòng nhập theo định dạng YYYY-MM-DD."
     return errors
 
 
@@ -365,24 +371,15 @@ def _parse_date_or_none(value):
         return None
 
 
-def parse_vn_date(value):
-    value = (value or "").strip()
-    if not value:
+def _parse_iso_date_or_none(value):
+    try:
+        return parse_iso_date(value)
+    except ValueError:
         return None
-    for pattern in ("%d/%m/%Y", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(value, pattern).date()
-        except ValueError:
-            continue
-    return None
 
 
 def format_vn_date(value):
     return format_shared_vn_date(value)
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except ValueError:
-        return None
 
 
 def _optional_text(value):

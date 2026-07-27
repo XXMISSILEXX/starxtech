@@ -6,7 +6,7 @@ from flask import request
 from sqlalchemy import func
 
 from app.audit import log_audit
-from app.date_utils import parse_vn_date
+from app.date_utils import parse_iso_date
 from app.extensions import db
 from app.models import ProjectUser, ReportCategory, User
 from app.project_memberships import CAPABILITY_FIELDS, PROJECT_ROLE_PRESETS, preset_flags
@@ -120,4 +120,4 @@ def save_project_memberships(project, form, allowed_user_ids):
 
 
 def parse_date(value):
-    return parse_vn_date(value, field_label="Ngày")
+    return parse_iso_date(value, field_label="Ngày")

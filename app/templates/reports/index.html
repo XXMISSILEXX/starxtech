@@ -28,11 +28,11 @@
     </div>
     <div class="col-auto">
       <label class="form-label small" for="date_from">Từ ngày</label>
-      <input class="form-control form-control-sm" id="date_from" name="date_from" type="text" data-vn-report-date value="{{ filters.date_from }}" placeholder="DD/MM/YYYY">
+      <input class="form-control form-control-sm" id="date_from" name="date_from" type="date" value="{{ filters.date_from }}">
     </div>
     <div class="col-auto">
       <label class="form-label small" for="date_to">Đến ngày</label>
-      <input class="form-control form-control-sm" id="date_to" name="date_to" type="text" data-vn-report-date value="{{ filters.date_to }}" placeholder="DD/MM/YYYY">
+      <input class="form-control form-control-sm" id="date_to" name="date_to" type="date" value="{{ filters.date_to }}">
     </div>
     <div class="col-auto">
       <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-funnel me-1"></i>Lọc</button>

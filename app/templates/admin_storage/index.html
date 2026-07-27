@@ -6,8 +6,8 @@
 <form class="card card-body mb-4" method="get">
   <div class="row g-3 align-items-end">
     <div class="col-md-3"><label class="form-label">Khoảng thời gian</label><select name="period" class="form-select"><option value="current_month" {% if filters.period == 'current_month' %}selected{% endif %}>Tháng hiện tại</option><option value="last_7_days" {% if filters.period == 'last_7_days' %}selected{% endif %}>7 ngày gần nhất</option><option value="last_30_days" {% if filters.period == 'last_30_days' %}selected{% endif %}>30 ngày gần nhất</option><option value="custom" {% if filters.period == 'custom' %}selected{% endif %}>Tùy chọn</option></select></div>
-    <div class="col-md-2"><label class="form-label">Từ ngày</label><input name="from" type="text" data-vn-date placeholder="dd/mm/yyyy" value="{{ filters['from']|vn_date }}" class="form-control"></div>
-    <div class="col-md-2"><label class="form-label">Đến ngày</label><input name="to" type="text" data-vn-date placeholder="dd/mm/yyyy" value="{{ filters['to']|vn_date }}" class="form-control"></div>
+    <div class="col-md-2"><label class="form-label">Từ ngày</label><input name="from" type="date" value="{{ filters['from'].isoformat() }}" class="form-control"></div>
+    <div class="col-md-2"><label class="form-label">Đến ngày</label><input name="to" type="date" value="{{ filters['to'].isoformat() }}" class="form-control"></div>
     <div class="col-md-2"><label class="form-label">Phân hệ</label><input name="module" value="{{ filters.module or '' }}" class="form-control" placeholder="Tất cả"></div>
     <div class="col-md-2"><label class="form-label">Nguồn tải</label><input name="source_type" value="{{ filters.source_type or '' }}" class="form-control" placeholder="Tất cả"></div>
     <div class="col-md-1 d-grid"><button class="btn btn-primary">Lọc</button></div>

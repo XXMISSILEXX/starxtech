@@ -5,6 +5,7 @@
 
 {% block content %}
 {% set can_write = current_user.role_code == 'SUPER_ADMIN' %}
+<nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="{{ url_for('reports.configuration_hub') }}">Cấu hình</a></li><li class="breadcrumb-item"><a href="{{ url_for('admin.projects_index') }}">Dự án</a></li><li class="breadcrumb-item active" aria-current="page">{{ 'Sửa' if project else 'Tạo' }}</li></ol></nav>
 <form method="post" class="form-card row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-4">
@@ -30,17 +31,17 @@
   </div>
   <div class="col-md-4">
     <label class="form-label" for="start_date">Ngày bắt đầu</label>
-    <input class="form-control" id="start_date" name="start_date" type="text" data-vn-date placeholder="dd/mm/yyyy" value="{{ request.form.get('start_date', project.start_date|vn_date if project else '') }}" {% if not can_write %}disabled{% endif %}>
+    <input class="form-control" id="start_date" name="start_date" type="date" value="{{ request.form.get('start_date', project.start_date.isoformat() if project and project.start_date else '') }}" {% if not can_write %}disabled{% endif %}>
   </div>
   <div class="col-md-4">
     <label class="form-label" for="expected_end_date">Ngày dự kiến kết thúc</label>
-    <input class="form-control" id="expected_end_date" name="expected_end_date" type="text" data-vn-date placeholder="dd/mm/yyyy" value="{{ request.form.get('expected_end_date', project.expected_end_date|vn_date if project else '') }}" {% if not can_write %}disabled{% endif %}>
+    <input class="form-control" id="expected_end_date" name="expected_end_date" type="date" value="{{ request.form.get('expected_end_date', project.expected_end_date.isoformat() if project and project.expected_end_date else '') }}" {% if not can_write %}disabled{% endif %}>
   </div>
   <div class="col-12 d-flex gap-2">
     {% if can_write %}
       <button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1"></i>Lưu</button>
     {% endif %}
-    <a class="btn btn-outline-secondary" href="{{ url_for('admin.projects_index') }}">Hủy</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('reports.configuration_hub') }}">Quay lại Cấu hình</a>
   </div>
 </form>
 {% endblock %}

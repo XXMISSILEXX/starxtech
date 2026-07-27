@@ -5,7 +5,7 @@ from sqlalchemy import event
 
 from app.extensions import db
 from app.models import AuditLog, Customer, DailyReport, DailyReportSection, IssueStatus, PersistentIssue, Permission, Project, ProjectContractor, ProjectContractorAssignment, ProjectUpdate, ReportCategory, Role, RolePermission, User
-from app.dashboard.services import project_dashboard_context, project_section_status_payload
+from app.dashboard.services import _activity_payload, project_dashboard_context, project_section_status_payload
 
 
 def login(client, username_or_email, password="password123"):
@@ -179,11 +179,11 @@ def test_project_dashboard_shows_recent_updates_with_sql_limit_and_full_list_lin
     login(client, "viewer")
     page = client.get("/reports/projects/1/dashboard")
     assert page.status_code == 200
-    assert "Cập nhật dự án gần đây".encode() in page.data
+    assert "Báo cáo xuyên suốt gần đây".encode() in page.data
     assert page.data.count(b"Update ") == 5
     assert b"Update 5" in page.data and b"Update 0" not in page.data
     assert b"Deleted" not in page.data
-    assert "Xem tất cả cập nhật".encode() in page.data
+    assert "Xem tất cả báo cáo xuyên suốt".encode() in page.data
     assert client.get("/projects/1/updates").status_code == 200
 
 
@@ -384,6 +384,10 @@ def test_customer_and_system_scopes_have_exact_aggregates(client, app):
     assert system_payload["submissions"]["labels"] == ["P001", "P002", "P103"]
     assert system_payload["submissions"]["values"] == [1, 0, 0]
     assert system_payload["contractors"]["values"] == [2, 2]
+    assert "system_analytics" in system_payload
+    assert system_payload["system_analytics"]["contractor_project_coverage"]["denominator_active_projects"] == 3
+    assert system_payload["system_analytics"]["project_activity"]["default_days"] == 30
+    assert "system_analytics" not in customer_payload
 
     page = client.get(f"/reports/dashboard/customers/{customer_one_id}")
     assert page.status_code == 200
@@ -454,6 +458,50 @@ def test_system_dashboard_payload_query_count_is_not_linear(client, app):
     assert count < 20
 
 
+def test_system_analytics_keeps_unclassified_projects_and_native_status_partition(client, app):
+    with app.app_context():
+        _seed_scoped_dashboard_data()
+        db.session.add(Project(id=105, code="P105", name="Không phân loại", status="archived"))
+        db.session.commit()
+    login(client, "viewer")
+    payload = client.get("/api/reports/dashboard/system/overview").get_json()["system_analytics"]
+
+    customer_share = payload["customer_project_share"]
+    assert "Chưa phân loại" in customer_share["labels"]
+    assert sum(customer_share["values"]) == customer_share["total_projects"] == 5
+    statuses = payload["project_status_distribution"]
+    assert sum(statuses["values"]) == statuses["total_projects"] == 5
+    assert statuses["values"][statuses["keys"].index("archived")] == 1
+    assert set(payload["project_activity"]["daily_reports"]["periods"]) == {"7", "30", "90"}
+
+
+def test_system_project_activity_totals_and_percentages_are_additive_and_scoped(client, app):
+    with app.app_context():
+        _seed_scoped_dashboard_data()
+    login(client, "viewer")
+
+    payload = client.get("/api/reports/dashboard/system/overview").get_json()["system_analytics"]["project_activity"]
+    activities = [payload["current_issues"], *payload["daily_reports"]["periods"].values()]
+    assert set(payload["daily_reports"]["periods"]) == {"7", "30", "90"}
+    for activity in activities:
+        assert activity["total_count"] == sum(activity["values"])
+        assert len(activity["percentages"]) == len(activity["values"])
+        if activity["total_count"]:
+            assert abs(sum(activity["percentages"]) - 100) <= 0.2
+        else:
+            assert activity["percentages"] == []
+
+    # Viewer has all-project scope in the fixture; the API remains JSON and
+    # never includes a project outside the effective dashboard scope.
+    assert isinstance(payload["current_issues"]["total_count"], int)
+
+
+def test_project_activity_zero_total_payload_is_serializable():
+    assert _activity_payload([]) == {
+        "project_ids": [], "labels": [], "values": [], "total_count": 0, "percentages": [],
+    }
+
+
 def test_contractor_dashboard_is_assignment_scoped_and_keeps_project_context(client, app):
     with app.app_context():
         customer_one = Customer(id=901, name="Contract customer one", normalized_name="contract customer one")
@@ -477,7 +525,7 @@ def test_contractor_dashboard_is_assignment_scoped_and_keeps_project_context(cli
     login(client, "viewer")
     page = client.get("/reports/dashboard/contractors/901")
     assert page.status_code == 200
-    assert b"CD" in page.data and "Bối cảnh báo cáo dự án".encode() in page.data
+    assert b"CD" in page.data and "Báo cáo ngày gần đây".encode() in page.data
     assert b"Bound contractor update" in page.data
     assert b"General update" not in page.data
     assert "Bối cảnh dự án".encode() in page.data

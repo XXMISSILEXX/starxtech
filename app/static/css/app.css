@@ -946,6 +946,55 @@ a:hover {
 .workspace-card .workspace-card-icon { color: var(--sx-primary); font-size: 1.5rem; }
 @media (prefers-reduced-motion: reduce) { .dashboard-type-card, .workspace-card { transition: none; } }
 
+.system-analytics-tab,
+.system-analytics-grid,
+.system-analytics-grid > [class*="col-"] {
+  min-width: 0;
+}
+
+.system-analytics-card .card-header {
+  font-weight: 700;
+}
+
+.system-analytics-card .card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.system-analytics-chart-wrap {
+  height: 340px;
+  max-height: 340px;
+  min-width: 0;
+  position: relative;
+}
+
+.system-analytics-canvas {
+  display: block;
+  height: 100% !important;
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+@media (max-width: 991.98px) {
+  .system-analytics-chart-wrap {
+    height: 280px;
+    max-height: 280px;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .system-analytics-card .card-body {
+    padding: 1rem;
+  }
+
+  .system-analytics-chart-wrap {
+    height: 230px;
+    max-height: 230px;
+  }
+}
+
 .stat-icon {
   display: grid;
   flex: 0 0 auto;

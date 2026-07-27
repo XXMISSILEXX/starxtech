@@ -7,8 +7,8 @@
 <div class="card mb-3">
   <div class="card-body">
     <form class="row g-2" method="get">
-      <div class="col-md-2"><input class="form-control" type="text" data-vn-date placeholder="dd/mm/yyyy" name="date_from" value="{{ filters.get('date_from', '') }}" aria-label="Từ ngày"></div>
-      <div class="col-md-2"><input class="form-control" type="text" data-vn-date placeholder="dd/mm/yyyy" name="date_to" value="{{ filters.get('date_to', '') }}" aria-label="Đến ngày"></div>
+      <div class="col-md-2"><input class="form-control" type="date" name="date_from" value="{{ filters.get('date_from', '') }}" aria-label="Từ ngày"></div>
+      <div class="col-md-2"><input class="form-control" type="date" name="date_to" value="{{ filters.get('date_to', '') }}" aria-label="Đến ngày"></div>
       <div class="col-md-3"><select class="form-select" name="company_id"><option value="">Công ty</option>{% for company in companies %}<option value="{{ company.id }}" {% if filters.get('company_id') == company.id|string %}selected{% endif %}>{{ company.name }}</option>{% endfor %}</select></div>
       <div class="col-md-2"><select class="form-select" name="industry"><option value="">Ngành</option>{% for item in industries %}<option value="{{ item }}" {% if filters.get('industry') == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
       <div class="col-md-3 d-flex gap-2"><button class="btn btn-outline-secondary flex-fill" type="submit"><i class="bi bi-funnel me-1"></i>Lọc</button><a class="btn btn-outline-secondary" href="{{ url_for('partners.dashboard') }}">Xóa lọc</a></div>

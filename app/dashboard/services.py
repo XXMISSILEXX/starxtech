@@ -4,7 +4,7 @@ from enum import Enum
 from zoneinfo import ZoneInfo
 
 from flask_login import current_user
-from sqlalchemy import func
+from sqlalchemy import String, cast, func, literal, select, union_all
 from sqlalchemy.orm import joinedload
 
 from app.models import (
@@ -14,6 +14,7 @@ from app.models import (
     IssueSeverity,
     IssueStatus,
     PersistentIssue,
+    Customer,
     Project,
     ProjectContractor,
     ProjectStatus,
@@ -44,6 +45,14 @@ ISSUE_SEVERITY_LABELS = {
     "HIGH": "Cao",
     "CRITICAL": "Khẩn cấp",
 }
+PROJECT_STATUS_LABELS = {
+    ProjectStatus.ACTIVE.value: "Đang hoạt động",
+    ProjectStatus.PAUSED.value: "Tạm dừng",
+    ProjectStatus.COMPLETED.value: "Hoàn thành",
+    ProjectStatus.ARCHIVED.value: "Lưu trữ",
+}
+PROJECT_ACTIVITY_PERIODS = (7, 30, 90)
+PROJECT_ACTIVITY_DEFAULT_DAYS = 30
 
 
 class DashboardScopeType(str, Enum):
@@ -198,7 +207,7 @@ def project_section_status_payload(project, selected_date=None):
             "latest_project_update": {"id": latest.id, "date": latest.update_date.isoformat(), "title": latest.title} if latest else None}
 
 
-def dashboard_scope_context(scope, selected_date=None, days=7):
+def dashboard_scope_context(scope, selected_date=None, days=7, *, include_recent=True):
     """Build Customer/System dashboard data from aggregate SQL queries.
 
     The expected-report denominator is explicitly the active projects in the
@@ -240,8 +249,10 @@ def dashboard_scope_context(scope, selected_date=None, days=7):
     section_trend = _section_status_trend(active_project_ids, selected_date, days)
     issue_counts = _issue_dashboard_counts(all_project_ids)
     contractor_counts = _active_contractor_counts(all_project_ids)
-    updates = _recent_project_updates(all_project_ids)
-    recent_updates_total = ProjectUpdate.query.filter(ProjectUpdate.project_id.in_(all_project_ids or [0]), ProjectUpdate.deleted_at.is_(None)).count()
+    updates = _recent_project_updates(all_project_ids) if include_recent else []
+    recent_updates_total = (ProjectUpdate.query.filter(ProjectUpdate.project_id.in_(all_project_ids or [0]), ProjectUpdate.deleted_at.is_(None)).count() if include_recent else 0)
+    recent_reports = _recent_daily_reports(all_project_ids) if include_recent else []
+    recent_reports_total = DailyReport.query.filter(DailyReport.project_id.in_(all_project_ids or [0])).count() if include_recent else 0
 
     expected_count = len(active_project_ids)
     submitted_count = len(reports_by_project)
@@ -259,11 +270,14 @@ def dashboard_scope_context(scope, selected_date=None, days=7):
         "selected_date": selected_date,
         "timezone": "Asia/Ho_Chi_Minh",
         "projects": project_rows,
+        "all_project_ids": all_project_ids,
         "recent_projects": recent_project_rows,
         "active_projects_total": len(active_project_ids),
         "missing_projects": missing_projects,
         "recent_updates": updates,
         "recent_updates_total": recent_updates_total,
+        "recent_reports": recent_reports,
+        "recent_reports_total": recent_reports_total,
         "section_pie": section_pie,
         "section_trend": section_trend,
         "issue_counts": issue_counts,
@@ -282,12 +296,12 @@ def dashboard_scope_context(scope, selected_date=None, days=7):
 
 def dashboard_scope_payload(scope, selected_date=None, days=7):
     """CSP-safe chart contract shared by Customer and System dashboards."""
-    context = dashboard_scope_context(scope, selected_date=selected_date, days=days)
+    context = dashboard_scope_context(scope, selected_date=selected_date, days=days, include_recent=False)
     section_keys = [item.value for item in SectionStatus]
     issue_status_keys = [item.value for item in IssueStatus]
     severity_keys = [item.value for item in IssueSeverity]
     project_labels = [row["project"].code for row in context["projects"]]
-    return {
+    payload = {
         "selected_date": context["selected_date"].isoformat(),
         "timezone": context["timezone"],
         "section_status": {
@@ -334,6 +348,15 @@ def dashboard_scope_payload(scope, selected_date=None, days=7):
             ],
         },
     }
+    # System-only analytics intentionally remain additive so the established
+    # Customer contract keeps its compact scoped response.
+    if scope.kind == DashboardScopeType.SYSTEM:
+        payload["system_analytics"] = _system_dashboard_analytics(
+            context["all_project_ids"],
+            [row["project"].id for row in context["projects"] if row["project"].status == ProjectStatus.ACTIVE.value],
+            context["selected_date"],
+        )
+    return payload
 
 
 CONTRACTOR_ASSIGNMENT_STATUSES = [item.value for item in ProjectContractorAssignmentStatus]
@@ -616,3 +639,81 @@ def _recent_project_updates(project_ids):
         .limit(RECENT_DASHBOARD_LIMIT)
         .all()
     )
+
+
+def _recent_daily_reports(project_ids):
+    if not project_ids:
+        return []
+    return (
+        DailyReport.query.options(
+            joinedload(DailyReport.project).joinedload(Project.customer),
+            joinedload(DailyReport.created_by),
+        )
+        .filter(DailyReport.project_id.in_(project_ids))
+        .order_by(DailyReport.report_date.desc(), DailyReport.created_at.desc(), DailyReport.id.desc())
+        .limit(RECENT_DASHBOARD_LIMIT)
+        .all()
+    )
+
+
+def _system_dashboard_analytics(project_ids, active_project_ids, selected_date):
+    """Aggregate-only System Dashboard analytics within the effective scope."""
+    total_projects = len(project_ids)
+    project_scope = project_ids or [0]
+    active_scope = active_project_ids or [0]
+    id_text = lambda column: cast(column, String)
+    activity_label = Project.code + literal(" · ") + Project.name
+    statements = [
+        select(literal("customer").label("kind"), func.coalesce(id_text(Project.customer_id), literal("unclassified")).label("entity"), func.coalesce(Customer.name, literal("Chưa phân loại")).label("label"), func.count(Project.id).label("count")).select_from(Project).outerjoin(Customer, Customer.id == Project.customer_id).where(Project.id.in_(project_scope)).group_by(Project.customer_id, Customer.name),
+        select(literal("status"), Project.status, Project.status, func.count(Project.id)).select_from(Project).where(Project.id.in_(project_scope)).group_by(Project.status),
+        select(literal("coverage"), id_text(ProjectContractor.id), ProjectContractor.name, func.count(func.distinct(ProjectContractorAssignment.project_id))).select_from(ProjectContractor).join(ProjectContractorAssignment, ProjectContractorAssignment.contractor_id == ProjectContractor.id).where(ProjectContractorAssignment.project_id.in_(active_scope), ProjectContractorAssignment.status == ProjectContractorAssignmentStatus.ACTIVE.value).group_by(ProjectContractor.id, ProjectContractor.name),
+        select(literal("issues"), id_text(Project.id), activity_label, func.count(PersistentIssue.id)).select_from(Project).join(PersistentIssue, PersistentIssue.project_id == Project.id).where(Project.id.in_(project_scope), PersistentIssue.deleted_at.is_(None), PersistentIssue.status.in_([IssueStatus.OPEN.value, IssueStatus.PROCESSING.value])).group_by(Project.id, Project.code, Project.name),
+    ]
+    for period in PROJECT_ACTIVITY_PERIODS:
+        start = selected_date - timedelta(days=period - 1)
+        statements.append(select(literal(f"reports_{period}"), id_text(Project.id), activity_label, func.count(DailyReport.id)).select_from(Project).join(DailyReport, DailyReport.project_id == Project.id).where(Project.id.in_(project_scope), DailyReport.report_date.between(start, selected_date)).group_by(Project.id, Project.code, Project.name))
+    grouped = {}
+    for kind, entity, label, count in db.session.execute(union_all(*statements)).all():
+        grouped.setdefault(kind, []).append((entity, label, int(count)))
+    customer_rows = sorted(grouped.get("customer", []), key=lambda row: (-row[2], row[1]))
+    coverage_rows = sorted(grouped.get("coverage", []), key=lambda row: (-row[2], row[1]))[:10]
+    issue_rows = sorted(grouped.get("issues", []), key=lambda row: (-row[2], row[1]))[:10]
+    status_counts = {entity: count for entity, _label, count in grouped.get("status", [])}
+    customer_share = {"labels": [label for _entity, label, _count in customer_rows], "values": [count for _entity, _label, count in customer_rows], "percentages": [round((count / total_projects) * 100, 1) if total_projects else 0 for _entity, _label, count in customer_rows], "total_projects": total_projects}
+    status_keys = [status.value for status in ProjectStatus]
+    project_status = {"keys": status_keys, "labels": [PROJECT_STATUS_LABELS[key] for key in status_keys], "values": [status_counts.get(key, 0) for key in status_keys], "percentages": [round((status_counts.get(key, 0) / total_projects) * 100, 1) if total_projects else 0 for key in status_keys], "total_projects": total_projects}
+    coverage_denominator = len(active_project_ids)
+    contractor_coverage = {
+        "contractor_ids": [int(contractor_id) for contractor_id, _name, _count in coverage_rows],
+        "labels": [name for _contractor_id, name, _count in coverage_rows], "values": [count for _contractor_id, _name, count in coverage_rows],
+        "percentages": [round((count / coverage_denominator) * 100, 1) if coverage_denominator else 0 for _contractor_id, _name, count in coverage_rows],
+        "denominator_active_projects": coverage_denominator,
+        "note": "Một dự án có thể có nhiều đối tác đang hoạt động nên tổng tỷ lệ có thể vượt 100%.",
+    }
+    issue_activity = _activity_payload(issue_rows)
+    report_periods = {str(period): _activity_payload(sorted(grouped.get(f"reports_{period}", []), key=lambda row: (-row[2], row[1]))[:10]) for period in PROJECT_ACTIVITY_PERIODS}
+    return {
+        "customer_project_share": customer_share,
+        "contractor_project_coverage": contractor_coverage,
+        "project_status_distribution": project_status,
+        "project_activity": {
+            "default_days": PROJECT_ACTIVITY_DEFAULT_DAYS,
+            "current_issues": issue_activity,
+            "daily_reports": {"periods": report_periods},
+        },
+    }
+
+
+def _activity_payload(rows):
+    values = [count for _project_id, _label, count in rows]
+    total_count = sum(values)
+    return {
+        "project_ids": [int(project_id) for project_id, _label, _count in rows],
+        "labels": [label for _project_id, label, _count in rows],
+        "values": values,
+        # Activity shares intentionally use the activity total, not the number
+        # of projects in scope.  This keeps the value meaningful when one
+        # project has multiple issues or reports.
+        "total_count": total_count,
+        "percentages": [round((count / total_count) * 100, 1) if total_count else 0 for count in values],
+    }

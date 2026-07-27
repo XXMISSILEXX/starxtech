@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from flask import current_app
 from sqlalchemy import case, func, select
 
-from app.date_utils import parse_vn_date
+from app.date_utils import parse_iso_date
 from app.extensions import db
 from app.models import BulkDownloadJob, DownloadEvent, StorageDerivative, StorageObject, User
 
@@ -37,10 +37,10 @@ def parse_filters(args):
         start, end = today - timedelta(days=29), today
     else:
         try:
-            start = parse_vn_date(args.get("from"), field_label="Từ ngày", allow_empty=False)
-            end = parse_vn_date(args.get("to"), field_label="Đến ngày", allow_empty=False)
+            start = parse_iso_date(args.get("from"), field_label="Từ ngày", allow_empty=False)
+            end = parse_iso_date(args.get("to"), field_label="Đến ngày", allow_empty=False)
         except ValueError as exc:
-            raise StorageDashboardFilterError("Nhập ngày theo định dạng DD/MM/YYYY.") from exc
+            raise StorageDashboardFilterError("Nhập ngày theo định dạng YYYY-MM-DD.") from exc
         if start > end:
             raise StorageDashboardFilterError("Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.")
     return {

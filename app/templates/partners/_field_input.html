@@ -3,7 +3,7 @@
 {% elif field.field_type == 'number' %}
   <input class="form-control" type="number" step="any" name="{{ input_name }}" value="{{ input_value }}">
 {% elif field.field_type == 'date' %}
-  <input class="form-control" type="text" name="{{ input_name }}" value="{{ input_value }}" placeholder="dd/mm/yyyy" data-vn-date>
+  <input class="form-control" type="date" name="{{ input_name }}" value="{{ input_value }}">
 {% elif field.field_type == 'boolean' %}
   <div class="form-check">
     <input class="form-check-input" type="checkbox" name="{{ input_name }}" {% if input_value in ['Có', 'on', '1', true] %}checked{% endif %}>
