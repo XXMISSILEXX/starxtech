@@ -56,3 +56,11 @@ Project, Customer, contractor, category, and membership configuration keep
 their existing endpoints but permanently render inside **Quản lý dự án** with
 **Cấu hình** active. `/reports/config` only lists project-domain entries;
 roles/permissions stays in System Admin at `/admin/roles`.
+
+## Release stabilization status
+
+The release audit records migration current/head at `c4d2e980f617`, static
+integrity checks, security/runtime checks and source gates. The connected audit
+database is empty of live project data, so populated-copy migration rehearsal
+and signed Chrome/iPhone manual acceptance remain pending. Phase 9 is not
+declared released until those records are completed.

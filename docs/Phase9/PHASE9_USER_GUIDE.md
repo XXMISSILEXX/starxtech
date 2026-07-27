@@ -52,3 +52,10 @@ inside a project. These pages always remain in the Quản lý dự án sidebar, 
 when opened from a saved `/admin/projects...`, Customer, or contractor URL.
 Vai trò & phân quyền is global System Admin functionality and is available at
 `/admin/roles`.
+
+## Giới hạn release acceptance
+
+Các tính năng trên vẫn cần được xác nhận bằng Chrome desktop và iPhone Safari
+trên môi trường được phê duyệt, đặc biệt là upload JPG/HEIC trực tiếp, Celery
+derivatives, lịch sử assignment đã kết thúc và dashboard có dữ liệu thực. Xem
+`PHASE9_ACCEPTANCE.md` để biết những mục chưa có tester ký xác nhận.
