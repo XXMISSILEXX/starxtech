@@ -37,6 +37,7 @@ from app.storage.exceptions import StorageNotFoundError, StorageValidationError
 from app.storage.quota import ensure_storage_capacity
 from app.storage.validation import validate_file_metadata
 from app.project_memberships import accessible_project_ids
+from app.auth.permissions import project_accepts_report_mutation
 
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "heic", "heif"}
 IMAGE_FORMATS = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp", "HEIF": "heic"}
@@ -51,6 +52,15 @@ class ReportValidationError(ValueError):
     def __init__(self, message, errors=None):
         super().__init__(message)
         self.errors = errors or {}
+
+
+class ReportMutationLifecycleError(ReportValidationError):
+    """Raised before a report service creates storage or mutates records."""
+
+
+def ensure_project_accepts_report_mutation(project):
+    if not project_accepts_report_mutation(project):
+        raise ReportMutationLifecycleError("Dự án đã lưu trữ hoặc không còn hoạt động; không thể thay đổi báo cáo.")
 
 
 class DailyReportCreateV2Error(ValueError):
@@ -73,6 +83,12 @@ def validate_daily_report_create_v2_payload(*, project, payload, preflight=False
     ids.  Finalize calls the same structural validator and then locks/validates
     the server-side upload session before it creates anything.
     """
+    if not project_accepts_report_mutation(project):
+        raise DailyReportCreateV2Error(
+            "project_read_only",
+            "Dự án đã lưu trữ hoặc không còn hoạt động; không thể thay đổi báo cáo.",
+            status=403,
+        )
     if not isinstance(payload, dict):
         raise DailyReportCreateV2Error("invalid_payload", "Dữ liệu báo cáo không hợp lệ.")
     client_request_id = _v2_uuid(payload.get("client_request_id"), "client_request_id")
@@ -224,9 +240,29 @@ def accessible_projects_query():
     return query.order_by(Project.code.asc(), Project.name.asc())
 
 
-def reports_query():
+def report_viewable_projects_query(actor=None):
+    """Active project scope for report list and Today surfaces.
+
+    This deliberately differs from a generic project-read query: a project
+    reader cannot infer whether it has reports without ``can_view_reports``.
+    """
+    actor = actor or current_user
+    query = Project.query.filter(
+        Project.deleted_at.is_(None),
+        Project.status == "active",
+    )
+    ids = accessible_project_ids(actor, ("can_view_reports",))
+    if ids is not None:
+        query = query.filter(Project.id.in_(ids or [0]))
+    return query.order_by(Project.code.asc(), Project.name.asc())
+
+
+def reports_query(actor=None):
+    """Daily-report rows within the exact report-view and lifecycle scope."""
+    actor = actor or current_user
     query = DailyReport.query.join(DailyReport.project)
-    ids = accessible_project_ids(current_user, ("can_view_reports",))
+    query = query.filter(Project.deleted_at.is_(None), Project.status == "active")
+    ids = accessible_project_ids(actor, ("can_view_reports",))
     if ids is not None:
         query = query.filter(DailyReport.project_id.in_(ids or [0]))
     return query
@@ -297,6 +333,7 @@ def _existing_report(project_id, report_date, *, exclude_id=None):
 
 
 def create_report(project, form, files=None):
+    ensure_project_accepts_report_mutation(project)
     validate_report_form(form, project.id)
     report_date = parse_report_date(form.get("report_date", "").strip())
     # Keep this in lockstep with the database unique constraint: soft-deleted
@@ -335,6 +372,7 @@ def create_report(project, form, files=None):
 
 
 def update_report(report, form, files=None):
+    ensure_project_accepts_report_mutation(report.project)
     validate_report_form(form, report.project_id)
     old_values = report_snapshot(report)
     proposed_date = parse_report_date(form.get("report_date", "").strip())
@@ -455,11 +493,13 @@ def hard_delete_reports(reports, *, dry_run=False):
 
 
 def delete_report(report):
+    ensure_project_accepts_report_mutation(report.project)
     return hard_delete_reports([report])
 
 
 def delete_attachment(attachment):
     """Permanently remove an attachment and its unshared storage artifacts."""
+    ensure_project_accepts_report_mutation(attachment.section.daily_report.project)
     storage_object = attachment.storage_object
     storage_id = attachment.storage_object_id
     derivatives = StorageDerivative.query.filter_by(storage_object_id=storage_id).all() if storage_id else []

@@ -17,19 +17,19 @@
 </div>
 
 <div class="row g-3 mb-4">
-  <div class="col-md-3"><div class="stat-card"><div><div class="stat-label">Nộp hôm nay</div><div class="stat-value">{{ 'Đã nộp' if project_dashboard.submitted_today else 'Chưa nộp' }}</div></div></div></div>
+  <div class="col-md-3"><div class="stat-card"><div><div class="stat-label">Nộp hôm nay</div><div class="stat-value">{{ ('Đã nộp' if project_dashboard.submitted_today else 'Chưa nộp') if can_view_reports else '—' }}</div></div></div></div>
   <div class="col-md-3"><div class="stat-card"><div><div class="stat-label">Thi công hoạt động</div><div class="stat-value">{{ project_dashboard.construction_active }}</div></div></div></div>
   <div class="col-md-3"><div class="stat-card"><div><div class="stat-label">Giải pháp hoạt động</div><div class="stat-value">{{ project_dashboard.solution_active }}</div></div></div></div>
-  <div class="col-md-3"><div class="stat-card"><div><div class="stat-label">Vấn đề tồn đọng</div><div class="stat-value">{{ project_dashboard.issue_counts.values()|sum }}</div></div></div></div>
+  <div class="col-md-3"><div class="stat-card"><div><div class="stat-label">Vấn đề tồn đọng</div><div class="stat-value">{{ project_dashboard.issue_counts.values()|sum if can_view_issues else '—' }}</div></div></div></div>
 </div>
 
-<section class="card mb-4">
+{% if can_view_updates %}<section class="card mb-4">
   <div class="card-header d-flex justify-content-between align-items-center"><h2 class="h6 mb-0">Báo cáo xuyên suốt gần đây</h2>{% if recent_updates_total > recent_updates|length %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('project_operations.project_updates', project_id=project.id) }}">Xem tất cả báo cáo xuyên suốt</a>{% endif %}</div>
   <div class="list-group list-group-flush">
     {% for update in recent_updates %}<div class="list-group-item"><div class="d-flex flex-wrap justify-content-between gap-2"><div><span class="badge text-bg-secondary me-1">{{ update.update_type|project_update_type_label }}</span><span class="fw-semibold">{{ update.title }}</span></div><span class="small text-muted">{{ update.update_date|vn_date }}</span></div><div class="small text-muted mt-1">{% if update.contractor_assignment %}{{ update.contractor_assignment.contractor.name }} · {{ update.contractor_assignment.role|contractor_role_label }} · {% endif %}{{ update.created_by.full_name if update.created_by else '—' }}</div></div>{% else %}<div class="list-group-item text-muted">Chưa có cập nhật dự án.</div>{% endfor %}
   </div>
-</section>
-<div class="card mb-4" aria-label="Tóm tắt năm trạng thái section">
+</section>{% endif %}
+{% if can_view_reports %}<div class="card mb-4" aria-label="Tóm tắt năm trạng thái section">
   <div class="card-header">Tóm tắt section {{ project_dashboard.selected_date }}</div>
   <div class="card-body">
     <div class="d-flex flex-wrap gap-2" aria-label="Thông tin: {{ project_dashboard.section_pie['INFO'] }}; Tốt: {{ project_dashboard.section_pie['GOOD'] }}; Đang xử lý: {{ project_dashboard.section_pie['PROCESSING'] }}; Cần chú ý: {{ project_dashboard.section_pie['ATTENTION'] }}; Khẩn cấp: {{ project_dashboard.section_pie['CRITICAL'] }}">
@@ -46,10 +46,10 @@
   <div class="col-12"><p data-chart-error class="alert alert-danger d-none mb-0" role="alert">Không thể tải dữ liệu biểu đồ. Vui lòng tải lại trang.</p></div>
   <div class="col-lg-5"><div class="card h-100"><div class="card-body"><h2 class="h6">Phân bố section hôm nay</h2><canvas id="project-section-pie" height="240" aria-label="Biểu đồ năm trạng thái section"></canvas><p data-chart-empty class="text-muted d-none mb-0">Chưa có section cho ngày được chọn.</p></div></div></div>
   <div class="col-lg-7"><div class="card h-100"><div class="card-body"><h2 class="h6">Xu hướng 7 ngày</h2><canvas id="project-section-trend" height="240" aria-label="Biểu đồ xu hướng section 7 ngày"></canvas><p data-chart-trend-empty class="text-muted d-none mb-0">Chưa có section trong 7 ngày gần đây.</p></div></div></div>
-</div>
+</div>{% endif %}
 {% block extra_scripts %}<script src="{{ url_for('static', filename='js/project-dashboard-charts.js', v=static_asset_version) }}"></script>{% endblock %}
 
-<div class="row g-3 mb-4">
+{% if can_view_reports %}<div class="row g-3 mb-4">
   {% set card_items = [
     ('Tổng báo cáo', cards.total_reports, 'bi-journal-check', 'status-updated'),
     ('Tốt', cards.good_reports, 'bi-check-circle', 'status-good'),
@@ -70,9 +70,9 @@
   {% endfor %}
   {% if can_view_issues %}
   {% endif %}
-</div>
+</div>{% endif %}
 
-<div class="row g-3 mb-4">
+{% if can_view_reports %}<div class="row g-3 mb-4">
   <div class="col-lg-3">
     <div class="card">
       <div class="card-header py-3">
@@ -120,7 +120,7 @@
         </div>
     </div>
   </div>
-</div>
+</div>{% endif %}
 
 {% if can_view_issues %}<div class="card">
   <div class="card-header py-3">

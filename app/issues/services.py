@@ -6,7 +6,8 @@ from flask_login import current_user
 from app.admin.services import add_with_sqlite_id, audit
 from app.date_utils import local_today, parse_iso_date
 from app.extensions import db
-from app.models import IssueSeverity, IssueStatus, PersistentIssue, ProjectUser, User
+from app.models import IssueSeverity, IssueStatus, PersistentIssue, Project, ProjectUser, User
+from app.project_memberships import accessible_project_ids
 
 
 class IssueValidationError(ValueError):
@@ -20,6 +21,16 @@ def project_issues_query(project_id):
         PersistentIssue.project_id == project_id,
         PersistentIssue.deleted_at.is_(None),
     ).order_by(PersistentIssue.opened_date.desc(), PersistentIssue.id.desc())
+
+
+def issue_viewable_projects_query(actor=None):
+    """Active project scope for the global issue index and its filters."""
+    actor = actor or current_user
+    query = Project.query.filter(Project.deleted_at.is_(None), Project.status == "active")
+    project_ids = accessible_project_ids(actor, ("can_view_issues",))
+    if project_ids is not None:
+        query = query.filter(Project.id.in_(project_ids or [0]))
+    return query
 
 
 def owner_choices(project_id):

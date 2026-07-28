@@ -299,10 +299,10 @@ def cancel_upload_session_for_actor(*, actor, project, session_id, provider=None
     request is never allowed to select other users' cancelled or expired
     sessions merely because they are eligible for the trusted global job.
     """
-    from app.auth.permissions import can_create_report
+    from app.auth.permissions import can_create_report, project_accepts_report_mutation
     from app.project_memberships import is_project_admin
 
-    if not can_create_report(actor, project.id):
+    if not project_accepts_report_mutation(project) or not can_create_report(actor, project.id):
         raise StorageAuthorizationError("Bạn không có quyền tạo báo cáo cho dự án này.")
 
     session = db.session.scalar(select(UploadSelectionSession).where(

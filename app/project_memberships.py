@@ -103,7 +103,10 @@ def user_has_project_capability(user, project_id, capability):
         return True
     if is_viewer_admin(user):
         return capability in READ_CAPABILITIES
-    if capability in READ_CAPABILITIES and has_global_project_scope(user):
+    # ``projects.scope_all`` is intentionally only a project-surface scope.
+    # It must not turn a broad project reader into a reader of reports, issues,
+    # or documents, which each have their own canonical capability.
+    if capability == "can_view_project" and has_global_project_scope(user):
         return True
     membership = active_membership(user, project_id)
     return bool(membership and getattr(membership, capability, False))
@@ -121,10 +124,13 @@ def has_any_project_capability(user, capabilities):
 
 
 def accessible_project_ids(user, capabilities=("can_view_project",)):
-    if is_project_admin(user) or is_viewer_admin(user) or has_global_project_scope(user):
+    if is_project_admin(user) or is_viewer_admin(user):
         return None
     if not user or not getattr(user, "is_authenticated", False) or not user.is_active:
         return []
+    capabilities = tuple(capabilities)
+    if capabilities == ("can_view_project",) and has_global_project_scope(user):
+        return None
     query = ProjectUser.query.filter(ProjectUser.user_id == user.id, ProjectUser.is_active.is_(True))
     for capability in capabilities:
         query = query.filter(getattr(ProjectUser, capability).is_(True))

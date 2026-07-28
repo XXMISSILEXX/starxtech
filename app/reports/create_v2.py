@@ -6,7 +6,7 @@ legacy controller until it receives its own migration.
 from flask import Blueprint, jsonify, request, url_for
 from flask_login import current_user
 
-from app.auth.permissions import can_create_report
+from app.auth.permissions import can_create_report, project_accepts_report_mutation
 from app.extensions import limiter
 from app.models import Project
 from app.reports.services import (DailyReportCreateV2Error,
@@ -30,7 +30,7 @@ def _project(project_id):
     project = Project.query.filter_by(id=project_id, deleted_at=None).first()
     if not project:
         return None, _fail("project_not_found", "Không tìm thấy dự án.", 404)
-    if not can_create_report(current_user, project.id):
+    if not project_accepts_report_mutation(project) or not can_create_report(current_user, project.id):
         return None, _fail("forbidden", "Bạn không có quyền tạo báo cáo cho dự án này.", 403)
     return project, None
 

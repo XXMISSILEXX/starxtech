@@ -18,6 +18,7 @@ from app.issues.services import (
     delete_issue,
     owner_choices,
     reopen_issue,
+    issue_viewable_projects_query,
     update_issue,
 )
 from app.models import IssueSeverity, IssueStatus, PersistentIssue
@@ -29,8 +30,9 @@ from app.project_memberships import has_any_project_capability
 def index():
     if not has_any_project_capability(current_user, ("can_view_issues",)):
         abort(403)
-    projects = accessible_projects_query().all()
-    project_ids = [project.id for project in projects]
+    # Generic project visibility is not issue visibility.  Scope rows, filters
+    # and every derived count from the same capability-aware project set.
+    project_ids = [project.id for project in issue_viewable_projects_query().all()]
     issues = []
     if project_ids:
         query = (

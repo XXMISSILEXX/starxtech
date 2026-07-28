@@ -3,7 +3,7 @@ from functools import wraps
 from flask import abort, request
 from flask_login import current_user
 
-from app.models import UserRole
+from app.models import ProjectStatus, UserRole
 from app.project_memberships import is_project_admin, is_viewer_admin, user_has_project_capability
 
 ADMIN_ROLES = {UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value}
@@ -149,6 +149,20 @@ def can_read_project(project_id, user=None):
 
 def can_create_report(user, project_id):
     return user_has_project_capability(_user_or_current(user), project_id, "can_create_reports")
+
+
+def project_accepts_report_mutation(project):
+    """The canonical lifecycle gate for every report write path.
+
+    Archived, inactive, and soft-deleted projects retain historical read rules,
+    but cannot be changed through a report endpoint (including upload and
+    attachment endpoints).
+    """
+    return bool(
+        project
+        and getattr(project, "deleted_at", None) is None
+        and getattr(project, "status", None) == ProjectStatus.ACTIVE.value
+    )
 
 
 def can_view_report(user, report):

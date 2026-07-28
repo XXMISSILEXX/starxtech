@@ -4,15 +4,17 @@ from zoneinfo import ZoneInfo
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
 
-from app.auth.permissions import can_access_reports_module, can_create_report, can_delete_report, can_edit_report, can_view_report
+from app.auth.permissions import (can_access_reports_module, can_create_report,
+                                  can_delete_report, can_edit_report,
+                                  can_view_report,
+                                  project_accepts_report_mutation)
 from app.date_utils import local_today
 from app.extensions import db
 from app.models import Customer, DailyReport, DailyReportStatus, Project, SectionStatus
-from app.project_memberships import accessible_project_ids
 from app.reports import bp
 from app.reports.services import (
     ReportValidationError,
-    accessible_projects_query,
+    report_viewable_projects_query,
     build_report_form_data,
     categories_for_report,
     delete_report,
@@ -29,7 +31,7 @@ def index():
     if not can_access_reports_module(current_user):
         abort(403)
     query = reports_query()
-    projects = accessible_projects_query().all()
+    projects = report_viewable_projects_query().all()
 
     project_id = request.args.get("project_id", type=int)
     status = request.args.get("status", "").strip()
@@ -71,12 +73,7 @@ def index():
 def today():
     if not current_user.can("reports.today.view"):
         abort(403)
-    ids = accessible_project_ids(current_user, ("can_view_project",))
-    query = Project.query.outerjoin(Customer, Project.customer_id == Customer.id).filter(
-        Project.deleted_at.is_(None), Project.status == "active"
-    )
-    if ids is not None:
-        query = query.filter(Project.id.in_(ids or [0]))
+    query = report_viewable_projects_query().outerjoin(Customer, Project.customer_id == Customer.id)
     projects = query.order_by(Customer.name.asc().nulls_last(), Project.name.asc()).all()
     report_date = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).date()
     reports = {item.project_id: item for item in DailyReport.query.filter(
@@ -193,12 +190,12 @@ def _require_can_read(report):
 
 
 def _require_can_write(report):
-    if not can_edit_report(current_user, report):
+    if not project_accepts_report_mutation(report.project) or not can_edit_report(current_user, report):
         abort(403)
 
 
 def _can_delete_report(report):
-    return can_delete_report(current_user, report)
+    return project_accepts_report_mutation(report.project) and can_delete_report(current_user, report)
 
 
 def _flash_reselect_images_if_needed(files):

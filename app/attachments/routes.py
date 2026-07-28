@@ -3,7 +3,8 @@ from flask import abort, current_app, flash, jsonify, redirect, request, url_for
 from flask_login import current_user
 
 from app.attachments import bp
-from app.auth.permissions import (can_delete_report_attachment, can_view_report)
+from app.auth.permissions import (can_delete_report_attachment, can_view_report,
+                                  project_accepts_report_mutation)
 from app.extensions import db
 from app.models import DailyReportSection, MediaProcessingJob, ReportAttachment, StorageDerivative
 from app.reports.services import delete_attachment
@@ -85,7 +86,7 @@ def download(attachment_id):
 def delete(attachment_id):
     attachment = _attachment_or_404(attachment_id)
     report = attachment.section.daily_report
-    if not can_delete_report_attachment(current_user, attachment): abort(403)
+    if not project_accepts_report_mutation(report.project) or not can_delete_report_attachment(current_user, attachment): abort(403)
     delete_attachment(attachment)
     flash("Đã xóa ảnh đính kèm.", "success")
     return redirect(request.form.get("next") or url_for("reports.edit", report_id=report.id))

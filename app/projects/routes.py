@@ -12,6 +12,7 @@ from app.auth.permissions import (
     can_read_project,
     can_access_reports_module,
     can_view_issue,
+    project_accepts_report_mutation,
 )
 from app.dashboard.routes import dashboard_navigation_context
 from app.date_utils import local_today
@@ -123,7 +124,7 @@ def reports(project_id):
 @bp.get("/<int:project_id>/reports/create")
 def reports_create(project_id):
     project = _project_or_404(project_id)
-    if not can_read_project(project.id):
+    if not can_read_project(project.id) or not project_accepts_report_mutation(project) or not can_create_report(current_user, project.id):
         abort(403)
 
     report = DailyReport(project_id=project.id)
@@ -143,7 +144,7 @@ def reports_create_legacy_post_rejected(project_id):
 @limiter.limit("30 per minute")
 def report_upload_session_create(project_id):
     project = _project_or_404(project_id)
-    if not can_create_report(current_user, project.id): abort(403)
+    if not project_accepts_report_mutation(project) or not can_create_report(current_user, project.id): abort(403)
     payload = request.get_json(silent=True) or {}
     try:
         return jsonify(create_report_upload_session(user=current_user, project_id=project.id,
@@ -154,7 +155,7 @@ def report_upload_session_create(project_id):
 @bp.get("/<int:project_id>/reports/upload-sessions/<int:session_id>")
 def report_upload_session_state(project_id, session_id):
     project = _project_or_404(project_id)
-    if not can_create_report(current_user, project.id): abort(403)
+    if not project_accepts_report_mutation(project) or not can_create_report(current_user, project.id): abort(403)
     try: return jsonify(report_upload_session_payload(report_upload_session(current_user, project.id, session_id, allow_finalized=True)))
     except StorageAuthorizationError: abort(403)
     except StorageValidationError as exc: return jsonify(error=str(exc)), 400
@@ -164,7 +165,7 @@ def report_upload_session_state(project_id, session_id):
 @limiter.limit("60 per minute")
 def report_upload_session_presign(project_id, session_id):
     project = _project_or_404(project_id)
-    if not can_create_report(current_user, project.id): abort(403)
+    if not project_accepts_report_mutation(project) or not can_create_report(current_user, project.id): abort(403)
     try: return jsonify(presign_report_uploads(user=current_user, project_id=project.id, session_id=session_id, files=(request.get_json(silent=True) or {}).get("files", [])))
     except StorageAuthorizationError: abort(403)
     except StorageValidationError as exc: return jsonify(error=str(exc)), 400
@@ -174,7 +175,7 @@ def report_upload_session_presign(project_id, session_id):
 @limiter.limit("120 per minute")
 def report_upload_session_complete(project_id, session_id):
     project = _project_or_404(project_id)
-    if not can_create_report(current_user, project.id): abort(403)
+    if not project_accepts_report_mutation(project) or not can_create_report(current_user, project.id): abort(403)
     payload = request.get_json(silent=True) or {}
     try: item_id = int(payload.get("upload_batch_item_id"))
     except (TypeError, ValueError): return jsonify(error="upload_batch_item_id không hợp lệ."), 400
@@ -186,7 +187,7 @@ def report_upload_session_complete(project_id, session_id):
 @bp.post("/<int:project_id>/reports/upload-sessions/<int:session_id>/cancel")
 def report_upload_session_cancel(project_id, session_id):
     project = _project_or_404(project_id)
-    if not can_create_report(current_user, project.id): abort(403)
+    if not project_accepts_report_mutation(project) or not can_create_report(current_user, project.id): abort(403)
     try:
         session, cleanup = cancel_upload_session_for_actor(
             actor=current_user, project=project, session_id=session_id,
