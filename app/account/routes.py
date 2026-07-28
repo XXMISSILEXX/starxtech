@@ -5,7 +5,9 @@ from flask_login import current_user, login_required
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.account import bp
-from app.display_images import DisplayImageError, remove_display_image, replace_display_image
+from app.display_images import (DisplayImageCleanupError, DisplayImageError,
+                                finalize_display_image_change, remove_display_image,
+                                replace_display_image)
 from app.extensions import db
 from app.extensions import limiter
 from app.display_images import IMAGE_EXTENSIONS, MAX_DISPLAY_IMAGE_BYTES
@@ -16,11 +18,18 @@ from app.display_images import IMAGE_EXTENSIONS, MAX_DISPLAY_IMAGE_BYTES
 def profile():
     if request.method == "POST":
         try:
-            replace_display_image(current_user, request.files.get("avatar"), attribute="avatar_storage_object", scope="account-profiles", user=current_user)
+            change = replace_display_image(current_user, request.files.get("avatar"), attribute="avatar_storage_object", scope="account-profiles", user=current_user)
             db.session.commit()
         except DisplayImageError as exc:
             db.session.rollback(); flash(str(exc), "danger")
-        else: flash("Đã cập nhật ảnh đại diện.", "success")
+        else:
+            try:
+                finalize_display_image_change(change)
+            except DisplayImageCleanupError:
+                db.session.rollback()
+                flash("Đã cập nhật ảnh đại diện; ảnh cũ đang chờ dọn dẹp.", "warning")
+            else:
+                flash("Đã cập nhật ảnh đại diện.", "success")
         return redirect(url_for("account.profile"))
     return render_template("account/profile.html")
 
@@ -28,8 +37,15 @@ def profile():
 @bp.post("/avatar/delete")
 @login_required
 def delete_avatar():
-    remove_display_image(current_user, attribute="avatar_storage_object")
-    db.session.commit(); flash("Đã xóa ảnh đại diện.", "success")
+    change = remove_display_image(current_user, attribute="avatar_storage_object")
+    db.session.commit()
+    try:
+        finalize_display_image_change(change)
+    except DisplayImageCleanupError:
+        db.session.rollback()
+        flash("Đã xóa ảnh đại diện; ảnh cũ đang chờ dọn dẹp.", "warning")
+    else:
+        flash("Đã xóa ảnh đại diện.", "success")
     return redirect(url_for("account.profile"))
 
 
@@ -42,7 +58,11 @@ def avatar():
     from app.storage.providers import get_storage_provider
     url = get_storage_provider().create_presigned_download(obj.bucket, obj.object_key,
         current_app.config["STORAGE_DOWNLOAD_URL_TTL_SECONDS"], "inline", obj.original_filename)["url"]
-    return redirect(url)
+    response = redirect(url)
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 @login_required

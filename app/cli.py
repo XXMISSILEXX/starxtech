@@ -172,6 +172,16 @@ def register_cli(app):
         click.echo("mode={mode} matched={matched} cleaned={cleaned} partial={partial} failed={failed}".format(
             mode="dry-run" if dry_run else "apply", **summary))
 
+    @app.cli.command("cleanup-unreferenced-display-images")
+    @click.option("--dry-run/--apply", "dry_run", default=True,
+                  help="Preview or remove unreferenced display images that remain quota-accounted.")
+    @click.option("--batch-size", default=100, type=click.IntRange(min=1, max=1000))
+    def cleanup_unreferenced_display_images(dry_run, batch_size):
+        from app.display_images import cleanup_unreferenced_display_images as cleanup
+        summary = cleanup(dry_run=dry_run, batch_size=batch_size)
+        click.echo("mode={mode} matched={matched} cleaned={cleaned} failed={failed}".format(
+            mode="dry-run" if dry_run else "apply", **summary))
+
     @app.cli.command("daily-report-upload-sessions")
     @click.option("--list-active", "list_active", is_flag=True, help="List non-finalized Daily Report upload sessions.")
     @click.option("--show", "session_id", type=int, help="Show one upload session and its items.")
@@ -192,7 +202,20 @@ def register_cli(app):
         if not row: raise click.ClickException("Không tìm thấy phiên tải ảnh.")
         if cancel_id:
             if row.status == "finalized": raise click.ClickException("Không thể hủy phiên đã hoàn tất.")
-            row.status = "cancelled"; db.session.commit(); click.echo(f"cancelled id={row.id}"); return
+            from app.reports.direct_uploads import UploadSessionCleanupError, cleanup_upload_session_objects
+            row.status = "cancelled"
+            # Match the web lifecycle: retain the cancelled state first so an
+            # operator can retry through the bounded trusted cleanup command.
+            db.session.commit()
+            try:
+                summary = cleanup_upload_session_objects(row)
+                db.session.commit()
+            except UploadSessionCleanupError as exc:
+                db.session.rollback()
+                raise click.ClickException("Không thể dọn dẹp hoàn toàn phiên tải ảnh.") from exc
+            if not summary["complete"]:
+                raise click.ClickException("Phiên đã hủy nhưng còn object được tham chiếu; cần kiểm tra lại.")
+            click.echo(f"cancelled id={row.id}"); return
         items = UploadBatchItem.query.join(UploadBatch).filter(UploadBatch.selection_session_id == row.id).all()
         click.echo(f"id={row.id} project={row.target_id} owner={row.created_by_id} status={row.status} items={len(items)}")
         for item in items: click.echo(f"item={item.id} file={item.original_filename} status={item.status} finalized={bool(item.finalized_at)}")

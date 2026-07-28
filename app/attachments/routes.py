@@ -12,6 +12,16 @@ from app.storage.providers import get_storage_provider
 from app.storage.quota import ensure_bandwidth, record_download
 
 
+@bp.after_request
+def private_media_cache_headers(response):
+    """Never allow an authorised media response to survive a session change."""
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 @bp.get("/<int:attachment_id>")
 def view(attachment_id):
     attachment = _authorised(attachment_id)
@@ -28,7 +38,6 @@ def view(attachment_id):
     db.session.commit()
     response = redirect(get_storage_provider().create_presigned_download(target.bucket, target.object_key,
         current_app.config["STORAGE_DOWNLOAD_URL_TTL_SECONDS"], "inline", obj.original_filename)["url"])
-    response.headers["Cache-Control"] = "private, max-age=60"
     return response
 
 
@@ -42,7 +51,6 @@ def thumbnail(attachment_id):
         derivative.bucket, derivative.object_key,
         current_app.config["STORAGE_DOWNLOAD_URL_TTL_SECONDS"], "inline", obj.original_filename,
     )["url"])
-    response.headers["Cache-Control"] = "private, max-age=60"
     return response
 
 
@@ -153,5 +161,6 @@ def _attachment_status(attachment):
 def _no_store(response):
     response.headers["Cache-Control"] = "no-store, private"
     response.headers["Pragma"] = "no-cache"
+    response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["X-Content-Type-Options"] = "nosniff"
     return response

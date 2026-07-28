@@ -38,6 +38,16 @@ def require_partner_module():
         abort(403, description=PARTNER_MODULE_DENY_MESSAGE)
 
 
+@bp.after_request
+def private_photo_cache_headers(response):
+    if request.endpoint in {"partners.photo_preview", "partners.photo_signed_preview"}:
+        response.headers["Cache-Control"] = "no-store, private"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 @bp.get("/dashboard")
 @permission_required("partners.view")
 def dashboard():
@@ -134,18 +144,19 @@ def index():
 def new():
     if request.method == "POST":
         _require_head_permission_if_changed(None)
+        photo_result = None
         try:
             partner = save_partner(request.form)
             audit("partner.create", "Partner", partner.id, new_values=_partner_snapshot(partner))
             db.session.commit()
             if request.files.get("photo") and request.files["photo"].filename:
                 from app.partner_photos import replace_photo
-                replace_photo(partner, request.files["photo"], kind="profile_photo", user=current_user)
+                photo_result = replace_photo(partner, request.files["photo"], kind="profile_photo", user=current_user)
         except PartnerValidationError as exc:
             db.session.rollback()
             flash(str(exc), "danger")
             return _render_form(form_errors=exc.errors, form=request.form), 400
-        flash("Đã tạo đối tác.", "success")
+        flash("Đã tạo đối tác; ảnh cũ đang chờ dọn dẹp." if photo_result and photo_result["cleanup_pending"] else "Đã tạo đối tác.", "warning" if photo_result and photo_result["cleanup_pending"] else "success")
         return redirect(url_for("partners.detail", partner_id=partner.id))
     return _render_form()
 
@@ -175,9 +186,9 @@ def photo(partner_id):
     partner = _active_partner_or_404(partner_id)
     if not can_edit_partner(partner): abort(403)
     from app.partner_photos import PartnerPhotoError, replace_photo
-    try: replace_photo(partner, request.files.get("photo"), kind="profile_photo", user=current_user)
+    try: result = replace_photo(partner, request.files.get("photo"), kind="profile_photo", user=current_user)
     except (PartnerPhotoError, AttributeError) as exc: flash(str(exc) or "Vui lòng chọn ảnh.", "danger")
-    else: flash("Đã cập nhật ảnh đại diện.", "success")
+    else: flash("Đã cập nhật ảnh đại diện; ảnh cũ đang chờ dọn dẹp." if result["cleanup_pending"] else "Đã cập nhật ảnh đại diện.", "warning" if result["cleanup_pending"] else "success")
     return redirect(url_for("partners.detail", partner_id=partner.id))
 
 
@@ -187,7 +198,8 @@ def photo_delete(partner_id):
     partner = _active_partner_or_404(partner_id)
     if not can_edit_partner(partner): abort(403)
     from app.partner_photos import delete_photo
-    delete_photo(partner, kind="profile_photo"); flash("Đã xóa ảnh đại diện.", "success")
+    result = delete_photo(partner, kind="profile_photo")
+    flash("Đã xóa ảnh đại diện; ảnh cũ đang chờ dọn dẹp." if result["cleanup_pending"] else "Đã xóa ảnh đại diện.", "warning" if result["cleanup_pending"] else "success")
     return redirect(url_for("partners.detail", partner_id=partner.id))
 
 
@@ -196,9 +208,9 @@ def photo_delete(partner_id):
 def photo_signed_preview(partner_id):
     partner = _partner_or_404(partner_id)
     if not can_view_partner(partner): abort(403)
-    from app.partner_photos import PartnerPhotoError, signed_preview
-    try: return jsonify({"ok": True, **signed_preview(partner, kind="profile_photo", user=current_user)})
-    except PartnerPhotoError as exc: return jsonify({"ok": False, "message": str(exc)}), 404
+    if not partner.profile_photo_storage_object or partner.profile_photo_storage_object.upload_status != "active" or partner.profile_photo_storage_object.deleted_at is not None:
+        return jsonify({"ok": False, "message": "Ảnh chưa sẵn sàng."}), 404
+    return jsonify({"ok": True, "url": url_for("partners.photo_preview", partner_id=partner.id)})
 
 
 @bp.get("/<int:partner_id>/photo/preview")
@@ -206,8 +218,11 @@ def photo_signed_preview(partner_id):
 def photo_preview(partner_id):
     partner = _partner_or_404(partner_id)
     if not can_view_partner(partner): abort(403)
-    from app.partner_photos import signed_preview
-    return redirect(signed_preview(partner, kind="profile_photo", user=current_user)["url"])
+    from app.partner_photos import PartnerPhotoError, preview_response
+    try:
+        return preview_response(partner, kind="profile_photo", user=current_user)
+    except PartnerPhotoError:
+        abort(404)
 
 
 @bp.route("/<int:partner_id>/edit", methods=["GET", "POST"])
@@ -219,18 +234,19 @@ def edit(partner_id):
     if request.method == "POST":
         _require_head_permission_if_changed(partner)
         old_values = _partner_snapshot(partner)
+        photo_result = None
         try:
             save_partner(request.form, partner)
             audit("partner.update", "Partner", partner.id, old_values, _partner_snapshot(partner))
             db.session.commit()
             if request.files.get("photo") and request.files["photo"].filename:
                 from app.partner_photos import replace_photo
-                replace_photo(partner, request.files["photo"], kind="profile_photo", user=current_user)
+                photo_result = replace_photo(partner, request.files["photo"], kind="profile_photo", user=current_user)
         except PartnerValidationError as exc:
             db.session.rollback()
             flash(str(exc), "danger")
             return _render_form(partner=partner, form_errors=exc.errors, form=request.form), 400
-        flash("Đã cập nhật đối tác.", "success")
+        flash("Đã cập nhật đối tác; ảnh cũ đang chờ dọn dẹp." if photo_result and photo_result["cleanup_pending"] else "Đã cập nhật đối tác.", "warning" if photo_result and photo_result["cleanup_pending"] else "success")
         return redirect(url_for("partners.detail", partner_id=partner.id))
     return _render_form(partner=partner)
 

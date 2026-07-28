@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 
 from flask import current_app
 
@@ -19,6 +20,9 @@ class StorageProvider:
         raise NotImplementedError
 
     def delete_object(self, bucket, object_key):
+        raise NotImplementedError
+    def open_object(self, bucket, object_key):
+        """Return a readable, bounded-by-caller stream for controlled delivery."""
         raise NotImplementedError
     def download_object(self, bucket, object_key, destination_path): raise NotImplementedError
     def upload_object(self, bucket, object_key, source_path, content_type, metadata=None): raise NotImplementedError
@@ -48,6 +52,12 @@ class FakeStorageProvider(StorageProvider):
     def delete_object(self, bucket, object_key):
         self.objects.pop((bucket, object_key), None)
         self.deleted.append((bucket, object_key))
+
+    def open_object(self, bucket, object_key):
+        try:
+            return BytesIO(self.objects[(bucket, object_key)].get("bytes", b""))
+        except KeyError as exc:
+            raise StorageNotFoundError("Object không tồn tại.") from exc
 
     def register_object(self, bucket, object_key, size, content_type, checksum_sha256=None):
         self.objects[(bucket, object_key)] = {"size": int(size), "content_type": content_type, "checksum_sha256": checksum_sha256, "bytes": b""}
@@ -97,6 +107,9 @@ class S3StorageProvider(StorageProvider):
 
     def delete_object(self, bucket, object_key):
         self.client.delete_object(Bucket=bucket, Key=object_key)
+
+    def open_object(self, bucket, object_key):
+        return self.client.get_object(Bucket=bucket, Key=object_key)["Body"]
 
     def download_object(self, bucket, object_key, destination_path):
         self.client.download_file(bucket, object_key, str(destination_path))

@@ -822,7 +822,9 @@ def _category_snapshot(category):
 @bp.route("/branding", methods=["GET", "POST"])
 def branding():
     from flask_login import current_user
-    from app.display_images import DisplayImageError, remove_display_image, replace_display_image
+    from app.display_images import (DisplayImageCleanupError, DisplayImageError,
+                                    finalize_display_image_change, remove_display_image,
+                                    replace_display_image)
     from app.models import SystemSetting
     if not current_user.can("settings.branding.view"):
         abort(403)
@@ -831,14 +833,24 @@ def branding():
         if not current_user.can("settings.branding.manage"):
             abort(403)
         try:
+            change = None
             if request.form.get("remove_logo"):
-                remove_display_image(setting, attribute="brand_logo_storage_object")
+                change = remove_display_image(setting, attribute="brand_logo_storage_object")
             elif request.files.get("logo") and request.files["logo"].filename:
-                replace_display_image(setting, request.files["logo"], attribute="brand_logo_storage_object", scope="branding", user=current_user)
+                change = replace_display_image(setting, request.files["logo"], attribute="brand_logo_storage_object", scope="branding", user=current_user)
             if db.session.get(SystemSetting, "branding") is None:
                 db.session.add(setting)
-            db.session.commit(); flash("Đã cập nhật nhận diện hệ thống.", "success")
+            db.session.commit()
         except DisplayImageError as exc:
             db.session.rollback(); flash(str(exc), "danger")
+        else:
+            try:
+                if change:
+                    finalize_display_image_change(change)
+            except DisplayImageCleanupError:
+                db.session.rollback()
+                flash("Đã cập nhật nhận diện; ảnh cũ đang chờ dọn dẹp.", "warning")
+            else:
+                flash("Đã cập nhật nhận diện hệ thống.", "success")
         return redirect(url_for("admin.branding"))
     return render_template("admin/branding.html", setting=setting, can_manage=current_user.can("settings.branding.manage"))

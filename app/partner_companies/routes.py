@@ -18,6 +18,16 @@ def require_partner_module():
         abort(403, description="Bạn không có quyền truy cập phân hệ Quản lý đối tác.")
 
 
+@bp.after_request
+def private_photo_cache_headers(response):
+    if request.endpoint in {"partner_companies.photo_preview", "partner_companies.photo_signed_preview"}:
+        response.headers["Cache-Control"] = "no-store, private"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 @bp.get("/")
 @permission_required("partner_companies.view")
 def index():
@@ -88,9 +98,9 @@ def detail(company_id):
 def photo(company_id):
     company = _active_company_or_404(company_id)
     from app.partner_photos import PartnerPhotoError, replace_photo
-    try: replace_photo(company, request.files.get("photo"), kind="company_photo", user=current_user)
+    try: result = replace_photo(company, request.files.get("photo"), kind="company_photo", user=current_user)
     except (PartnerPhotoError, AttributeError) as exc: flash(str(exc) or "Vui lòng chọn ảnh.", "danger")
-    else: flash("Đã cập nhật logo công ty.", "success")
+    else: flash("Đã cập nhật logo công ty; ảnh cũ đang chờ dọn dẹp." if result["cleanup_pending"] else "Đã cập nhật logo công ty.", "warning" if result["cleanup_pending"] else "success")
     return redirect(url_for("partner_companies.detail", company_id=company.id))
 
 
@@ -99,7 +109,8 @@ def photo(company_id):
 def photo_delete(company_id):
     company = _active_company_or_404(company_id)
     from app.partner_photos import delete_photo
-    delete_photo(company, kind="company_photo"); flash("Đã xóa logo công ty.", "success")
+    result = delete_photo(company, kind="company_photo")
+    flash("Đã xóa logo công ty; ảnh cũ đang chờ dọn dẹp." if result["cleanup_pending"] else "Đã xóa logo công ty.", "warning" if result["cleanup_pending"] else "success")
     return redirect(url_for("partner_companies.detail", company_id=company.id))
 
 
@@ -107,17 +118,20 @@ def photo_delete(company_id):
 @permission_required("partner_companies.view")
 def photo_signed_preview(company_id):
     company = _company_or_404(company_id)
-    from app.partner_photos import PartnerPhotoError, signed_preview
-    try: return jsonify({"ok": True, **signed_preview(company, kind="company_photo", user=current_user)})
-    except PartnerPhotoError as exc: return jsonify({"ok": False, "message": str(exc)}), 404
+    if not company.company_photo_storage_object or company.company_photo_storage_object.upload_status != "active" or company.company_photo_storage_object.deleted_at is not None:
+        return jsonify({"ok": False, "message": "Ảnh chưa sẵn sàng."}), 404
+    return jsonify({"ok": True, "url": url_for("partner_companies.photo_preview", company_id=company.id)})
 
 
 @bp.get("/<int:company_id>/photo/preview")
 @permission_required("partner_companies.view")
 def photo_preview(company_id):
     company = _company_or_404(company_id)
-    from app.partner_photos import signed_preview
-    return redirect(signed_preview(company, kind="company_photo", user=current_user)["url"])
+    from app.partner_photos import PartnerPhotoError, preview_response
+    try:
+        return preview_response(company, kind="company_photo", user=current_user)
+    except PartnerPhotoError:
+        abort(404)
 
 
 @bp.get("/<int:company_id>/departments")

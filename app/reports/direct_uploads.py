@@ -318,6 +318,11 @@ def cancel_upload_session_for_actor(*, actor, project, session_id, provider=None
     if session.status not in {"cancelled", "expired"}:
         session.status = "expired" if session.expires_at <= _now() else "cancelled"
 
+    # Persist eligibility before touching provider bytes.  If the provider is
+    # unavailable, the trusted bounded cleanup can discover and retry this
+    # selected session instead of losing the cancellation state on rollback.
+    db.session.commit()
+
     cleanup = cleanup_upload_session_objects(session, provider=provider)
     db.session.commit()
     return session, cleanup
