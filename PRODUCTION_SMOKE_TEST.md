@@ -18,5 +18,11 @@ Run this after first deploy and after major updates.
 - [ ] Confirm viewer can read dashboards/reports/issues.
 - [ ] Confirm viewer cannot create, edit, delete, close, reopen, or upload.
 - [ ] Run DB backup: `/opt/starx-report/scripts/backup_db.sh`.
-- [ ] Run uploads backup: `/opt/starx-report/scripts/backup_uploads.sh`.
-- [ ] Confirm backup files exist under `/opt/backups/starx-report`.
+- [ ] Confirm `docker compose ps` shows web, worker, scheduler and Redis healthy;
+  `migrate` must have exited successfully.
+- [ ] Confirm worker task registration with `docker compose exec worker celery -A
+  app.celery_worker:celery_app inspect registered` and inspect Beat logs.
+- [ ] Run DB backup: `/opt/starx-report/scripts/backup_db.sh` and verify its
+  encrypted off-host copy with an isolated restore drill.
+- [ ] Verify the object-storage provider's configured versioning/replication and
+  lifecycle; this repository does not create S3 backups.

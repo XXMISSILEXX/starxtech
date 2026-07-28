@@ -1,212 +1,123 @@
-# Deploy Ubuntu Production
+# StarX production deployment (Ubuntu 24.04 LTS)
 
-This guide deploys StarX Project Daily Report System to `/opt/starx-report` with PostgreSQL, Gunicorn, Nginx, HTTPS, and daily backups.
+This is the authoritative production topology. It supports Ubuntu 24.04 LTS,
+Docker Engine 26+ with Compose v2.24+ (healthcheck conditions and secrets),
+and Python 3.12 inside the reviewed application image.
 
-## 1. Install Ubuntu Packages
+```text
+Internet -> Nginx + Certbot (host) -> 127.0.0.1:6655 -> Compose web
+host PostgreSQL <------------------------------------ Compose migrate/web/worker/Beat
+Compose Redis (private bridge, authenticated, AOF) <- Compose web/worker/Beat
+external S3-compatible private bucket <------------- Compose web/worker
+```
+
+Cloudflared is not production ingress. The legacy `.env.docker.example` is a
+non-production migration notice only.
+
+## Host preparation
+
+Install Docker Engine/Compose from Docker's supported Ubuntu instructions, then
+install host services:
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-venv python3-pip postgresql postgresql-contrib libpq-dev nginx certbot python3-certbot-nginx build-essential
+sudo apt install -y postgresql postgresql-contrib nginx certbot python3-certbot-nginx
+sudo ufw allow OpenSSH
+sudo ufw allow 'Nginx Full'
+sudo ufw enable
 ```
 
-## 2. Create Linux User
+Do not expose PostgreSQL, Redis, or port 6655 in the firewall. Create an
+application-only PostgreSQL role/database, restrict PostgreSQL to localhost or
+the Docker host gateway as selected, and grant no superuser/createdb/createrole
+privileges. Keep the PostgreSQL URL only in the protected secret file.
 
-```bash
-sudo adduser --system --group --home /opt/starx-report starxreport
-sudo mkdir -p /opt/starx-report
-sudo chown -R starxreport:starxreport /opt/starx-report
-```
+Create `/srv/starx-report/secrets` as described in [secrets/README.md](secrets/README.md).
+Generate secret values with a password manager or `openssl rand -base64 48`; do
+not place them in shell history, Git, Compose environment files, or logs.
 
-Clone or copy the source into `/opt/starx-report`.
+## S3-compatible storage
 
-## 3. Create PostgreSQL DB/User
+Provision one private bucket and a least-privilege credential limited to the
+StarX bucket/prefix. Require TLS endpoint, bucket, region, access key and
+secret key. Configure bucket CORS only for the explicit HTTPS Nginx origin,
+with `PUT, HEAD` and `Content-Type, x-amz-meta-sha256`; never use wildcard
+origins. Define lifecycle/retention/versioning with the storage provider.
+Provider durability and backup replication are external operational decisions;
+this repository does not implement object-store backups.
 
-```bash
-sudo -u postgres psql
-```
+## Immutable release procedure
 
-```sql
-CREATE USER starx_report_prod WITH PASSWORD 'CHANGE_THIS_STRONG_PASSWORD';
-CREATE DATABASE starx_report_prod OWNER starx_report_prod;
-GRANT ALL PRIVILEGES ON DATABASE starx_report_prod TO starx_report_prod;
-\q
-```
+Every release is a reviewed Git commit. Build and push an immutable image tag
+such as `registry.example.invalid/starx-report:<full-git-sha>`; record both the
+Git SHA and registry image digest in the release ticket. Do not use `latest` as
+the only deployment or rollback point. The Dockerfile currently uses the valid
+`python:3.12-slim` tag because a registry digest was not verified in this repo;
+pin its reviewed digest as a release-gate action.
 
-## 4. Create Virtualenv And Install Requirements
+On the host, create a protected Compose environment file with non-secret
+values: `APP_IMAGE`, `SECRETS_DIR`, `STORAGE_ENDPOINT_URL`, `STORAGE_BUCKET`,
+`STORAGE_REGION`, `STORAGE_CORS_ALLOWED_ORIGINS`, and `TRUSTED_HOSTS`. Use
+`docker compose --env-file /etc/starx-report/compose.env config` before every
+release. Never copy `.env.example` unchanged into production.
 
-```bash
-cd /opt/starx-report
-sudo -u starxreport python3 -m venv .venv
-sudo -u starxreport .venv/bin/pip install --upgrade pip
-sudo -u starxreport .venv/bin/pip install -r requirements.txt
-```
+`migrate` is the sole migration owner. `docker compose up -d` runs it once;
+web, worker and Beat have `service_completed_successfully` dependencies and
+therefore fail closed if migration fails. Normal startup never seeds users or
+permissions. Bootstrap a first admin only via a separately approved, audited
+one-shot command after migration; never put its password in Compose secrets.
 
-## 5. Create Production `.env`
+## Nginx and TLS
 
-```bash
-sudo -u starxreport cp /opt/starx-report/.env.example /opt/starx-report/.env
-sudo -u starxreport nano /opt/starx-report/.env
-```
+Install [deploy/nginx/starx-report.conf](deploy/nginx/starx-report.conf) after
+replacing the example hostname, run `sudo nginx -t`, enable the site, then run
+`sudo certbot --nginx -d report.example.invalid` using the real hostname.
+Nginx is the single trusted proxy hop and forwards only to `127.0.0.1:6655`.
 
-Use production values:
+## Verification and monitoring
 
-```env
-APP_ENV=production
-FLASK_DEBUG=false
-FLASK_APP=run.py
-SECRET_KEY=GENERATE_A_LONG_RANDOM_SECRET
-DATABASE_URL=postgresql+psycopg://starx_report_prod:CHANGE_THIS_STRONG_PASSWORD@127.0.0.1:5432/starx_report_prod
-UPLOAD_ROOT=/opt/starx-report/storage/uploads
-MAX_UPLOAD_MB=10
-MAX_IMAGES_PER_SECTION=3
-SESSION_COOKIE_SECURE=true
-SESSION_COOKIE_HTTPONLY=true
-SESSION_COOKIE_SAMESITE=Lax
-```
+Before production: deploy the immutable image to staging with real PostgreSQL,
+Redis and a non-production S3 bucket; verify migration, `/healthz`, worker
+`inspect ping`, Beat schedule, direct upload, derivatives, bulk ZIP cleanup,
+and backup restore. In production, run the same non-destructive checks plus
+[PRODUCTION_SMOKE_TEST.md](PRODUCTION_SMOKE_TEST.md). Inspect `docker compose
+ps`, `docker compose logs web worker scheduler`, Nginx access/error logs, and
+`journalctl -u starx-report-backup.service`.
 
-Create uploads folder:
+## Backup, restore, rollback, and disaster recovery
 
-```bash
-sudo -u starxreport mkdir -p /opt/starx-report/storage/uploads
-```
+The host timer examples under `deploy/systemd/` run `scripts/backup_db.sh`.
+Store encrypted PostgreSQL backups and a configuration inventory (image tag,
+digest, commit, Compose env variable names, secret location metadata) off-host;
+the inventory must not contain plaintext secrets. Test restore into an isolated
+database before declaring a backup usable. `scripts/restore_db.sh` is a manual,
+destructive restore tool and must run only against an explicitly selected empty
+or recovery database.
 
-## 6. Run Migration And Seed Admin
+- Deleted web/worker containers lose only their filesystem and temporary jobs;
+  PostgreSQL, S3 objects and Redis named volume survive.
+- Lost Redis data can lose queued tasks/results/rate-limit counters. Re-run the
+  tracked reconciliation after recovery; do not assume every queued job is
+  recoverable.
+- Lost VPS disk loses host PostgreSQL and local Redis/Compose state unless the
+  off-host backup/release record is available.
+- Lost PostgreSQL host data requires verified database restore before starting
+  web/worker. S3 alone cannot reconstruct metadata.
+- S3 outage leaves metadata available but uploads/downloads/derivatives fail;
+  do not substitute fake/local storage.
+- Git remote outage does not block rollback only if immutable images and
+  release metadata were retained; it blocks rebuilds otherwise.
 
-```bash
-cd /opt/starx-report
-sudo -u starxreport bash -lc 'source .venv/bin/activate && flask db upgrade'
-sudo -u starxreport bash -lc 'source .venv/bin/activate && flask seed-admin --username admin --password "CHANGE_ME_NOW" --email admin@example.com --full-name "System Admin"'
-```
+Rollback means selecting the recorded prior immutable image, verifying its
+database compatibility, restoring/rolling back the database only with an
+approved migration plan, then `docker compose up -d`. Recovery ownership is:
+incident lead freezes writes, DBA restores/verifies PostgreSQL, platform owner
+restores secrets/release metadata and S3 access, then application owner starts
+the release and validates health/worker/Beat.
 
-Log in once and change the admin password immediately.
-
-## 7. Gunicorn Systemd Service
-
-```bash
-sudo nano /etc/systemd/system/starx-report.service
-```
-
-```ini
-[Unit]
-Description=StarX Project Daily Report Flask App
-After=network.target postgresql.service
-
-[Service]
-User=starxreport
-Group=starxreport
-WorkingDirectory=/opt/starx-report
-Environment="PATH=/opt/starx-report/.venv/bin"
-Environment="FLASK_APP=run.py"
-ExecStart=/opt/starx-report/.venv/bin/gunicorn --workers 3 --bind 127.0.0.1:8000 wsgi:app
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable starx-report
-sudo systemctl start starx-report
-sudo systemctl status starx-report
-```
-
-## 8. Nginx Reverse Proxy
-
-```bash
-sudo nano /etc/nginx/sites-available/starx-report
-```
-
-```nginx
-server {
-    listen 80;
-    server_name report.example.com;
-
-    client_max_body_size 20M;
-
-    location /static/ {
-        alias /opt/starx-report/app/static/;
-        expires 7d;
-    }
-
-    # Do not expose /storage/uploads directly.
-    # Attachments must go through /attachments/<id> for permission checks.
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-```bash
-sudo ln -s /etc/nginx/sites-available/starx-report /etc/nginx/sites-enabled/starx-report
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-## 9. HTTPS With Certbot
-
-```bash
-sudo certbot --nginx -d report.example.com
-```
-
-## 10. Backup Cron
-
-```bash
-sudo mkdir -p /opt/backups/starx-report
-sudo chown -R starxreport:starxreport /opt/backups/starx-report
-```
-
-Install cron as the `starxreport` user:
-
-```bash
-sudo crontab -u starxreport -e
-```
-
-```cron
-0 2 * * * /opt/starx-report/scripts/backup_db.sh >> /var/log/starx-report-backup.log 2>&1
-15 2 * * * /opt/starx-report/scripts/backup_uploads.sh >> /var/log/starx-report-backup.log 2>&1
-```
-
-Manual backup/restore:
-
-```bash
-sudo -u starxreport /opt/starx-report/scripts/backup_db.sh
-sudo -u starxreport /opt/starx-report/scripts/backup_uploads.sh
-sudo -u starxreport /opt/starx-report/scripts/restore_db.sh /opt/backups/starx-report/db/starx_report_db_YYYYmmdd_HHMMSS.sql.gz
-```
-
-## 11. Update Code
-
-```bash
-cd /opt/starx-report
-sudo -u starxreport git pull
-sudo -u starxreport bash -lc 'source .venv/bin/activate && pip install -r requirements.txt'
-sudo -u starxreport bash -lc 'source .venv/bin/activate && flask db upgrade'
-sudo systemctl restart starx-report
-sudo systemctl status starx-report
-```
-
-## 12. Logs
-
-```bash
-journalctl -u starx-report -f
-sudo tail -f /var/log/nginx/access.log /var/log/nginx/error.log
-sudo tail -f /var/log/starx-report-backup.log
-```
-
-## 13. Production Checks
-
-- `APP_ENV=production`
-- `FLASK_DEBUG=false`
-- strong `SECRET_KEY`
-- `SESSION_COOKIE_SECURE=true`
-- HTTPS enabled
-- uploads folder is not public in Nginx
-- `/attachments/<id>` checks permissions
-- backup scripts run successfully
+To install the tracked backup timer on a real target (do not run these on a
+workstation), copy `deploy/systemd/backup.env.example` to
+`/etc/starx-report/backup.env` with mode 0600, copy the service/timer to
+`/etc/systemd/system/`, then run `sudo systemctl daemon-reload` and `sudo
+systemctl enable --now starx-report-backup.timer`. Confirm with `systemctl
+list-timers starx-report-backup.timer` and test a restore in isolation.

@@ -1,0 +1,14 @@
+[Unit]
+Description=StarX PostgreSQL backup
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+User=starxreport
+Group=starxreport
+WorkingDirectory=/opt/starx-report
+EnvironmentFile=/etc/starx-report/backup.env
+ExecStart=/opt/starx-report/scripts/backup_db.sh
+NoNewPrivileges=true
+PrivateTmp=true

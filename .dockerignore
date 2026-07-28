@@ -1,4 +1,5 @@
 .git
+.audit/
 .env*
 .venv
 venv
@@ -12,4 +13,11 @@ tmp/
 secrets/
 backups/
 docker_backup_*/
+deploy_backup_*/
+claude-partial-audit-backup/
+tests/
+tests_js/
+htmlcov/
+.coverage
+*.sqlite*
 *.log

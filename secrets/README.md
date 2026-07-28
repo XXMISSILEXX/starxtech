@@ -1,29 +1,33 @@
 # Docker Compose secrets
 
 Không tạo secret thật trong repository. Trên host production, tạo các file
-non-empty tại `/srv/construction_relation_management/secrets/`:
+non-empty tại `/srv/starx-report/secrets/`:
 
 - `app_secret_key`: Flask `SECRET_KEY` ngẫu nhiên, dài tối thiểu 32 ký tự.
 - `database_url`: PostgreSQL SQLAlchemy URL.
-- `admin_password`: mật khẩu khởi tạo `SUPER_ADMIN` (ít nhất 12 ký tự, đủ 3
-  nhóm ký tự theo policy của app).
-- `cloudflare_tunnel_token`: token của remotely-managed Cloudflare Tunnel.
+- `storage_access_key_id`: S3-compatible access key có quyền tối thiểu cho một
+  bucket/prefix riêng của StarX.
+- `storage_secret_access_key`: secret S3-compatible tương ứng.
+- `redis_password`: mật khẩu Redis ngẫu nhiên, riêng cho deployment này.
+
+Production startup không tự seed admin. Tạo tài khoản bootstrap qua quy trình
+release có kiểm soát sau migration, không lưu mật khẩu bootstrap ở Compose.
 
 `database_url` nên dùng Unix socket; chỉ thay các placeholder trên host, không
 đưa password vào tài liệu hay commit:
 
 ```text
-postgresql+psycopg://ubuntu:<PASSWORD>@/construction_relation_management?host=/var/run/postgresql
+postgresql+psycopg://starx_report:<PASSWORD>@host.docker.internal:5432/starx_report_prod
 ```
 
 Khuyến nghị quyền host:
 
 ```bash
-sudo chown -R root:root /srv/construction_relation_management/secrets
-sudo chmod 700 /srv/construction_relation_management/secrets
-sudo chmod 600 /srv/construction_relation_management/secrets/*
+sudo chown -R root:root /srv/starx-report/secrets
+sudo chmod 700 /srv/starx-report/secrets
+sudo chmod 600 /srv/starx-report/secrets/*
 ```
 
-Docker Compose mount secrets read-only vào `/run/secrets`. Nếu `cloudflared`
-không đọc được token do host permission, kiểm tra quyền đọc file của Docker/daemon
-trước; không nới quyền thành world-writable và không in token để chẩn đoán.
+Docker Compose mount secrets read-only vào `/run/secrets`. Kiểm tra quyền đọc
+file của Docker/daemon trước; không nới quyền thành world-writable và không in
+secret để chẩn đoán.

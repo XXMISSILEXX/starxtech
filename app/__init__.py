@@ -4,7 +4,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.config import Config
 from app.extensions import csrf, db, limiter, login_manager, migrate
-from app.security import production_configuration_errors
+from app.security import configuration_errors
 from app.ui import register_template_helpers
 
 
@@ -35,17 +35,18 @@ def create_app(config_class=Config):
         "STORAGE_CORS_ALLOWED_ORIGINS": ("http://192.168.1.159:5666",),
         "BULK_DOWNLOAD_MAX_FILES": 100, "BULK_DOWNLOAD_MAX_TOTAL_BYTES": 300 * 1024 * 1024,
         "BULK_DOWNLOAD_ZIP_TTL_SECONDS": 86400, "BULK_DOWNLOAD_TEMP_ROOT": "/tmp/starx-bulk-downloads",
-        "CELERY_BROKER_URL": "redis://localhost:6379/0", "CELERY_RESULT_BACKEND": "redis://localhost:6379/1", "CELERY_TASK_ALWAYS_EAGER": False, "CELERY_TASK_EAGER_PROPAGATES": True, "CELERY_RESULT_EXPIRES_SECONDS": 3600, "CELERY_WORKER_PREFETCH_MULTIPLIER": 1, "CELERY_TASK_ACKS_LATE": True,
+        "CELERY_BROKER_URL": None, "CELERY_RESULT_BACKEND": None, "CELERY_TASK_ALWAYS_EAGER": False, "CELERY_TASK_EAGER_PROPAGATES": True, "CELERY_RESULT_EXPIRES_SECONDS": 3600, "CELERY_WORKER_PREFETCH_MULTIPLIER": 1, "CELERY_TASK_ACKS_LATE": True,
         "CELERY_TASK_TIME_LIMIT_IMAGE_SECONDS": 120, "CELERY_TASK_SOFT_TIME_LIMIT_IMAGE_SECONDS": 90, "CELERY_TASK_TIME_LIMIT_VIDEO_SECONDS": 300, "CELERY_TASK_SOFT_TIME_LIMIT_VIDEO_SECONDS": 240, "MEDIA_PROCESSING_MAX_ATTEMPTS": 3,
-        "CELERY_TASK_TIME_LIMIT_BULK_DOWNLOAD_SECONDS": 1800,
+        "CELERY_TASK_TIME_LIMIT_BULK_DOWNLOAD_SECONDS": 1800, "REPORT_UPLOAD_CLEANUP_INTERVAL_SECONDS": 3600,
+        "MEDIA_RECONCILIATION_INTERVAL_SECONDS": 900, "BULK_DOWNLOAD_CLEANUP_INTERVAL_SECONDS": 3600,
         "MEDIA_TEMP_ROOT": "/tmp/starx-media-processing", "MEDIA_IMAGE_THUMBNAIL_MAX_SIZE": 480, "MEDIA_IMAGE_PREVIEW_MAX_SIZE": 1600, "MEDIA_VIDEO_POSTER_MAX_SIZE": 720,
     }.items():
         app.config.setdefault(key, value)
     if app.config.get("MAX_CONTENT_LENGTH") is None:
         app.config["MAX_CONTENT_LENGTH"] = int(app.config.get("MAX_UPLOAD_MB", 10)) * 1024 * 1024
-    configuration_errors = production_configuration_errors(app.config)
-    if configuration_errors:
-        raise RuntimeError("Unsafe production configuration: " + "; ".join(configuration_errors))
+    startup_errors = configuration_errors(app.config)
+    if startup_errors:
+        raise RuntimeError("Unsafe production configuration: " + "; ".join(startup_errors))
     proxy_hops = int(app.config.get("TRUST_PROXY_HOPS", 0))
     if proxy_hops:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=proxy_hops, x_proto=proxy_hops, x_host=proxy_hops)

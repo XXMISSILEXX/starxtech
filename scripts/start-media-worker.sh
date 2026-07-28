@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Local-development helper only. Production uses the supervised Compose
+# `worker` service documented in DOCKER_DEPLOY.md.
+
 : "${DATABASE_URL:?DATABASE_URL is required for the media worker}"
 : "${CELERY_BROKER_URL:?CELERY_BROKER_URL is required for the media worker}"
 : "${STORAGE_PROVIDER:?STORAGE_PROVIDER is required for the media worker}"

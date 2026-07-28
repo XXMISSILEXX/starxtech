@@ -11,9 +11,16 @@ from app.celery_app import celery_app
 
 def test_media_tasks_are_registered_with_expected_routes(app, monkeypatch):
     from app.media_processing import tasks
-    assert {"media.process_image_derivatives", "media.process_video_derivatives", "media.reconcile_media_jobs"} <= set(celery_app.tasks)
+    from app.bulk_downloads import tasks as bulk_download_tasks  # noqa: F401
+    assert {
+        "media.process_image_derivatives", "media.process_video_derivatives", "media.reconcile_media_jobs",
+        "reports.cleanup_expired_upload_sessions", "bulk_download.build_zip", "bulk_download.cleanup_expired",
+    } <= set(celery_app.tasks)
     assert celery_app.conf.task_routes["media.process_image_derivatives"]["queue"] == "media_image"
     assert celery_app.conf.task_routes["media.process_video_derivatives"]["queue"] == "media_video"
+    assert {
+        "cleanup-expired-report-upload-sessions", "reconcile-media-jobs", "cleanup-expired-bulk-downloads",
+    } <= set(celery_app.conf.beat_schedule)
     def process_job_in_context(job_id):
         assert has_app_context()
         return SimpleNamespace(

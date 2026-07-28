@@ -32,9 +32,11 @@ def read_csv_setting(name: str) -> tuple[str, ...]:
 
 class Config:
     STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", "20260725-8106")
-    APP_ENV = os.getenv("APP_ENV", "local")
-    DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true" and APP_ENV != "production"
-    SECRET_KEY = read_secret("SECRET_KEY", "dev-secret-key")
+    # Do not supply an implicit environment.  A typo here used to silently
+    # retain the development signing key while skipping production checks.
+    APP_ENV = os.getenv("APP_ENV")
+    DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+    SECRET_KEY = read_secret("SECRET_KEY")
     SQLALCHEMY_DATABASE_URI = read_secret(
         "DATABASE_URL",
         "postgresql+psycopg://starx:starx@127.0.0.1:5432/starx_daily_report",
@@ -58,7 +60,7 @@ class Config:
     SESSION_COOKIE_HTTPONLY = os.getenv("SESSION_COOKIE_HTTPONLY", "true").lower() == "true"
     SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
     SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
-    RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "redis://127.0.0.1:6379/2")
+    RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
     RATELIMIT_LOGIN_LIMIT = os.getenv("RATELIMIT_LOGIN_LIMIT", "5 per minute")
     RATELIMIT_EXPORT_LIMIT = os.getenv("RATELIMIT_EXPORT_LIMIT", "10 per hour")
     TRUST_PROXY_HOPS = int(os.getenv("TRUST_PROXY_HOPS", "0"))
@@ -96,8 +98,8 @@ class Config:
     BULK_DOWNLOAD_MAX_TOTAL_BYTES = int(os.getenv("BULK_DOWNLOAD_MAX_TOTAL_BYTES", str(300 * 1024 * 1024)))
     BULK_DOWNLOAD_ZIP_TTL_SECONDS = int(os.getenv("BULK_DOWNLOAD_ZIP_TTL_SECONDS", "86400"))
     BULK_DOWNLOAD_TEMP_ROOT = os.getenv("BULK_DOWNLOAD_TEMP_ROOT", str(BASE_DIR / "tmp" / "bulk_downloads"))
-    CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
-    CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
+    CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
+    CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
     CELERY_TASK_ALWAYS_EAGER = os.getenv("CELERY_TASK_ALWAYS_EAGER", "false").lower() == "true"
     CELERY_TASK_EAGER_PROPAGATES = os.getenv("CELERY_TASK_EAGER_PROPAGATES", "true").lower() == "true"
     CELERY_RESULT_EXPIRES_SECONDS = int(os.getenv("CELERY_RESULT_EXPIRES_SECONDS", "3600"))
@@ -108,6 +110,9 @@ class Config:
     CELERY_TASK_TIME_LIMIT_VIDEO_SECONDS = int(os.getenv("CELERY_TASK_TIME_LIMIT_VIDEO_SECONDS", "300"))
     CELERY_TASK_SOFT_TIME_LIMIT_VIDEO_SECONDS = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT_VIDEO_SECONDS", "240"))
     CELERY_TASK_TIME_LIMIT_BULK_DOWNLOAD_SECONDS = int(os.getenv("CELERY_TASK_TIME_LIMIT_BULK_DOWNLOAD_SECONDS", "1800"))
+    REPORT_UPLOAD_CLEANUP_INTERVAL_SECONDS = int(os.getenv("REPORT_UPLOAD_CLEANUP_INTERVAL_SECONDS", "3600"))
+    MEDIA_RECONCILIATION_INTERVAL_SECONDS = int(os.getenv("MEDIA_RECONCILIATION_INTERVAL_SECONDS", "900"))
+    BULK_DOWNLOAD_CLEANUP_INTERVAL_SECONDS = int(os.getenv("BULK_DOWNLOAD_CLEANUP_INTERVAL_SECONDS", "3600"))
     MEDIA_PROCESSING_MAX_ATTEMPTS = int(os.getenv("MEDIA_PROCESSING_MAX_ATTEMPTS", "3"))
     MEDIA_IMAGE_THUMBNAIL_MAX_SIZE = int(os.getenv("MEDIA_IMAGE_THUMBNAIL_MAX_SIZE", "480"))
     MEDIA_IMAGE_PREVIEW_MAX_SIZE = int(os.getenv("MEDIA_IMAGE_PREVIEW_MAX_SIZE", "1600"))

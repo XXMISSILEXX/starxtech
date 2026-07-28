@@ -9,6 +9,7 @@ from app.project_memberships import preset_flags
 
 
 class TestConfig:
+    APP_ENV = "testing"
     TESTING = True
     SECRET_KEY = "test-secret"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"

@@ -16,9 +16,12 @@ fi
 
 cd "$APP_DIR"
 
-set -a
-source .env
-set +a
+if [ -z "${DATABASE_URL:-}" ] && [ -n "${DATABASE_URL_FILE:-}" ]; then
+  DATABASE_URL="$(cat "$DATABASE_URL_FILE")"
+  export DATABASE_URL
+fi
+
+: "${DATABASE_URL:?DATABASE_URL or DATABASE_URL_FILE is required}"
 
 gunzip -c "$BACKUP_FILE" | psql "$DATABASE_URL"
 

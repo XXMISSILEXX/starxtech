@@ -30,7 +30,7 @@ from app.models import (
     Role,
 )
 from app.partners.services import _add_with_sqlite_id
-from app.security import is_default_secret_key, password_policy_errors, production_configuration_errors
+from app.security import configuration_errors, is_default_secret_key, password_policy_errors
 
 
 PARTNER_SEED_TABLES = [
@@ -399,8 +399,8 @@ def _security_audit(verbose=False):
             failures += 1
 
     config = current_app.config
-    production_errors = production_configuration_errors(config)
-    check(not production_errors, "production-guards", "production configuration is safe", "; ".join(production_errors) or "unsafe configuration")
+    startup_errors = configuration_errors(config)
+    check(not startup_errors, "startup-configuration", "startup configuration is safe", "; ".join(startup_errors) or "unsafe configuration")
     weak_secret = is_default_secret_key(config.get("SECRET_KEY"))
     if config.get("APP_ENV") == "production":
         check(not weak_secret, "secret-key", "strong non-default key configured", "missing/default/short SECRET_KEY")
@@ -431,7 +431,12 @@ def _security_audit(verbose=False):
     check(bool(config.get("DAILY_REPORT_DIRECT_UPLOAD_ENABLED")) and all(int(config.get(name, 0)) > 0 for name in report_upload_limits), "daily-report-direct-upload", "daily report direct upload limits configured", "direct upload disabled or limits are invalid")
     origins = tuple(config.get("STORAGE_CORS_ALLOWED_ORIGINS") or ())
     check(bool(origins) and all("*" not in origin for origin in origins), "storage-cors-origins", "explicit storage CORS origins configured", "missing or wildcard storage CORS origin")
-    check(bool(config.get("CELERY_BROKER_URL")) and bool(config.get("CELERY_RESULT_BACKEND")), "celery-config-present", "Celery broker/result configured", "Celery broker/result missing")
+    if config.get("APP_ENV") == "production":
+        check(bool(config.get("CELERY_BROKER_URL")) and bool(config.get("CELERY_RESULT_BACKEND")), "celery-config-present", "Celery broker/result configured", "Celery broker/result missing")
+    elif config.get("CELERY_BROKER_URL") and config.get("CELERY_RESULT_BACKEND"):
+        _audit_line("PASS", "celery-config-present", "optional local Celery broker/result configured")
+    else:
+        _audit_line("PASS", "celery-config-present", "optional outside production")
     check(config.get("APP_ENV") != "production" or not config.get("CELERY_TASK_ALWAYS_EAGER"), "celery-eager-not-production", "Celery eager disabled in production", "CELERY_TASK_ALWAYS_EAGER enabled in production")
     check(bool(config.get("MEDIA_TEMP_ROOT")), "media-temp-root-configured", "media temp root configured", "MEDIA_TEMP_ROOT missing")
     check(all(int(config.get(n, 0)) > 0 for n in ("CELERY_TASK_TIME_LIMIT_IMAGE_SECONDS", "CELERY_TASK_TIME_LIMIT_VIDEO_SECONDS")), "media-timeouts-configured", "media timeouts configured", "media timeout missing")

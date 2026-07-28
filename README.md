@@ -159,7 +159,9 @@ URLs. Configure the bucket CORS rule with your application origins from
 the browser does not send StarX application cookies to object storage.
 ```
 
-`memory://` là rate-limit storage mặc định cho local/internal. Redis là tuỳ chọn, nhưng nên dùng storage chia sẻ khi chạy nhiều worker production. Xem checklist chi tiết tại [SECURITY_AUDIT_CHECKLIST.md](SECURITY_AUDIT_CHECKLIST.md).
+`memory://` is local/test-only. Production requires explicit `APP_ENV=production`,
+PostgreSQL, authenticated Redis for rate limiting/Celery, and S3-compatible
+storage; unknown or empty environments fail during application startup.
 
 Run the app locally:
 
@@ -189,25 +191,16 @@ User.query.count()
 
 ## Production Operations
 
-### Media worker
+### Production deployment
 
-Load the same environment used by Flask, then verify the worker identity and
-start the prefork media worker:
+Production uses host Nginx/Certbot/PostgreSQL/firewall/backup timer and one
+Compose stack with a migration service, Gunicorn web, supervised Celery worker,
+Celery Beat scheduler, and private authenticated Redis. It runs Python 3.12.
+Cloudflared is not the production ingress.
 
-```bash
-flask worker-config-check
-scripts/start-media-worker.sh
-```
-
-The wrapper requires `DATABASE_URL`, `CELERY_BROKER_URL`, and a valid
-`STORAGE_PROVIDER`; it starts queues `media_image`, `media_video`,
-`storage_cleanup`, and `bulk_download`. Recover committed jobs after a broker
-outage with `flask reconcile-media-jobs --module daily-reports --apply`.
-
-- Ubuntu deployment guide: [DEPLOY_UBUNTU.md](DEPLOY_UBUNTU.md)
-- Docker Compose + Cloudflared: [DOCKER_DEPLOY.md](DOCKER_DEPLOY.md)
+- Authoritative path: [DEPLOY_UBUNTU.md](DEPLOY_UBUNTU.md)
+- Compose release gate: [DOCKER_DEPLOY.md](DOCKER_DEPLOY.md)
 - Smoke test checklist: [PRODUCTION_SMOKE_TEST.md](PRODUCTION_SMOKE_TEST.md)
 - Backup scripts:
   - `scripts/backup_db.sh`
-  - `scripts/backup_uploads.sh`
   - `scripts/restore_db.sh`

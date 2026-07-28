@@ -44,7 +44,7 @@ def test_env_example_has_production_security_keys_without_real_secret():
 
     assert "APP_ENV=" in content
     assert "FLASK_DEBUG=false" in content
-    assert "SECRET_KEY=change-this-to-a-long-random-secret" in content
+    assert "replace-with-a-generated-local-development-secret" in content
     assert "SESSION_COOKIE_SECURE=false" in content
     assert "SESSION_COOKIE_HTTPONLY=true" in content
     assert "SESSION_COOKIE_SAMESITE=Lax" in content
