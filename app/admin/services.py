@@ -8,7 +8,7 @@ from sqlalchemy import func
 from app.audit import log_audit
 from app.date_utils import parse_iso_date
 from app.extensions import db
-from app.models import ProjectUser, ReportCategory, User
+from app.models import Permission, ProjectUser, ReportCategory, Role, User, UserRole
 from app.project_memberships import CAPABILITY_FIELDS, PROJECT_ROLE_PRESETS, preset_flags
 
 
@@ -81,6 +81,84 @@ def temporary_password(length=14):
 
 
 audit = log_audit
+
+
+def is_active_super_admin(user):
+    """Return whether ``user`` is an active, authenticated SUPER_ADMIN.
+
+    Admin hierarchy decisions must use the canonical role relationship, never a
+    submitted role code or the legacy compatibility column.
+    """
+    return bool(
+        user
+        and getattr(user, "is_authenticated", False)
+        and getattr(user, "is_active", False)
+        and getattr(getattr(user, "role", None), "code", None) == UserRole.SUPER_ADMIN.value
+    )
+
+
+def can_manage_target_user(actor, target, action):
+    """Fail closed for security-sensitive user mutations.
+
+    ``action`` is deliberately explicit so callers cannot accidentally apply a
+    profile-edit rule to password resets or account activation.
+    """
+    if action not in {"edit", "activate", "deactivate", "reset_password"}:
+        return False
+    if not actor or not target or not getattr(actor, "is_authenticated", False) or not actor.is_active:
+        return False
+    if not actor.can("users.manage"):
+        return False
+    if action in {"activate", "deactivate", "reset_password"} and actor.id == target.id:
+        return False
+    if target.has_role(UserRole.SUPER_ADMIN.value) and not is_active_super_admin(actor):
+        return False
+    return True
+
+
+def can_assign_role(actor, target, role):
+    """Return whether an actor may assign the canonical ``role`` to ``target``.
+
+    ``target`` may be ``None`` when creating a user.  Existing users cannot
+    change their own role, and only a SUPER_ADMIN can either assign or alter a
+    SUPER_ADMIN role.
+    """
+    if not actor or not role or not isinstance(role, Role):
+        return False
+    if not getattr(actor, "is_authenticated", False) or not actor.is_active or not actor.can("users.manage"):
+        return False
+    if target is not None and not isinstance(target, User):
+        return False
+    if target is not None and target.id == actor.id and target.role_id != role.id:
+        return False
+    if role.code == UserRole.SUPER_ADMIN.value and not is_active_super_admin(actor):
+        return False
+    if target is not None and target.has_role(UserRole.SUPER_ADMIN.value) and not is_active_super_admin(actor):
+        return False
+    return True
+
+
+def can_manage_role_permissions(actor, role, requested_permissions):
+    """Enforce the grant ceiling for an all-or-nothing role permission update."""
+    if not actor or not role or not isinstance(role, Role):
+        return False
+    if not getattr(actor, "is_authenticated", False) or not actor.is_active or not actor.can("roles.manage"):
+        return False
+    if role.id == actor.role_id:
+        return False
+    if role.is_system and not is_active_super_admin(actor):
+        return False
+    if not isinstance(requested_permissions, (list, tuple, set)):
+        return False
+
+    requested_permissions = list(requested_permissions)
+    if any(not isinstance(permission, Permission) or permission.id is None for permission in requested_permissions):
+        return False
+    if len({permission.id for permission in requested_permissions}) != len(requested_permissions):
+        return False
+    if not is_active_super_admin(actor) and any(not actor.can(permission.code) for permission in requested_permissions):
+        return False
+    return True
 
 
 def save_project_memberships(project, form, allowed_user_ids):

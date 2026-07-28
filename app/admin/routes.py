@@ -6,6 +6,9 @@ from app.admin import bp
 from app.admin.services import (
     add_with_sqlite_id,
     audit,
+    can_assign_role,
+    can_manage_role_permissions,
+    can_manage_target_user,
     form_bool,
     optional_text,
     parse_date,
@@ -74,6 +77,7 @@ def users_edit(user_id):
 @permission_required("users.manage")
 def users_deactivate(user_id):
     user = db.get_or_404(User, user_id)
+    _require_target_user_management(user, "deactivate")
     ensure_not_last_active_super_admin(user, new_is_active=False)
     old_values = {"is_active": user.is_active}
     user.is_active = False
@@ -87,6 +91,7 @@ def users_deactivate(user_id):
 @permission_required("users.manage")
 def users_activate(user_id):
     user = db.get_or_404(User, user_id)
+    _require_target_user_management(user, "activate")
     old_values = {"is_active": user.is_active}
     user.is_active = True
     audit("user.activate", "User", user.id, old_values, {"is_active": user.is_active})
@@ -144,14 +149,14 @@ def roles_edit(role_id):
 def role_permissions(role_id):
     role = db.get_or_404(Role, role_id)
     if request.method == "POST":
-        if not current_user.can("roles.manage") or role.code == UserRole.SUPER_ADMIN.value:
+        selected_permissions = _requested_permissions()
+        if not can_manage_role_permissions(current_user, role, selected_permissions):
             abort(403)
-        selected = {int(value) for value in request.form.getlist("permission_ids") if value.isdigit()}
+        selected = {permission.id for permission in selected_permissions}
         old = {item.permission_id for item in role.role_permissions}
         RolePermission.query.filter_by(role_id=role.id).delete()
-        for permission_id in selected:
-            if db.session.get(Permission, permission_id):
-                db.session.add(RolePermission(role_id=role.id, permission_id=permission_id))
+        for permission in selected_permissions:
+            db.session.add(RolePermission(role_id=role.id, permission_id=permission.id))
         audit("role.permissions.update", "Role", role.id, {"permission_ids": sorted(old)}, {"permission_ids": sorted(selected)})
         db.session.commit(); flash("Đã cập nhật phân quyền.", "success")
         return redirect(url_for("admin.role_permissions", role_id=role.id))
@@ -183,11 +188,11 @@ def role_permissions(role_id):
 @permission_required("roles.manage")
 def role_permissions_reset_defaults(role_id):
     role = db.get_or_404(Role, role_id)
-    if role.code == UserRole.SUPER_ADMIN.value:
-        abort(400)
     from app.permissions.registry import DEFAULTS
     wanted = DEFAULTS.get(role.code, set())
     permissions = Permission.query.filter(Permission.code.in_(wanted)).all()
+    if len(permissions) != len(wanted) or not can_manage_role_permissions(current_user, role, permissions):
+        abort(403)
     old = {item.permission_id for item in role.role_permissions}
     RolePermission.query.filter_by(role_id=role.id).delete()
     db.session.add_all([RolePermission(role_id=role.id, permission_id=item.id) for item in permissions])
@@ -200,6 +205,7 @@ def role_permissions_reset_defaults(role_id):
 @permission_required("users.manage")
 def users_reset_password(user_id):
     user = db.get_or_404(User, user_id)
+    _require_target_user_management(user, "reset_password")
     password = temporary_password()
     user.password_hash = generate_password_hash(password)
     audit("user.reset_password", "User", user.id, new_values={"username": user.username})
@@ -477,6 +483,13 @@ def _save_user(user=None):
             roles=Role.query.filter(~Role.code.in_(DEPRECATED_GLOBAL_ROLE_CODES)).order_by(Role.is_system.desc(), Role.name).all(),
         ), 400
 
+    if not is_new:
+        _require_target_user_management(user, "edit")
+        if is_active != user.is_active:
+            _require_target_user_management(user, "activate" if is_active else "deactivate")
+    if not can_assign_role(current_user, user, role):
+        _reject_role_assignment(user)
+
     old_values = _user_snapshot(user) if user else None
     if is_new:
         user = User(password_hash=generate_password_hash(password))
@@ -627,6 +640,37 @@ def _save_category(project, category=None):
 def _require_users_manage():
     if not current_user.can("users.manage"):
         abort(403)
+
+
+def _require_target_user_management(user, action):
+    if can_manage_target_user(current_user, user, action):
+        return
+    # A self-targeted security mutation is a safe validation rejection.  Keep
+    # the historic 400 response for the sole-SUPER_ADMIN flow while still
+    # rejecting before any state change.
+    if current_user.is_authenticated and current_user.id == user.id:
+        abort(400)
+    abort(403)
+
+
+def _reject_role_assignment(user):
+    if user is not None and current_user.is_authenticated and current_user.id == user.id:
+        abort(400)
+    abort(403)
+
+
+def _requested_permissions():
+    """Load an exact, canonical requested permission set or reject it whole."""
+    values = request.form.getlist("permission_ids")
+    if any(not value.isdigit() for value in values):
+        abort(400)
+    permission_ids = [int(value) for value in values]
+    if len(permission_ids) != len(set(permission_ids)):
+        abort(400)
+    permissions = Permission.query.filter(Permission.id.in_(permission_ids)).all() if permission_ids else []
+    if len(permissions) != len(permission_ids):
+        abort(400)
+    return permissions
 
 
 def _require_can_view_categories(project_id):
