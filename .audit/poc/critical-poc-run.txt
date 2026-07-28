@@ -1,0 +1,236 @@
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+________________ test_admin_cannot_promote_self_to_super_admin _________________
+
+client = <FlaskClient <Flask 'app'>>, app = <Flask 'app'>
+
+    def test_admin_cannot_promote_self_to_super_admin(client, app):
+        with app.app_context():
+            admin = User.query.filter_by(username="admin").one()
+            super_admin = Role.query.filter_by(code=UserRole.SUPER_ADMIN.value).one()
+            admin_id, super_admin_role_id = admin.id, super_admin.id
+    
+        assert _login(client, "admin").status_code == 302
+        response = client.post(
+            f"/admin/users/{admin_id}/edit",
+            data={
+                "full_name": "Admin",
+                "username": "admin",
+                "email": "admin@example.com",
+                "role_id": str(super_admin_role_id),
+                "is_active": "on",
+            },
+        )
+    
+        with app.app_context():
+            db.session.expire_all()
+            persisted_role = db.session.get(User, admin_id).role_code
+    
+        secure = response.status_code in {400, 403, 404, 422} and persisted_role == UserRole.ADMIN.value
+>       assert secure, (
+            "secure behavior must reject self-promotion and retain ADMIN; "
+            f"got HTTP {response.status_code}, persisted role={persisted_role!r}"
+        )
+E       AssertionError: secure behavior must reject self-promotion and retain ADMIN; got HTTP 302, persisted role='SUPER_ADMIN'
+E       assert False
+
+.audit/poc/critical_01_admin_self_grant_super_admin_test.py:37: AssertionError
+_____ test_admin_cannot_reset_super_admin_password_or_receive_temp_secret ______
+
+client = <FlaskClient <Flask 'app'>>, app = <Flask 'app'>
+
+    def test_admin_cannot_reset_super_admin_password_or_receive_temp_secret(client, app):
+        with app.app_context():
+            super_admin = User.query.filter_by(username="super").one()
+            super_admin_id, password_hash_before = super_admin.id, super_admin.password_hash
+    
+        assert _login(client, "admin").status_code == 302
+        response = client.post(
+            f"/admin/users/{super_admin_id}/reset-password",
+            follow_redirects=True,
+        )
+    
+        with app.app_context():
+            db.session.expire_all()
+            password_hash_after = db.session.get(User, super_admin_id).password_hash
+    
+        temp_password_disclosed = "Mật khẩu tạm" in response.get_data(as_text=True)
+        secure = (
+            response.status_code in {400, 403, 404, 422}
+            and password_hash_after == password_hash_before
+            and not temp_password_disclosed
+        )
+>       assert secure, (
+            "secure behavior must reject a lower-admin reset, retain the SUPER_ADMIN hash, "
+            "and not disclose a temporary password; "
+            f"got HTTP {response.status_code}, hash_changed={password_hash_after != password_hash_before}, "
+            f"temporary-password marker present={temp_password_disclosed}"
+        )
+E       AssertionError: secure behavior must reject a lower-admin reset, retain the SUPER_ADMIN hash, and not disclose a temporary password; got HTTP 200, hash_changed=True, temporary-password marker present=True
+E       assert False
+
+.audit/poc/critical_02_super_admin_password_reset_test.py:35: AssertionError
+________ test_role_manager_cannot_add_dangerous_permission_to_own_role _________
+
+client = <FlaskClient <Flask 'app'>>, app = <Flask 'app'>
+
+    def test_role_manager_cannot_add_dangerous_permission_to_own_role(client, app):
+        with app.app_context():
+            role = Role(id=9001, code="AUDIT_ROLE_MANAGER", name="Audit role manager", is_system=False)
+            actor = User(
+                id=9001,
+                full_name="Audit Role Manager",
+                username="audit-role-manager",
+                email="audit-role-manager@example.com",
+                password_hash=generate_password_hash("password123"),
+                role=role,
+                legacy_role=role.code,
+            )
+            db.session.add_all([role, actor])
+            db.session.flush()
+            permissions = {
+                item.code: item
+                for item in Permission.query.filter(
+                    Permission.code.in_({"roles.view", "roles.manage", "system.settings"})
+                ).all()
+            }
+            db.session.add_all(
+                RolePermission(role_id=role.id, permission_id=permissions[code].id)
+                for code in ("roles.view", "roles.manage")
+            )
+            role_view_permission_id = permissions["roles.view"].id
+            role_manage_permission_id = permissions["roles.manage"].id
+            dangerous_permission_id = permissions["system.settings"].id
+            role_id = role.id
+            db.session.commit()
+    
+        assert _login(client, "audit-role-manager").status_code == 302
+        response = client.post(
+            f"/admin/roles/{role_id}/permissions",
+            data={"permission_ids": [str(item) for item in (role_view_permission_id, role_manage_permission_id, dangerous_permission_id)]},
+        )
+    
+        with app.app_context():
+            db.session.expire_all()
+            dangerous_grant_exists = RolePermission.query.filter_by(
+                role_id=role_id, permission_id=dangerous_permission_id
+            ).first() is not None
+    
+        secure = response.status_code in {400, 403, 404, 422} and not dangerous_grant_exists
+>       assert secure, (
+            "secure behavior must reject a manager changing their own role's grants; "
+            f"got HTTP {response.status_code}, system.settings grant created={dangerous_grant_exists}"
+        )
+E       AssertionError: secure behavior must reject a manager changing their own role's grants; got HTTP 302, system.settings grant created=True
+E       assert False
+
+.audit/poc/critical_03_roles_manage_self_grant_test.py:59: AssertionError
+___ test_assignment_manager_cannot_insert_self_as_owner_in_unrelated_project ___
+
+client = <FlaskClient <Flask 'app'>>, app = <Flask 'app'>
+
+    def test_assignment_manager_cannot_insert_self_as_owner_in_unrelated_project(client, app):
+        with app.app_context():
+            role = Role(id=9002, code="AUDIT_ASSIGNMENT_MANAGER", name="Audit assignment manager", is_system=False)
+            actor = User(
+                id=9002,
+                full_name="Audit Assignment Manager",
+                username="audit-assignment-manager",
+                email="audit-assignment-manager@example.com",
+                password_hash=generate_password_hash("password123"),
+                role=role,
+                legacy_role=role.code,
+            )
+            db.session.add_all([role, actor])
+            db.session.flush()
+            permission = Permission.query.filter_by(code="project_assignments.manage").one()
+            db.session.add(RolePermission(role_id=role.id, permission_id=permission.id))
+            db.session.commit()
+            actor_id = actor.id
+    
+        assert _login(client, "audit-assignment-manager").status_code == 302
+        response = client.post(
+            "/admin/projects/2/memberships",
+            data={
+                "user_id": str(actor_id),
+                "project_role_code": "PROJECT_OWNER",
+                **{field: "1" for field in CAPABILITY_FIELDS},
+            },
+        )
+    
+        with app.app_context():
+            db.session.expire_all()
+            membership = ProjectUser.query.filter_by(project_id=2, user_id=actor_id).first()
+            full_capability_membership_exists = bool(
+                membership and membership.is_active and all(getattr(membership, field) for field in CAPABILITY_FIELDS)
+            )
+    
+        secure = response.status_code in {400, 403, 404, 422} and not full_capability_membership_exists
+>       assert secure, (
+            "secure behavior must reject arbitrary self-assignment and create no owner-equivalent membership; "
+            f"got HTTP {response.status_code}, owner-equivalent membership created={full_capability_membership_exists}"
+        )
+E       AssertionError: secure behavior must reject arbitrary self-assignment and create no owner-equivalent membership; got HTTP 302, owner-equivalent membership created=True
+E       assert False
+
+.audit/poc/critical_04_project_membership_self_insert_test.py:54: AssertionError
+______ test_share_only_acl_holder_cannot_escalate_own_album_capabilities _______
+
+client = <FlaskClient <Flask 'app'>>, app = <Flask 'app'>
+
+    def test_share_only_acl_holder_cannot_escalate_own_album_capabilities(client, app):
+        with app.app_context():
+            actor = User.query.filter_by(username="reporter").one()
+            album = CompanyMediaAlbum(id=9005, name="Audit restricted album", is_restricted=True, created_by_id=6)
+            db.session.add(album)
+            db.session.flush()
+            acl = CompanyMediaAlbumPermission(
+                album_id=album.id,
+                principal_type="user",
+                user_id=actor.id,
+                created_by_id=6,
+                can_share=True,
+            )
+            db.session.add(acl)
+            db.session.commit()
+            album_id, actor_id = album.id, actor.id
+    
+        assert _login(client, "reporter").status_code == 302
+        response = client.post(
+            f"/company-media/albums/{album_id}/permissions",
+            data={
+                "principal_type": "user",
+                "principal_id": str(actor_id),
+                "can_view": "1",
+                "can_edit": "1",
+                "can_delete": "1",
+                "can_upload": "1",
+                "can_download": "1",
+                "can_share": "1",
+            },
+        )
+    
+        with app.app_context():
+            db.session.expire_all()
+            persisted_acl = CompanyMediaAlbumPermission.query.filter_by(album_id=album_id, user_id=actor_id).one()
+            escalation_present = any(
+                getattr(persisted_acl, flag)
+                for flag in ("can_edit", "can_delete", "can_upload", "can_download")
+            )
+    
+        secure = response.status_code in {400, 403, 404, 422} and not escalation_present
+>       assert secure, (
+            "secure behavior must reject a share-only ACL holder's permission rewrite; "
+            f"got HTTP {response.status_code}, escalated flags present={escalation_present}"
+        )
+E       AssertionError: secure behavior must reject a share-only ACL holder's permission rewrite; got HTTP 302, escalated flags present=True
+E       assert False
+
+.audit/poc/critical_05_company_media_acl_escalation_test.py:55: AssertionError
+=========================== short test summary info ============================
+FAILED .audit/poc/critical_01_admin_self_grant_super_admin_test.py::test_admin_cannot_promote_self_to_super_admin
+FAILED .audit/poc/critical_02_super_admin_password_reset_test.py::test_admin_cannot_reset_super_admin_password_or_receive_temp_secret
+FAILED .audit/poc/critical_03_roles_manage_self_grant_test.py::test_role_manager_cannot_add_dangerous_permission_to_own_role
+FAILED .audit/poc/critical_04_project_membership_self_insert_test.py::test_assignment_manager_cannot_insert_self_as_owner_in_unrelated_project
+FAILED .audit/poc/critical_05_company_media_acl_escalation_test.py::test_share_only_acl_holder_cannot_escalate_own_album_capabilities
+5 failed in 4.24s

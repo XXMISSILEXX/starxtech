@@ -1,0 +1,592 @@
+FFFFFFFFFF                                                               [100%]
+=================================== FAILURES ===================================
+___ test_document_viewer_without_download_permission_cannot_mint_signed_url ____
+
+client = <FlaskClient <Flask 'app'>>, app = <Flask 'app'>
+
+    def test_document_viewer_without_download_permission_cannot_mint_signed_url(client, app):
+        with app.app_context():
+            role = Role(id=9104, code="AUDIT_DOCUMENT_VIEWER", name="Audit document viewer", is_system=False)
+            actor = User(
+                id=9104,
+                full_name="Audit Document Viewer",
+                username="audit-document-viewer",
+                email="audit-document-viewer@example.com",
+                password_hash=generate_password_hash("password123"),
+                role=role,
+                legacy_role=role.code,
+            )
+            admin = User.query.filter_by(username="admin").one()
+            folder = ProjectDocumentFolder(
+                id=9104,
+                project_id=1,
+                name="Audit download folder",
+                is_root=False,
+                root_type="project",
+                created_by_id=admin.id,
+            )
+            db.session.add_all([role, actor, folder])
+            db.session.flush()
+            db.session.add(ProjectUser(
+                id=9104,
+                project_id=1,
+                user_id=actor.id,
+                project_role_code="CUSTOM",
+                is_active=True,
+                can_view_documents=True,
+            ))
+            storage = StorageObject(
+                id=9104,
+                bucket="audit-poc",
+                object_key="document-library/originals/audit-download.pdf",
+                original_filename="audit-download.pdf",
+                mime_type="application/pdf",
+                file_ext="pdf",
+                file_size=1,
+                storage_module="document-library",
+                uploaded_by_id=admin.id,
+                upload_status="active",
+            )
+            db.session.add(storage)
+            db.session.flush()
+            document_file = ProjectDocumentFile(
+                id=9104,
+                project_id=1,
+                folder_id=folder.id,
+                storage_object_id=storage.id,
+                display_name="audit-download.pdf",
+                created_by_id=admin.id,
+            )
+            db.session.add(document_file)
+            get_storage_provider().put_bytes(storage.bucket, storage.object_key, b"x", storage.mime_type)
+            db.session.commit()
+            file_id = document_file.id
+            download_events_before = DownloadEvent.query.count()
+    
+        assert _login(client, "audit-document-viewer").status_code == 302
+        response = client.post(f"/project-documents/files/{file_id}/signed-download")
+    
+        with app.app_context():
+            db.session.expire_all()
+            download_events_after = DownloadEvent.query.count()
+    
+        signed_url = (response.get_json(silent=True) or {}).get("url")
+        secure = (
+            response.status_code in {400, 403, 404, 422}
+            and not signed_url
+            and download_events_after == download_events_before
+        )
+>       assert secure, (
+            "secure behavior must deny a project document viewer whose role has no project_document_files.download grant; "
+            f"got HTTP {response.status_code}, signed URL minted={bool(signed_url)}, "
+            f"download events before/after={download_events_before}/{download_events_after}"
+        )
+E       AssertionError: secure behavior must deny a project document viewer whose role has no project_document_files.download grant; got HTTP 200, signed URL minted=True, download events before/after=0/1
+E       assert False
+
+.audit/poc/ai_002_document_download_permission_test.py:98: AssertionError
+___ test_assignment_manager_cannot_attach_contractor_from_unrelated_project ____
+
+client = <FlaskClient <Flask 'app'>>, app = <Flask 'app'>
+
+    def test_assignment_manager_cannot_attach_contractor_from_unrelated_project(client, app):
+        with app.app_context():
+            role = Role(id=9102, code="AUDIT_CONTRACTOR_COORDINATOR", name="Audit contractor coordinator", is_system=False)
+            actor = User(
+                id=9102,
+                full_name="Audit Contractor Coordinator",
+                username="audit-contractor-coordinator",
+                email="audit-contractor-coordinator@example.com",
+                password_hash=generate_password_hash("password123"),
+                role=role,
+                legacy_role=role.code,
+            )
+            contractor = ProjectContractor(
+                id=9102,
+                name="Unrelated Audit Contractor",
+                normalized_name="unrelated audit contractor",
+                phone="0900000000",
+                email="unrelated-contractor@example.com",
+            )
+            db.session.add_all([role, actor, contractor])
+            db.session.flush()
+            permissions = Permission.query.filter(Permission.code.in_((
+                "modules.reports.access", "contractor_assignments.view", "contractor_assignments.manage",
+            ))).all()
+            db.session.add_all(RolePermission(role_id=role.id, permission_id=item.id) for item in permissions)
+            db.session.add(ProjectUser(
+                id=9102,
+                project_id=1,
+                user_id=actor.id,
+                project_role_code="CUSTOM",
+                is_active=True,
+                can_view_project=True,
+            ))
+            db.session.add(ProjectContractorAssignment(
+                id=9102,
+                project_id=2,
+                contractor_id=contractor.id,
+                role="CONSTRUCTION",
+                status="ACTIVE",
+                created_by_id=1,
+            ))
+            db.session.commit()
+            contractor_id = contractor.id
+    
+        assert _login(client, "audit-contractor-coordinator").status_code == 302
+        response = client.post(
+            "/projects/1/contractors/construction",
+            data={"contractor_id": str(contractor_id), "status": "ACTIVE"},
+        )
+    
+        with app.app_context():
+            db.session.expire_all()
+            assignment_inserted = ProjectContractorAssignment.query.filter_by(
+                project_id=1, contractor_id=contractor_id
+            ).first() is not None
+    
+        secure = response.status_code in {400, 403, 404, 422} and not assignment_inserted
+>       assert secure, (
+            "secure behavior must reject assigning a contractor visible only through project 2 to project 1; "
+            f"got HTTP {response.status_code}, project-1 assignment inserted={assignment_inserted}"
+        )
+E       AssertionError: secure behavior must reject assigning a contractor visible only through project 2 to project 1; got HTTP 302, project-1 assignment inserted=True
+E       assert False
+
+.audit/poc/contractor_001_cross_scope_assignment_test.py:81: AssertionError
+________________ test_admin_cannot_promote_self_to_super_admin _________________
+
+client = <FlaskClient <Flask 'app'>>, app = <Flask 'app'>
+
+    def test_admin_cannot_promote_self_to_super_admin(client, app):
+        with app.app_context():
+            admin = User.query.filter_by(username="admin").one()
+            super_admin = Role.query.filter_by(code=UserRole.SUPER_ADMIN.value).one()
+            admin_id, super_admin_role_id = admin.id, super_admin.id
+    
+        assert _login(client, "admin").status_code == 302
+        response = client.post(
+            f"/admin/users/{admin_id}/edit",
+            data={
+                "full_name": "Admin",
+                "username": "admin",
+                "email": "admin@example.com",
+                "role_id": str(super_admin_role_id),
+                "is_active": "on",
+            },
+        )
+    
+        with app.app_context():
+            db.session.expire_all()
+            persisted_role = db.session.get(User, admin_id).role_code
+    
+        secure = response.status_code in {400, 403, 404, 422} and persisted_role == UserRole.ADMIN.value
+>       assert secure, (
+            "secure behavior must reject self-promotion and retain ADMIN; "
+            f"got HTTP {response.status_code}, persisted role={persisted_role!r}"
+        )
+E       AssertionError: secure behavior must reject self-promotion and retain ADMIN; got HTTP 302, persisted role='SUPER_ADMIN'
+E       assert False
+
+.audit/poc/critical_01_admin_self_grant_super_admin_test.py:37: AssertionError
+_____ test_admin_cannot_reset_super_admin_password_or_receive_temp_secret ______
+
+client = <FlaskClient <Flask 'app'>>, app = <Flask 'app'>
+
+    def test_admin_cannot_reset_super_admin_password_or_receive_temp_secret(client, app):
+        with app.app_context():
+            super_admin = User.query.filter_by(username="super").one()
+            super_admin_id, password_hash_before = super_admin.id, super_admin.password_hash
+    
+        assert _login(client, "admin").status_code == 302
+        response = client.post(
+            f"/admin/users/{super_admin_id}/reset-password",
+            follow_redirects=True,
+        )
+    
+        with app.app_context():
+            db.session.expire_all()
+            password_hash_after = db.session.get(User, super_admin_id).password_hash
+    
+        temp_password_disclosed = "Mật khẩu tạm" in response.get_data(as_text=True)
+        secure = (
+            response.status_code in {400, 403, 404, 422}
+            and password_hash_after == password_hash_before
+            and not temp_password_disclosed
+        )
+>       assert secure, (
+            "secure behavior must reject a lower-admin reset, retain the SUPER_ADMIN hash, "
+            "and not disclose a temporary password; "
+            f"got HTTP {response.status_code}, hash_changed={password_hash_after != password_hash_before}, "
+            f"temporary-password marker present={temp_password_disclosed}"
+        )
+E       AssertionError: secure behavior must reject a lower-admin reset, retain the SUPER_ADMIN hash, and not disclose a temporary password; got HTTP 200, hash_changed=True, temporary-password marker present=True
+E       assert False
+
+.audit/poc/critical_02_super_admin_password_reset_test.py:35: AssertionError
+________ test_role_manager_cannot_add_dangerous_permission_to_own_role _________
+
+client = <FlaskClient <Flask 'app'>>, app = <Flask 'app'>
+
+    def test_role_manager_cannot_add_dangerous_permission_to_own_role(client, app):
+        with app.app_context():
+            role = Role(id=9001, code="AUDIT_ROLE_MANAGER", name="Audit role manager", is_system=False)
+            actor = User(
+                id=9001,
+                full_name="Audit Role Manager",
+                username="audit-role-manager",
+                email="audit-role-manager@example.com",
+                password_hash=generate_password_hash("password123"),
+                role=role,
+                legacy_role=role.code,
+            )
+            db.session.add_all([role, actor])
+            db.session.flush()
+            permissions = {
+                item.code: item
+                for item in Permission.query.filter(
+                    Permission.code.in_({"roles.view", "roles.manage", "system.settings"})
+                ).all()
+            }
+            db.session.add_all(
+                RolePermission(role_id=role.id, permission_id=permissions[code].id)
+                for code in ("roles.view", "roles.manage")
+            )
+            role_view_permission_id = permissions["roles.view"].id
+            role_manage_permission_id = permissions["roles.manage"].id
+            dangerous_permission_id = permissions["system.settings"].id
+            role_id = role.id
+            db.session.commit()
+    
+        assert _login(client, "audit-role-manager").status_code == 302
+        response = client.post(
+            f"/admin/roles/{role_id}/permissions",
+            data={"permission_ids": [str(item) for item in (role_view_permission_id, role_manage_permission_id, dangerous_permission_id)]},
+        )
+    
+        with app.app_context():
+            db.session.expire_all()
+            dangerous_grant_exists = RolePermission.query.filter_by(
+                role_id=role_id, permission_id=dangerous_permission_id
+            ).first() is not None
+    
+        secure = response.status_code in {400, 403, 404, 422} and not dangerous_grant_exists
+>       assert secure, (
+            "secure behavior must reject a manager changing their own role's grants; "
+            f"got HTTP {response.status_code}, system.settings grant created={dangerous_grant_exists}"
+        )
+E       AssertionError: secure behavior must reject a manager changing their own role's grants; got HTTP 302, system.settings grant created=True
+E       assert False
+
+.audit/poc/critical_03_roles_manage_self_grant_test.py:59: AssertionError
+___ test_assignment_manager_cannot_insert_self_as_owner_in_unrelated_project ___
+
+client = <FlaskClient <Flask 'app'>>, app = <Flask 'app'>
+
+    def test_assignment_manager_cannot_insert_self_as_owner_in_unrelated_project(client, app):
+        with app.app_context():
+            role = Role(id=9002, code="AUDIT_ASSIGNMENT_MANAGER", name="Audit assignment manager", is_system=False)
+            actor = User(
+                id=9002,
+                full_name="Audit Assignment Manager",
+                username="audit-assignment-manager",
+                email="audit-assignment-manager@example.com",
+                password_hash=generate_password_hash("password123"),
+                role=role,
+                legacy_role=role.code,
+            )
+            db.session.add_all([role, actor])
+            db.session.flush()
+            permission = Permission.query.filter_by(code="project_assignments.manage").one()
+            db.session.add(RolePermission(role_id=role.id, permission_id=permission.id))
+            db.session.commit()
+            actor_id = actor.id
+    
+        assert _login(client, "audit-assignment-manager").status_code == 302
+        response = client.post(
+            "/admin/projects/2/memberships",
+            data={
+                "user_id": str(actor_id),
+                "project_role_code": "PROJECT_OWNER",
+                **{field: "1" for field in CAPABILITY_FIELDS},
+            },
+        )
+    
+        with app.app_context():
+            db.session.expire_all()
+            membership = ProjectUser.query.filter_by(project_id=2, user_id=actor_id).first()
+            full_capability_membership_exists = bool(
+                membership and membership.is_active and all(getattr(membership, field) for field in CAPABILITY_FIELDS)
+            )
+    
+        secure = response.status_code in {400, 403, 404, 422} and not full_capability_membership_exists
+>       assert secure, (
+            "secure behavior must reject arbitrary self-assignment and create no owner-equivalent membership; "
+            f"got HTTP {response.status_code}, owner-equivalent membership created={full_capability_membership_exists}"
+        )
+E       AssertionError: secure behavior must reject arbitrary self-assignment and create no owner-equivalent membership; got HTTP 302, owner-equivalent membership created=True
+E       assert False
+
+.audit/poc/critical_04_project_membership_self_insert_test.py:54: AssertionError
+______ test_share_only_acl_holder_cannot_escalate_own_album_capabilities _______
+
+client = <FlaskClient <Flask 'app'>>, app = <Flask 'app'>
+
+    def test_share_only_acl_holder_cannot_escalate_own_album_capabilities(client, app):
+        with app.app_context():
+            actor = User.query.filter_by(username="reporter").one()
+            album = CompanyMediaAlbum(id=9005, name="Audit restricted album", is_restricted=True, created_by_id=6)
+            db.session.add(album)
+            db.session.flush()
+            acl = CompanyMediaAlbumPermission(
+                album_id=album.id,
+                principal_type="user",
+                user_id=actor.id,
+                created_by_id=6,
+                can_share=True,
+            )
+            db.session.add(acl)
+            db.session.commit()
+            album_id, actor_id = album.id, actor.id
+    
+        assert _login(client, "reporter").status_code == 302
+        response = client.post(
+            f"/company-media/albums/{album_id}/permissions",
+            data={
+                "principal_type": "user",
+                "principal_id": str(actor_id),
+                "can_view": "1",
+                "can_edit": "1",
+                "can_delete": "1",
+                "can_upload": "1",
+                "can_download": "1",
+                "can_share": "1",
+            },
+        )
+    
+        with app.app_context():
+            db.session.expire_all()
+            persisted_acl = CompanyMediaAlbumPermission.query.filter_by(album_id=album_id, user_id=actor_id).one()
+            escalation_present = any(
+                getattr(persisted_acl, flag)
+                for flag in ("can_edit", "can_delete", "can_upload", "can_download")
+            )
+    
+        secure = response.status_code in {400, 403, 404, 422} and not escalation_present
+>       assert secure, (
+            "secure behavior must reject a share-only ACL holder's permission rewrite; "
+            f"got HTTP {response.status_code}, escalated flags present={escalation_present}"
+        )
+E       AssertionError: secure behavior must reject a share-only ACL holder's permission rewrite; got HTTP 302, escalated flags present=True
+E       assert False
+
+.audit/poc/critical_05_company_media_acl_escalation_test.py:55: AssertionError
+___ test_project_reader_cannot_move_project_without_managing_source_customer ___
+
+client = <FlaskClient <Flask 'app'>>, app = <Flask 'app'>
+
+    def test_project_reader_cannot_move_project_without_managing_source_customer(client, app):
+        with app.app_context():
+            role = Role(id=9101, code="AUDIT_CUSTOMER_MOVER", name="Audit customer mover", is_system=False)
+            actor = User(
+                id=9101,
+                full_name="Audit Customer Mover",
+                username="audit-customer-mover",
+                email="audit-customer-mover@example.com",
+                password_hash=generate_password_hash("password123"),
+                role=role,
+                legacy_role=role.code,
+            )
+            source = Customer(id=9101, name="Audit source customer", normalized_name="audit source customer")
+            target = Customer(id=9102, name="Audit empty target", normalized_name="audit empty target")
+            db.session.add_all([role, actor, source, target])
+            db.session.flush()
+            permissions = Permission.query.filter(Permission.code.in_(("modules.reports.access", "customers.edit"))).all()
+            db.session.add_all(RolePermission(role_id=role.id, permission_id=item.id) for item in permissions)
+            db.session.add(ProjectUser(
+                id=9101,
+                project_id=1,
+                user_id=actor.id,
+                project_role_code="CUSTOM",
+                is_active=True,
+                can_view_project=True,
+            ))
+            db.session.get(Project, 1).customer_id = source.id
+            db.session.get(Project, 2).customer_id = source.id
+            db.session.commit()
+            source_id, target_id = source.id, target.id
+    
+        assert _login(client, "audit-customer-mover").status_code == 302
+        response = client.post(
+            f"/customers/{source_id}/projects/1/move",
+            data={"target_customer_id": str(target_id)},
+        )
+    
+        with app.app_context():
+            db.session.expire_all()
+            persisted_customer_id = db.session.get(Project, 1).customer_id
+    
+        secure = response.status_code in {400, 403, 404, 422} and persisted_customer_id == source_id
+>       assert secure, (
+            "secure behavior must reject a move by a caller who only reads the source project and retain its source customer; "
+            f"got HTTP {response.status_code}, persisted customer_id={persisted_customer_id}, expected {source_id}"
+        )
+E       AssertionError: secure behavior must reject a move by a caller who only reads the source project and retain its source customer; got HTTP 302, persisted customer_id=9102, expected 9101
+E       assert False
+
+.audit/poc/customer_001_project_move_authz_test.py:58: AssertionError
+_______ test_issue_editor_without_issues_delete_cannot_soft_delete_issue _______
+
+client = <FlaskClient <Flask 'app'>>, app = <Flask 'app'>
+
+    def test_issue_editor_without_issues_delete_cannot_soft_delete_issue(client, app):
+        with app.app_context():
+            role = Role(id=9105, code="AUDIT_ISSUE_EDITOR", name="Audit issue editor", is_system=False)
+            actor = User(
+                id=9105,
+                full_name="Audit Issue Editor",
+                username="audit-issue-editor",
+                email="audit-issue-editor@example.com",
+                password_hash=generate_password_hash("password123"),
+                role=role,
+                legacy_role=role.code,
+            )
+            db.session.add_all([role, actor])
+            db.session.flush()
+            module_permission = Permission.query.filter_by(code="modules.reports.access").one()
+            db.session.add(RolePermission(role_id=role.id, permission_id=module_permission.id))
+            db.session.add(ProjectUser(
+                id=9105,
+                project_id=1,
+                user_id=actor.id,
+                project_role_code="CUSTOM",
+                is_active=True,
+                can_edit_issues=True,
+            ))
+            issue = PersistentIssue(
+                id=9105,
+                project_id=1,
+                title="Audit destructive issue",
+                description="Only an editor is assigned.",
+                severity="HIGH",
+                status="OPEN",
+                opened_date=date(2026, 7, 28),
+                created_by_user_id=1,
+            )
+            db.session.add(issue)
+            db.session.commit()
+            issue_id = issue.id
+    
+        assert _login(client, "audit-issue-editor").status_code == 302
+        response = client.post(f"/reports/issues/{issue_id}/delete")
+    
+        with app.app_context():
+            db.session.expire_all()
+            persisted_issue = db.session.get(PersistentIssue, issue_id)
+            issue_remains_active = persisted_issue is not None and persisted_issue.deleted_at is None
+    
+        secure = response.status_code in {400, 403, 404, 422} and issue_remains_active
+>       assert secure, (
+            "secure behavior must require the dedicated issues.delete permission and retain the issue; "
+            f"got HTTP {response.status_code}, issue remains active={issue_remains_active}"
+        )
+E       AssertionError: secure behavior must require the dedicated issues.delete permission and retain the issue; got HTTP 302, issue remains active=False
+E       assert False
+
+.audit/poc/issue_002_delete_permission_test.py:65: AssertionError
+___ test_cancelling_own_session_does_not_delete_other_project_upload_object ____
+
+client = <FlaskClient <Flask 'app'>>, app = <Flask 'app'>
+
+    def test_cancelling_own_session_does_not_delete_other_project_upload_object(client, app):
+        with app.app_context():
+            reporter = User.query.filter_by(username="reporter").one()
+            super_admin = User.query.filter_by(username="super").one()
+            own_session_id = create_session(
+                user=reporter, project_id=1, declared_files=1, declared_size_bytes=1
+            )["upload_session_id"]
+            target_session = UploadSelectionSession(
+                id=9103,
+                module_type="daily_reports",
+                target_type="project",
+                target_id=2,
+                created_by_id=super_admin.id,
+                declared_files=1,
+                declared_size_bytes=1,
+                status="cancelled",
+                expires_at=datetime.utcnow() + timedelta(hours=1),
+            )
+            db.session.add(target_session)
+            db.session.flush()
+            target_object = StorageObject(
+                id=9103,
+                bucket="audit-poc",
+                object_key="daily-reports/originals/unrelated-project.jpg",
+                original_filename="unrelated-project.jpg",
+                mime_type="image/jpeg",
+                file_ext="jpg",
+                file_size=1,
+                storage_module="daily-reports",
+                uploaded_by_id=super_admin.id,
+                upload_status="pending",
+            )
+            target_batch = UploadBatch(
+                id=9103,
+                module_type="daily_reports",
+                target_type="project",
+                target_id=2,
+                created_by_id=super_admin.id,
+                selection_session_id=target_session.id,
+                total_files=1,
+                accepted_files=1,
+                status="uploading",
+            )
+            db.session.add_all([target_object, target_batch])
+            db.session.flush()
+            db.session.add(UploadBatchItem(
+                id=9103,
+                upload_batch_id=target_batch.id,
+                storage_object_id=target_object.id,
+                client_file_id="other-project-file",
+                client_section_id="other-project-section",
+                original_filename=target_object.original_filename,
+                mime_type=target_object.mime_type,
+                file_size=target_object.file_size,
+                status="accepted",
+            ))
+            provider = get_storage_provider()
+            provider.put_bytes(target_object.bucket, target_object.object_key, b"x", target_object.mime_type)
+            db.session.commit()
+            target_object_id = target_object.id
+            target_key = (target_object.bucket, target_object.object_key)
+    
+        assert _login(client, "reporter").status_code == 302
+        response = client.post(f"/reports/projects/1/reports/upload-sessions/{own_session_id}/cancel")
+    
+        with app.app_context():
+            db.session.expire_all()
+            unrelated_object_survived = db.session.get(StorageObject, target_object_id) is not None
+            unrelated_object_bytes_survived = target_key in get_storage_provider().objects
+    
+        secure = response.status_code == 200 and unrelated_object_survived and unrelated_object_bytes_survived
+>       assert secure, (
+            "secure behavior may cancel the actor's own session but must retain the unrelated project-2 upload object; "
+            f"got HTTP {response.status_code}, unrelated DB object survived={unrelated_object_survived}, "
+            f"unrelated fake-storage bytes survived={unrelated_object_bytes_survived}"
+        )
+E       AssertionError: secure behavior may cancel the actor's own session but must retain the unrelated project-2 upload object; got HTTP 200, unrelated DB object survived=False, unrelated fake-storage bytes survived=False
+E       assert False
+
+.audit/poc/reports_001_cross_project_cleanup_test.py:89: AssertionError
+=========================== short test summary info ============================
+FAILED .audit/poc/ai_002_document_download_permission_test.py::test_document_viewer_without_download_permission_cannot_mint_signed_url
+FAILED .audit/poc/contractor_001_cross_scope_assignment_test.py::test_assignment_manager_cannot_attach_contractor_from_unrelated_project
+FAILED .audit/poc/critical_01_admin_self_grant_super_admin_test.py::test_admin_cannot_promote_self_to_super_admin
+FAILED .audit/poc/critical_02_super_admin_password_reset_test.py::test_admin_cannot_reset_super_admin_password_or_receive_temp_secret
+FAILED .audit/poc/critical_03_roles_manage_self_grant_test.py::test_role_manager_cannot_add_dangerous_permission_to_own_role
+FAILED .audit/poc/critical_04_project_membership_self_insert_test.py::test_assignment_manager_cannot_insert_self_as_owner_in_unrelated_project
+FAILED .audit/poc/critical_05_company_media_acl_escalation_test.py::test_share_only_acl_holder_cannot_escalate_own_album_capabilities
+FAILED .audit/poc/customer_001_project_move_authz_test.py::test_project_reader_cannot_move_project_without_managing_source_customer
+FAILED .audit/poc/issue_002_delete_permission_test.py::test_issue_editor_without_issues_delete_cannot_soft_delete_issue
+FAILED .audit/poc/reports_001_cross_project_cleanup_test.py::test_cancelling_own_session_does_not_delete_other_project_upload_object
+10 failed in 8.03s

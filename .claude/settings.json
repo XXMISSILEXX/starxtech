@@ -1,0 +1,50 @@
+{
+  "$comment": "PHASE 10 (AUDIT) ONLY. Xóa/khôi phục file này trước khi sang bước sửa lỗi ở Bước 8. Đây là hàng rào phụ, KHÔNG phải hàng rào chính — hàng rào chính là `git diff --stat` sau mỗi bước (xem AUDIT_RUNBOOK.md).",
+  "permissions": {
+    "deny": [
+      "Write(./src/**)",
+      "Edit(./src/**)",
+      "Write(./app/**)",
+      "Edit(./app/**)",
+      "Write(./lib/**)",
+      "Edit(./lib/**)",
+      "Write(./api/**)",
+      "Edit(./api/**)",
+      "Write(./server/**)",
+      "Edit(./server/**)",
+      "Write(./migrations/**)",
+      "Edit(./migrations/**)",
+      "Write(./package.json)",
+      "Edit(./package.json)",
+      "Write(./.env)",
+      "Read(./.env)",
+      "Bash(git push:*)",
+      "Bash(git commit:*)",
+      "Bash(git reset:*)",
+      "Bash(git checkout:*)",
+      "Bash(rm:*)",
+      "Bash(npm publish:*)",
+      "Bash(npm install:*)",
+      "Bash(pip install:*)"
+    ],
+    "allow": [
+      "Read(./**)",
+      "Write(./.audit/**)",
+      "Edit(./.audit/**)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git grep:*)",
+      "Bash(git diff:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git blame:*)",
+      "Bash(jq:*)",
+      "Bash(rg:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)"
+    ]
+  }
+}
