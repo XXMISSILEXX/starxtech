@@ -13,10 +13,15 @@ from app.models import (
     ProjectContractor,
     ProjectContractorAssignment,
     ProjectContractorAssignmentStatus,
+    ProjectContractorRole,
     ProjectUpdate,
     ProjectUpdateType,
 )
-from app.project_memberships import accessible_project_ids, is_project_admin
+from app.project_memberships import (
+    accessible_project_ids,
+    can_manage_project_scope,
+    is_project_admin,
+)
 
 
 def normalize_contractor_name(value):
@@ -67,6 +72,33 @@ def can_manage_contractor(user, contractor):
         return True
     visible_ids = accessible_project_ids(user, ("can_view_project",)) or []
     return set(assignment_project_ids).issubset(visible_ids)
+
+
+def can_manage_contractor_assignment_surface(user, project, permission="contractor_assignments.manage"):
+    """Check the global action grant and canonical project management scope."""
+    return bool(
+        user and getattr(user, "is_authenticated", False) and user.is_active
+        and user.can(permission)
+        and can_manage_project_scope(user, project)
+    )
+
+
+def get_accessible_contractor_for_assignment(user, contractor_id, project):
+    """Load an active contractor through the same scope as the assignment picker.
+
+    This deliberately does not use an unrestricted primary-key lookup: a
+    submitted ID must be visible in ``accessible_contractors_query`` before it
+    can be attached to the managed project.
+    """
+    if not can_manage_contractor_assignment_surface(user, project):
+        return None
+    try:
+        contractor_id = int(contractor_id)
+    except (TypeError, ValueError):
+        return None
+    if contractor_id <= 0:
+        return None
+    return accessible_contractors_query(user).filter(ProjectContractor.id == contractor_id).first()
 
 
 def active_assignment_count(project_id, role=None):
@@ -166,6 +198,8 @@ def assign_contractor(*, project, contractor, role, status, started_on=None, not
         raise ValueError("Chỉ có thể gán đối tác cho dự án đang hoạt động.")
     if not contractor.is_active:
         raise ValueError("Không thể gán đối tác đã lưu trữ.")
+    if role not in {item.value for item in ProjectContractorRole}:
+        raise ValueError("Vai trò đối tác không hợp lệ.")
     if status not in {item.value for item in ProjectContractorAssignmentStatus}:
         raise ValueError("Trạng thái đối tác không hợp lệ.")
     if status == ProjectContractorAssignmentStatus.ENDED.value:

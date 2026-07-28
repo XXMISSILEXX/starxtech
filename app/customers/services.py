@@ -5,7 +5,11 @@ from sqlalchemy import or_
 
 from app.extensions import db
 from app.models import Customer, Project
-from app.project_memberships import accessible_project_ids, is_project_admin
+from app.project_memberships import (
+    accessible_project_ids,
+    can_manage_project_scope,
+    is_project_admin,
+)
 
 
 def normalize_customer_name(value):
@@ -36,13 +40,25 @@ def can_access_customer(user, customer):
 
 
 def can_manage_customer(user, customer):
+    """Whether a user has management authority over a customer.
+
+    A customer is managed through every active project currently owned by that
+    customer.  Read visibility of those projects is deliberately insufficient.
+    Empty customers have no project-scoped management surface, so only the
+    existing global project-scope authority may manage them.
+    """
+    if not user or not getattr(user, "is_authenticated", False) or not user.is_active or not customer:
+        return False
     if is_project_admin(user) or user.can("projects.scope_all"):
         return True
-    project_ids = [project.id for project in customer.projects if project.deleted_at is None]
+    projects = Project.query.filter(
+        Project.customer_id == customer.id,
+        Project.deleted_at.is_(None),
+    ).all()
+    project_ids = [project.id for project in projects]
     if not project_ids:
-        return True
-    visible_ids = accessible_project_ids(user, ("can_view_project",)) or []
-    return set(project_ids).issubset(visible_ids)
+        return False
+    return all(can_manage_project_scope(user, project) for project in projects)
 
 
 def active_customer_choices(user):

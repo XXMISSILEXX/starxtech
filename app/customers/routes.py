@@ -15,7 +15,7 @@ from app.customers.services import (
 )
 from app.extensions import db
 from app.models import Customer, Project
-from app.project_memberships import accessible_project_ids
+from app.project_memberships import accessible_project_ids, can_manage_project_scope
 
 
 def _permission_required(code):
@@ -176,15 +176,22 @@ def move_project(customer_id, project_id):
     _permission_required("customers.edit")
     customer = _customer_or_404(customer_id)
     project = Project.query.filter(Project.id == project_id, Project.deleted_at.is_(None)).first_or_404()
-    if project.customer_id != customer.id or not can_access_customer(current_user, customer):
+    # The URL customer ID is the client-supplied source.  Never move a project
+    # unless it still belongs to that persisted source customer.
+    if project.customer_id != customer.id:
         abort(403)
-    project_ids = accessible_project_ids(current_user, ("can_view_project",))
-    if project_ids is not None and project.id not in project_ids:
+    if not can_manage_project_scope(current_user, project):
+        abort(403)
+    if not can_manage_customer(current_user, customer):
         abort(403)
     target_id = request.form.get("target_customer_id", type=int)
+    if target_id is None:
+        abort(400)
     target = Customer.query.filter_by(id=target_id, is_active=True).first_or_404()
-    if not can_access_customer(current_user, target) or not can_manage_customer(current_user, target):
+    if not can_manage_customer(current_user, target):
         abort(403)
+    if target.id == customer.id:
+        abort(400, description="Dự án đã thuộc khách hàng này.")
     old_values = {"customer_id": project.customer_id}
     project.customer_id = target.id
     log_audit("project.customer.move", "Project", project.id, old_values=old_values, new_values={"customer_id": target.id})

@@ -25,10 +25,12 @@ from app.project_operations.services import (
     archive_contractor,
     assign_contractor,
     can_access_contractor,
+    can_manage_contractor_assignment_surface,
     can_manage_contractor,
     contractor_name_is_available,
     create_or_update_contractor,
     end_assignment,
+    get_accessible_contractor_for_assignment,
     restore_contractor,
     update_assignment,
     create_project_update,
@@ -137,8 +139,10 @@ def _render_project_role(project, role, *, form_values=None, form_error=None, op
         assignments=_assignments_for_project(project, role, selected_status),
         contractors=accessible_contractors_query(current_user).order_by(ProjectContractor.name.asc()).all(),
         statuses=ProjectContractorAssignmentStatus,
-        can_manage=current_user.can("contractor_assignments.manage"),
-        can_end=current_user.can("contractor_assignments.end"),
+        can_manage=can_manage_contractor_assignment_surface(current_user, project),
+        can_end=can_manage_contractor_assignment_surface(
+            current_user, project, "contractor_assignments.end"
+        ),
         active_count=active_assignment_count(project.id, role),
         selected_status=selected_status,
         form_values=form_values or {},
@@ -262,7 +266,13 @@ def project_contractors(project_id, role_path):
     if request.method == "GET":
         return _render_project_role(project, role)
     _permission_required("contractor_assignments.manage")
-    contractor = _contractor_or_404(request.form.get("contractor_id", type=int))
+    if not can_manage_contractor_assignment_surface(current_user, project):
+        abort(403)
+    contractor = get_accessible_contractor_for_assignment(
+        current_user, request.form.get("contractor_id"), project
+    )
+    if contractor is None:
+        abort(404)
     try:
         status = request.form.get("status", ProjectContractorAssignmentStatus.ACTIVE.value)
         assign_contractor(
@@ -285,7 +295,7 @@ def project_contractors(project_id, role_path):
 def assignment_update(assignment_id):
     _permission_required("contractor_assignments.manage")
     assignment = _assignment_or_404(assignment_id)
-    if not can_read_project(assignment.project_id):
+    if not can_manage_contractor_assignment_surface(current_user, assignment.project):
         abort(403)
     try:
         update_assignment(
@@ -311,7 +321,9 @@ def assignment_update(assignment_id):
 def assignment_end(assignment_id):
     _permission_required("contractor_assignments.end")
     assignment = _assignment_or_404(assignment_id)
-    if not can_read_project(assignment.project_id):
+    if not can_manage_contractor_assignment_surface(
+        current_user, assignment.project, "contractor_assignments.end"
+    ):
         abort(403)
     try:
         end_assignment(assignment, ended_on=_date_from_form("ended_on"), actor_id=current_user.id)

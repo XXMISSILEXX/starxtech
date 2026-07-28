@@ -136,6 +136,7 @@ def test_custom_assignment_manager_needs_project_scope_and_can_mutate_only_assig
             project_role_code="CUSTOM",
             is_active=True,
             can_view_project=True,
+            can_manage_report_categories=True,
         ))
         db.session.commit()
 

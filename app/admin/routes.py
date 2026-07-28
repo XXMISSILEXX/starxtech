@@ -1,5 +1,6 @@
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user
+from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash
 
 from app.admin import bp
@@ -25,7 +26,9 @@ from app.permissions.services import permission_required
 from app.extensions import db
 from app.models import Permission, Project, ProjectDocumentFolder, ProjectStatus, ProjectUser, ReportCategory, Role, RolePermission, User, UserRole
 from app.project_memberships import (CAPABILITY_FIELDS, CAPABILITY_LABELS, PROJECT_ROLE_LABELS,
-    PROJECT_ROLE_PRESETS, membership_capability_labels, membership_summary)
+    PROJECT_ROLE_LEVELS, PROJECT_ROLE_PRESETS, can_manage_project_memberships,
+    is_owner_equivalent_membership, is_super_admin, manageable_project_capabilities,
+    manageable_project_role_level, membership_capability_labels, membership_summary)
 from app.security import password_policy_errors
 
 DEPRECATED_GLOBAL_ROLE_CODES = ("PROJECT_MANAGER", "REPORTER")
@@ -291,29 +294,42 @@ def projects_reporters(project_id):
 @permission_required("project_assignments.manage")
 def memberships_create(project_id):
     project = db.get_or_404(Project, project_id)
-    user_id = request.form.get("user_id", type=int)
+    _require_project_membership_management(project)
+    user_id = _membership_user_id()
     user = db.session.get(User, user_id)
     if not user or not user.is_active or user.deleted_at is not None:
         abort(400)
+    code, enabled = _membership_form_values()
     membership = ProjectUser.query.filter_by(project_id=project.id, user_id=user.id).first()
     if membership and membership.is_active:
         flash("Người dùng đã có trong dự án.", "warning")
         return redirect(url_for("admin.projects_reporters", project_id=project.id))
+    _validate_membership_grant(project, code, enabled, existing_membership=membership)
     membership = membership or ProjectUser(project_id=project.id, user_id=user.id)
     if membership.id is None:
-        add_with_sqlite_id(membership); db.session.flush()
-    _apply_membership_form(membership)
+        add_with_sqlite_id(membership)
+    _apply_membership_values(membership, code, enabled)
     membership.is_active = True
     audit("project_membership.assign", "ProjectUser", membership.id, new_values={"project_id": project.id, "user_id": user.id})
-    db.session.commit(); flash("Đã thêm thành viên dự án.", "success")
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Người dùng đã có trong dự án.", "warning")
+        return redirect(url_for("admin.projects_reporters", project_id=project.id))
+    flash("Đã thêm thành viên dự án.", "success")
     return redirect(url_for("admin.projects_reporters", project_id=project.id))
 
 
 @bp.post("/projects/<int:project_id>/memberships/<int:membership_id>")
 @permission_required("project_assignments.manage")
 def memberships_update(project_id, membership_id):
+    project = db.get_or_404(Project, project_id)
+    _require_project_membership_management(project)
     membership = ProjectUser.query.filter_by(id=membership_id, project_id=project_id, is_active=True).first_or_404()
-    _apply_membership_form(membership)
+    code, enabled = _membership_form_values()
+    _validate_membership_grant(project, code, enabled, existing_membership=membership)
+    _apply_membership_values(membership, code, enabled)
     audit("project_membership.update", "ProjectUser", membership.id)
     db.session.commit(); flash("Đã lưu thay đổi.", "success")
     return redirect(url_for("admin.projects_reporters", project_id=project_id))
@@ -322,21 +338,77 @@ def memberships_update(project_id, membership_id):
 @bp.post("/projects/<int:project_id>/memberships/<int:membership_id>/deactivate")
 @permission_required("project_assignments.manage")
 def memberships_deactivate(project_id, membership_id):
+    project = db.get_or_404(Project, project_id)
+    _require_project_membership_management(project)
     membership = ProjectUser.query.filter_by(id=membership_id, project_id=project_id, is_active=True).first_or_404()
+    _validate_membership_target(project, membership)
     membership.is_active = False
     audit("project_membership.deactivate", "ProjectUser", membership.id, new_values={"is_active": False})
     db.session.commit(); flash("Đã ngừng phân quyền thành viên.", "success")
     return redirect(url_for("admin.projects_reporters", project_id=project_id))
 
 
-def _apply_membership_form(membership):
-    code = request.form.get("project_role_code", "PROJECT_VIEWER")
-    if code not in PROJECT_ROLE_PRESETS:
-        code = "PROJECT_VIEWER"
-    enabled = {field for field in CAPABILITY_FIELDS if request.form.get(field) == "1"}
+def _membership_user_id():
+    values = request.form.getlist("user_id")
+    if len(values) != 1 or not values[0].isdigit() or int(values[0]) <= 0:
+        abort(400)
+    return int(values[0])
+
+
+def _membership_form_values():
+    role_values = request.form.getlist("project_role_code")
+    if len(role_values) != 1 or role_values[0] not in PROJECT_ROLE_LEVELS:
+        abort(400)
+    unknown_capability_fields = {
+        name for name in request.form.keys()
+        if name.startswith("can_") and name not in CAPABILITY_FIELDS
+    }
+    if unknown_capability_fields:
+        abort(400)
+
+    enabled = set()
+    for field in CAPABILITY_FIELDS:
+        values = request.form.getlist(field)
+        if not values:
+            continue
+        if values != ["1"]:
+            abort(400)
+        enabled.add(field)
     if not enabled:
         flash("Vui lòng chọn ít nhất một quyền hoặc dùng nút Bỏ khỏi dự án.", "danger")
         abort(400)
+    return role_values[0], enabled
+
+
+def _require_project_membership_management(project):
+    if not can_manage_project_memberships(current_user, project):
+        abort(403, description="Không có quyền quản lý thành viên của dự án này.")
+
+
+def _validate_membership_target(project, membership):
+    if not is_super_admin(current_user) and is_owner_equivalent_membership(
+        membership.project_role_code,
+        {field for field in CAPABILITY_FIELDS if getattr(membership, field)},
+    ):
+        abort(403, description="Chỉ SUPER_ADMIN được quản lý thành viên chủ trì dự án.")
+    if PROJECT_ROLE_LEVELS.get(membership_summary(membership), -1) > manageable_project_role_level(current_user, project):
+        abort(403, description="Vai trò thành viên vượt quá phạm vi quản lý.")
+
+
+def _validate_membership_grant(project, code, enabled, *, existing_membership=None):
+    if existing_membership is not None:
+        _validate_membership_target(project, existing_membership)
+    if not enabled.issubset(manageable_project_capabilities(current_user, project)):
+        abort(403, description="Quyền dự án được cấp vượt quá phạm vi của bạn.")
+    if PROJECT_ROLE_LEVELS[code] > manageable_project_role_level(current_user, project):
+        abort(403, description="Vai trò dự án được cấp vượt quá phạm vi của bạn.")
+    # Product policy: creating or managing owner-equivalent memberships is a
+    # SUPER_ADMIN responsibility.  Project owners may manage subordinates.
+    if not is_super_admin(current_user) and is_owner_equivalent_membership(code, enabled):
+        abort(403, description="Chỉ SUPER_ADMIN được cấp vai trò chủ trì dự án.")
+
+
+def _apply_membership_values(membership, code, enabled):
     membership.project_role_code = code
     for field in CAPABILITY_FIELDS:
         setattr(membership, field, field in enabled)
