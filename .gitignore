@@ -16,3 +16,6 @@ backups/
 docker_backup_*/
 *.log
 node_modules/
+
+# Local release metadata
+.release/
