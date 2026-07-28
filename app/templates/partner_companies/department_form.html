@@ -26,12 +26,6 @@
       <label class="form-label">Thứ tự hiển thị</label>
       <input class="form-control" type="number" name="display_order" value="{{ request.form.get('display_order', department.display_order or 0) }}">
     </div>
-    <div class="col-md-3 d-flex align-items-end">
-      <div class="form-check">
-        <input class="form-check-input" type="checkbox" id="is_active" name="is_active" {% if department.is_active %}checked{% endif %}>
-        <label class="form-check-label" for="is_active">Đang hoạt động</label>
-      </div>
-    </div>
     <div class="col-md-6">
       <div class="form-check border rounded p-3 h-100">
         <input class="form-check-input" type="checkbox" id="is_special_department" name="is_special_department" {% if request.form.get('is_special_department') == 'on' or (not request.form and department.is_special_department) %}checked{% endif %}>

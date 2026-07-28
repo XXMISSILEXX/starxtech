@@ -417,8 +417,24 @@ def project_update_create(project_id):
     project = _project_or_404(project_id)
     if not can_read_project(project.id):
         abort(403)
-    assignment_id = request.form.get("contractor_assignment_id", type=int)
-    assignment = _assignment_or_404(assignment_id) if assignment_id else None
+    assignment_raw = (request.form.get("contractor_assignment_id") or "").strip()
+    assignment_id = int(assignment_raw) if assignment_raw.isascii() and assignment_raw.isdigit() else None
+    assignment = None
+    if assignment_raw:
+        # Scope the lookup before rendering any validation response.  A foreign
+        # assignment must be indistinguishable from an invalid selection.
+        assignment = ProjectContractorAssignment.query.filter(
+            ProjectContractorAssignment.id == assignment_id,
+            ProjectContractorAssignment.project_id == project.id,
+        ).first()
+        if assignment is None:
+            values = request.form.to_dict()
+            values["contractor_assignment_id"] = ""
+            return _update_form(
+                project,
+                form_values=values,
+                form_error="Đối tác được chọn không hợp lệ.",
+            ), 400
     try:
         update = create_project_update(project=project, assignment=assignment,
             update_type=request.form.get("update_type", "GENERAL"), title=request.form.get("title", ""),

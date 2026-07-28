@@ -59,22 +59,17 @@ def test_company_media_share_only_ceiling_covers_self_user_role_and_atomic_rejec
         with pytest.raises(CompanyMediaError, match="vượt quá"):
             set_permission(actor, album, "user", actor.id, {"can_share": "1", "can_edit": "1"})
         assert _acl_flags(own, own_before) == own_before
-        with pytest.raises(CompanyMediaError, match="vượt quá"):
+        with pytest.raises(CompanyMediaError, match="phân quyền không hợp lệ"):
             set_permission(actor, album, "user", target.id, {"can_download": "1"})
-        with pytest.raises(CompanyMediaError, match="vượt quá"):
+        with pytest.raises(CompanyMediaError, match="phân quyền không hợp lệ"):
             set_permission(actor, album, "role", target.role_id, {"can_upload": "1"})
-        delegated = set_permission(actor, album, "user", target.id, {"can_share": "1"})
-        assert delegated.can_share and not delegated.can_view and not delegated.can_edit
-        delegated_id = delegated.id
-        with pytest.raises(CompanyMediaError):
-            set_permission(actor, album, "user", target.id, {"can_share": "maybe"})
-        assert db.session.get(CompanyMediaAlbumPermission, delegated_id).can_share
-        with pytest.raises(CompanyMediaError):
+        with pytest.raises(CompanyMediaError, match="phân quyền không hợp lệ"):
+            set_permission(actor, album, "user", target.id, {"can_share": "1"})
+        assert CompanyMediaAlbumPermission.query.filter_by(album_id=album.id, user_id=target.id).count() == 0
+        with pytest.raises(CompanyMediaError, match="phân quyền không hợp lệ"):
             set_permission(actor, album, "user", "", {"can_share": "1"})
-        with pytest.raises(CompanyMediaError):
+        with pytest.raises(CompanyMediaError, match="phân quyền không hợp lệ"):
             set_permission(actor, album, "role", "99999", {"can_share": "1"})
-        remove_permission(actor, album, delegated_id)
-        assert db.session.get(CompanyMediaAlbumPermission, delegated_id) is None
 
     _login(client, "reporter")
     response = client.post(

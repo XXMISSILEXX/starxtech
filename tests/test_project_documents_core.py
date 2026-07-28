@@ -98,14 +98,14 @@ def test_move_and_restore_routes_enforce_backend_permissions(client, app):
     assert client.get(f"/project-documents/folders/{source_id}/move").status_code == 405
 
 
-def test_viewer_admin_can_browse_any_project_including_lazy_root(client, app):
+def test_viewer_admin_cannot_provision_a_missing_project_root_via_get(client, app):
     response = _login(client, "viewer")
     assert response.status_code == 302
     response = client.get("/project-documents/projects/2")
-    assert response.status_code == 302
-    response = client.get(response.headers["Location"])
-    assert response.status_code == 200
-    assert "Hồ sơ dự án".encode() in response.data
+    assert response.status_code == 404
+    with app.app_context():
+        from app.models import Project
+        assert ProjectDocumentFolder.query.filter_by(project_id=2, is_root=True).count() == 0
 
 
 def test_viewer_admin_is_read_only_and_can_view_restricted_folder(client, app):

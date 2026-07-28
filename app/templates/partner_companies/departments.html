@@ -49,6 +49,12 @@
                   <button class="btn btn-sm btn-outline-danger btn-action-mobile" type="submit" data-confirm="Lưu trữ phòng ban này?" aria-label="Lưu trữ" title="Lưu trữ"><i class="bi bi-trash"></i><span class="action-label">Lưu trữ</span></button>
                 </form>
               {% endif %}
+              {% if can_restore and not department.is_active %}
+                <form method="post" action="{{ url_for('partner_companies.departments_restore', company_id=company.id, department_id=department.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-sm btn-outline-success btn-action-mobile" type="submit" aria-label="Khôi phục" title="Khôi phục"><i class="bi bi-arrow-counterclockwise"></i><span class="action-label">Khôi phục</span></button>
+                </form>
+              {% endif %}
             </div>
           </td>
         </tr>

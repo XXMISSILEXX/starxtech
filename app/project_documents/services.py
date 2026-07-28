@@ -6,7 +6,7 @@ from sqlalchemy import func
 from app.audit import audit
 from app.extensions import db
 from app.models import (ProjectDocumentFile, ProjectDocumentFolder, ProjectDocumentFolderPermission,
-    Role, StorageDerivative, UploadBatchItem, User)
+    Role, StorageDerivative, UploadBatchItem, User, UserRole)
 from app.project_documents.permissions import can_create_project_document_folder, can_view_project_document_folder
 from app.storage.exceptions import StorageNotFoundError, StorageValidationError
 from app.storage.services import complete_upload_item, create_upload_batch_presign
@@ -89,16 +89,53 @@ def validate_folder_permission_grant(user, folder, requested_flags):
     return normalized
 
 
-def get_or_create_project_root_folder(project, user):
-    root = ProjectDocumentFolder.query.filter_by(project_id=project.id, is_root=True).filter(ProjectDocumentFolder.deleted_at.is_(None)).first()
+def find_project_root_folder(project):
+    return ProjectDocumentFolder.query.filter_by(project_id=project.id, is_root=True).filter(
+        ProjectDocumentFolder.deleted_at.is_(None)
+    ).first()
+
+
+def provision_project_root_folder(project, user=None):
+    """Create a root only from an explicit authorized web/CLI operation."""
+    root = find_project_root_folder(project)
     if root:
-        return root
-    root = ProjectDocumentFolder(project_id=project.id, name="__ROOT__", is_root=True, root_type="project", created_by_id=user.id)
+        return root, False
+    if user is None:
+        user = User.query.join(Role).filter(Role.code == UserRole.SUPER_ADMIN.value, User.is_active.is_(True)).first()
+    if user is None:
+        raise DocumentValidationError("Không tìm thấy SUPER_ADMIN để ghi nhận người tạo thư mục gốc.")
+    root = ProjectDocumentFolder(project_id=project.id, name="__ROOT__", is_root=True, root_type="project",
+        created_by_id=user.id)
     db.session.add(root)
     db.session.flush()
     audit("document.folder.create", "ProjectDocumentFolder", root.id, new_values={"root": True, "project_id": project.id})
     db.session.commit()
+    return root, True
+
+
+def get_or_create_project_root_folder(project, user):
+    """Compatibility wrapper for trusted creation-time and test callers.
+
+    HTTP routes must use :func:`find_project_root_folder` for GET and the
+    explicitly-authorized provision route for writes.
+    """
+    root, _created = provision_project_root_folder(project, user)
     return root
+
+
+def provision_missing_project_roots(*, dry_run=True):
+    """Trusted, deterministic repair for pre-existing projects without roots."""
+    from app.models import Project
+
+    projects = Project.query.filter(Project.deleted_at.is_(None)).order_by(Project.id.asc()).all()
+    missing = [project for project in projects if find_project_root_folder(project) is None]
+    if dry_run:
+        return {"projects": len(projects), "missing": len(missing), "provisioned": 0, "ids": [project.id for project in missing]}
+    provisioned = 0
+    for project in missing:
+        _root, created = provision_project_root_folder(project)
+        provisioned += int(created)
+    return {"projects": len(projects), "missing": len(missing), "provisioned": provisioned, "ids": [project.id for project in missing]}
 
 
 def create_custom_root_folder(user, name, description=None, is_restricted=False):

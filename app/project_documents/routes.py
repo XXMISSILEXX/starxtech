@@ -9,9 +9,9 @@ from app.project_documents.permissions import (can_access_project_documents, can
     can_delete_project_document_folder, can_edit_project_document_folder, can_restore_project_document_folder, can_share_project_document_folder,
     can_view_project_document_folder, can_upload_project_document_folder, can_download_project_document_file,
     can_edit_project_document_file, can_delete_project_document_file, can_restore_project_document_file,
-    can_view_project_document_file, can_create_custom_root)
+    can_view_project_document_file, can_create_custom_root, can_provision_project_document_root)
 from app.project_documents.services import (DocumentValidationError, archive_folder, build_breadcrumb, create_folder,
-    get_or_create_project_root_folder, list_accessible_projects, list_folder_children, list_folder_files, list_move_destinations, move_folder,
+    find_project_root_folder, provision_project_root_folder, list_accessible_projects, list_folder_children, list_folder_files, list_move_destinations, move_folder,
     remove_folder_permission, rename_folder, restore_folder, set_folder_permission, presign_folder_upload_batch,
     complete_folder_upload_item, create_file_download_url, create_file_preview_url, rename_file, archive_file, restore_file, file_payload,
     bulk_archive_files, bulk_restore_files, bulk_file_download_urls, create_custom_root_folder)
@@ -31,7 +31,11 @@ def require_module():
 @bp.get("/")
 def index():
     custom_roots = [item for item in ProjectDocumentFolder.query.filter_by(project_id=None, is_root=True, root_type="custom").filter(ProjectDocumentFolder.deleted_at.is_(None)).all() if can_view_project_document_folder(current_user, item)]
-    return render_template("project_documents/index.html", projects=list_accessible_projects(current_user), custom_roots=custom_roots, can_create_custom_root=can_create_custom_root(current_user))
+    projects = list_accessible_projects(current_user)
+    roots_by_project_id = {project.id: find_project_root_folder(project) for project in projects}
+    return render_template("project_documents/index.html", projects=projects, roots_by_project_id=roots_by_project_id,
+        can_provision_by_project_id={project.id: can_provision_project_document_root(current_user, project) for project in projects},
+        custom_roots=custom_roots, can_create_custom_root=can_create_custom_root(current_user))
 
 @bp.post("/custom-roots")
 def custom_root_create():
@@ -47,8 +51,20 @@ def custom_root_create():
 def project_root(project_id):
     project = Project.query.filter_by(id=project_id, deleted_at=None).first_or_404()
     if project not in list_accessible_projects(current_user): abort(403)
-    root = get_or_create_project_root_folder(project, current_user)
+    root = find_project_root_folder(project)
+    if root is None:
+        abort(404)
     if not can_view_project_document_folder(current_user, root): abort(403)
+    return redirect(url_for("project_documents.folder", folder_id=root.id))
+
+
+@bp.post("/projects/<int:project_id>/provision-root")
+def provision_project_root(project_id):
+    project = Project.query.filter_by(id=project_id, deleted_at=None).first_or_404()
+    if not can_provision_project_document_root(current_user, project):
+        abort(403)
+    root, created = provision_project_root_folder(project, current_user)
+    flash("Đã tạo thư mục gốc hồ sơ dự án." if created else "Thư mục gốc hồ sơ dự án đã tồn tại.", "success")
     return redirect(url_for("project_documents.folder", folder_id=root.id))
 
 

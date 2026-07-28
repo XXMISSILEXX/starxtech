@@ -8,6 +8,8 @@ from app.extensions import db
 from app.models import Company, CompanyDepartment, Partner, PartnerRelationship
 from app.partner_relations import bp
 from app.partners.services import _add_with_sqlite_id
+from app.partners.lifecycle import active_record_query
+from app.partner_relations.services import RelationshipGraphValidationError, validate_proposed_relationship_graph
 
 
 RELATIONSHIP_TYPES = {
@@ -35,7 +37,7 @@ def index():
     if company_id.isdigit():
         return redirect(url_for("partner_relations.company", company_id=int(company_id), q=search, department=department))
 
-    query = Company.query.filter(Company.deleted_at.is_(None))
+    query = Company.query.filter(Company.deleted_at.is_(None), Company.is_active.is_(True))
     if search or department:
         query = query.join(Partner, Partner.company_id == Company.id)
     if search:
@@ -46,7 +48,7 @@ def index():
             PartnerRelationship.department_id == int(department) if department.isdigit() else Partner.department == department
         )
     companies = query.distinct().order_by(Company.name.asc()).all()
-    all_companies = Company.query.filter(Company.deleted_at.is_(None)).order_by(Company.name.asc()).all()
+    all_companies = Company.query.filter(Company.deleted_at.is_(None), Company.is_active.is_(True)).order_by(Company.name.asc()).all()
     departments = _department_options()
     partners_without_company = (
         Partner.query.filter(Partner.company_id.is_(None), Partner.deleted_at.is_(None))
@@ -169,6 +171,7 @@ def department_summary(department_id):
             CompanyDepartment.id == department_id,
             CompanyDepartment.is_active.is_(True),
             Company.deleted_at.is_(None),
+            Company.is_active.is_(True),
         )
         .first_or_404()
     )
@@ -246,8 +249,19 @@ def _relationship_form_data(company, partners, current_relationship=None):
         "display_order": _int_or_zero(request.form.get("display_order")),
         "note": request.form.get("note", "").strip(),
     }
-    if not errors and _creates_cycle(company.id, partner_id, parent_partner_id, current_relationship):
-        errors["parent_partner_id"] = "Không thể tạo quan hệ vòng lặp."
+    if not errors:
+        try:
+            validate_proposed_relationship_graph(
+                company.id,
+                {
+                    "partner_id": partner_id,
+                    "parent_partner_id": parent_partner_id,
+                    "relationship_type": relationship_type,
+                },
+                replacing_relationship_id=current_relationship.id if current_relationship else None,
+            )
+        except RelationshipGraphValidationError as exc:
+            errors["parent_partner_id"] = str(exc)
     return errors, form_data
 
 
@@ -487,28 +501,8 @@ def _relationships_by_partner(relationships):
     return grouped
 
 
-def _creates_cycle(company_id, partner_id, parent_partner_id, current_relationship=None):
-    if not parent_partner_id:
-        return False
-    parent_by_partner = {}
-    for row in _relationship_rows(company_id):
-        if current_relationship and row.id == current_relationship.id:
-            continue
-        if row.parent_partner_id:
-            parent_by_partner.setdefault(row.partner_id, row.parent_partner_id)
-    parent_by_partner[partner_id] = parent_partner_id
-    seen = {partner_id}
-    current = parent_partner_id
-    while current:
-        if current in seen:
-            return True
-        seen.add(current)
-        current = parent_by_partner.get(current)
-    return False
-
-
 def _company_or_404(company_id):
-    return Company.query.filter(Company.id == company_id).first_or_404()
+    return active_record_query(Company).filter(Company.id == company_id).first_or_404()
 
 
 def _require_active_company_for_mutation(company):

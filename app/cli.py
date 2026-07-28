@@ -172,6 +172,15 @@ def register_cli(app):
         click.echo("mode={mode} matched={matched} cleaned={cleaned} partial={partial} failed={failed}".format(
             mode="dry-run" if dry_run else "apply", **summary))
 
+    @app.cli.command("provision-project-document-roots")
+    @click.option("--dry-run/--apply", "dry_run", default=True,
+                  help="Preview or create missing project document roots.")
+    def provision_project_document_roots(dry_run):
+        from app.project_documents.services import provision_missing_project_roots
+        summary = provision_missing_project_roots(dry_run=dry_run)
+        click.echo("mode={mode} projects={projects} missing={missing} provisioned={provisioned} ids={ids}".format(
+            mode="dry-run" if dry_run else "apply", ids=",".join(map(str, summary["ids"])) or "-", **summary))
+
     @app.cli.command("cleanup-unreferenced-display-images")
     @click.option("--dry-run/--apply", "dry_run", default=True,
                   help="Preview or remove unreferenced display images that remain quota-accounted.")

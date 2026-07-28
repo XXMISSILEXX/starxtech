@@ -9,7 +9,8 @@ from app.extensions import db
 from app.models import Company, CompanyDepartment, Partner, PartnerRelationship
 from app.partner_companies import bp
 from app.partners.services import _add_with_sqlite_id
-from app.partners.lifecycle import active_record_query, apply_lifecycle_scope, archived_record_query, lifecycle_status
+from app.partners.lifecycle import (active_record_query, apply_lifecycle_scope, archived_record_query,
+    lifecycle_status, require_active_for_generic_edit)
 
 
 @bp.before_request
@@ -158,6 +159,7 @@ def departments(company_id):
         parent_options=_company_departments(company.id),
         filters=request.args,
         can_create=_can("partner_companies.create") and _is_active(company), can_edit=_can("partner_companies.edit") and _is_active(company), can_delete=_can("partner_companies.delete") and _is_active(company),
+        can_restore=_can("partner_companies.restore") and _is_active(company),
     )
 
 
@@ -176,7 +178,7 @@ def departments_new(company_id):
 @permission_required("partner_companies.edit")
 def departments_edit(company_id, department_id):
     company = _company_or_404(company_id)
-    department = _department_or_404(company.id, department_id)
+    department = _active_department_or_404(company.id, department_id)
     if request.method == "POST":
         _require_active_company_for_mutation(company)
         return _save_department(company, department)
@@ -200,7 +202,7 @@ def departments_delete(company_id, department_id):
 @bp.route("/<int:company_id>/edit", methods=["GET", "POST"])
 @permission_required("partner_companies.edit")
 def edit(company_id):
-    company = _company_or_404(company_id)
+    company = _active_company_or_404(company_id)
     if request.method == "POST":
         return _save_company(company)
     return render_template("partner_companies/form.html", company=company, errors={})
@@ -238,6 +240,23 @@ def restore(company_id):
     return redirect(url_for("partner_companies.detail", company_id=company.id))
 
 
+@bp.post("/<int:company_id>/departments/<int:department_id>/restore")
+@permission_required("partner_companies.restore")
+def departments_restore(company_id, department_id):
+    company = _active_company_or_404(company_id)
+    department = CompanyDepartment.query.filter(
+        CompanyDepartment.id == department_id,
+        CompanyDepartment.company_id == company.id,
+        CompanyDepartment.is_active.is_(False),
+    ).first_or_404()
+    old_values = _department_snapshot(department)
+    department.is_active = True
+    audit("partner_department.restore", "CompanyDepartment", department.id, old_values, _department_snapshot(department))
+    db.session.commit()
+    flash("Đã khôi phục phòng ban.", "success")
+    return redirect(url_for("partner_companies.departments", company_id=company.id, active="0"))
+
+
 def _save_company(company, is_new=False):
     old_values = None if is_new else _company_snapshot(company)
     errors = {}
@@ -253,7 +272,10 @@ def _save_company(company, is_new=False):
     company.website = _text("website")
     company.address = _text("address")
     company.notes = _text("notes")
-    company.is_active = request.form.get("is_active", "on") == "on"
+    # Lifecycle state is set only by archive/restore routes.  New records start
+    # active and an ordinary edit preserves the existing state.
+    if is_new:
+        company.is_active = True
     audit("partner_company.create" if is_new else "partner_company.update", "Company", company.id, old_values, _company_snapshot(company))
     db.session.commit()
     if request.files.get("photo") and request.files["photo"].filename:
@@ -290,6 +312,11 @@ def _department_or_404(company_id, department_id):
         CompanyDepartment.id == department_id,
         CompanyDepartment.company_id == company_id,
     ).first_or_404()
+
+
+def _active_department_or_404(company_id, department_id):
+    department = _department_or_404(company_id, department_id)
+    return require_active_for_generic_edit(department)
 
 
 def _company_departments(company_id, include_inactive=False):
@@ -355,7 +382,9 @@ def _save_department(company, department):
     department.parent_department_id = parent_id
     department.description = _text("description")
     department.display_order = _int_or_zero(request.form.get("display_order"))
-    department.is_active = request.form.get("is_active", "on") == "on"
+    # A department's active state is an explicit deactivate/restore transition.
+    if is_new:
+        department.is_active = True
     department.is_special_department = request.form.get("is_special_department") == "on"
     audit("partner_department.create" if is_new else "partner_department.update", "CompanyDepartment", department.id, old_values, _department_snapshot(department))
     db.session.commit()

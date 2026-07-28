@@ -1,10 +1,10 @@
-from flask import abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
 from app.company_media import bp
 from app.company_media import permissions as p
 from app.company_media import services as s
 from app.extensions import db
-from app.models import CompanyMediaAlbum, CompanyMediaFile, Role, User
+from app.models import CompanyMediaAlbum, CompanyMediaFile
 from app.models import BulkDownloadJob
 from app.bulk_downloads.services import (BulkDownloadError, parse_file_ids, preflight_media_download,
     request_media_download, stream_zip_download, serialize_job)
@@ -75,7 +75,14 @@ def presign(album_id):
     try:
         data=request.get_json() or {}; return jsonify(s.presign(current_user,a,data.get("files",[]),data.get("selection_session_id")))
     except StorageAuthorizationError: abort(403)
-    except Exception as e:return jsonify(error=str(e)),400
+    except (StorageValidationError, s.CompanyMediaError) as exc:
+        return jsonify(error=str(exc)),400
+    except Exception as exc:
+        # Provider exceptions may contain bucket names, object keys, bearer
+        # URLs, or provider response text.  Log only a stable event/context.
+        current_app.logger.error("company_media_presign_failed event=CM-PRESIGN-001 album_id=%s actor_id=%s exception_type=%s",
+                                 a.id, current_user.id, type(exc).__name__)
+        return jsonify(error="Không thể chuẩn bị tải tệp. Vui lòng thử lại sau.", code="CM-PRESIGN-001"), 502
 @bp.post("/albums/<int:album_id>/files/upload-selection-sessions")
 def selection(album_id):
     a=_one(CompanyMediaAlbum, album_id)
@@ -182,16 +189,6 @@ def permissions(album_id):
             try:s.set_permission(current_user,a,request.form.get("principal_type"),request.form.get("principal_id"),request.form)
             except s.CompanyMediaError as e:return jsonify(error=str(e)),400
         return redirect(url_for("company_media.permissions",album_id=a.id))
-    users = User.query.filter_by(is_active=True).order_by(User.full_name, User.username).all()
-    roles = Role.query.order_by(Role.name, Role.code).all()
-    principal_options = [
-        {"type": "user", "id": user.id, "name": user.full_name, "username": user.username,
-         "email": user.email, "role": user.role.name if user.role else ""}
-        for user in users
-    ] + [
-        {"type": "role", "id": role.id, "name": role.name, "description": role.description,
-         "code": role.code}
-        for role in roles
-    ]
+    principal_options = s.assignable_album_principal_options(current_user, a)
     return render_template("company_media/permissions.html", album=a, entries=a.permissions,
                            principal_options=principal_options)

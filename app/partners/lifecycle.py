@@ -1,5 +1,7 @@
 """Shared lifecycle helpers for Partner and Company business records."""
 
+from flask import abort
+
 
 LIFECYCLE_STATUSES = {"active", "archived", "all"}
 
@@ -24,3 +26,16 @@ def active_record_query(model):
 
 def archived_record_query(model):
     return model.query.filter(model.deleted_at.isnot(None))
+
+
+def require_active_for_generic_edit(record):
+    """Keep ordinary edit paths separate from explicit lifecycle transitions.
+
+    A generic form must never be a back door for restoring, reactivating, or
+    otherwise changing an archived record.  ``404`` also avoids turning a
+    lifecycle state into a distinct detail oracle for callers without the
+    dedicated history/restore workflow.
+    """
+    if record is None or getattr(record, "deleted_at", None) is not None or not getattr(record, "is_active", False):
+        abort(404)
+    return record

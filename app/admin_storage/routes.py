@@ -6,6 +6,7 @@ from flask_login import current_user
 
 from app.admin_storage import bp
 from app.admin_storage.services import StorageDashboardFilterError, dashboard_context, parse_filters
+from app.csv_safety import safe_csv_cell
 from app.extensions import limiter
 from app.permissions.services import permission_required
 
@@ -32,13 +33,16 @@ def export_csv():
     data = dashboard_context(_filters())
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(["section", "label", "bytes", "count", "storage_egress_bytes", "client_egress_bytes"])
-    writer.writerow(["overview", "originals", data["originals"], "", "", ""])
-    writer.writerow(["overview", "derivatives", data["derivatives"], "", "", ""])
-    writer.writerow(["overview", "legacy_zip", data["zips"], "", "", ""])
-    for row in data["usage_by_module"]: writer.writerow(["storage_module", row["label"], row["total"], "", "", ""])
-    for row in data["module_breakdown"]: writer.writerow(["bandwidth_module", row.label, "", row.count, row.storage_bytes, row.client_bytes])
-    for row in data["source_breakdown"]: writer.writerow(["bandwidth_source", row.label, "", row.count, row.storage_bytes, row.client_bytes])
-    for row in data["top_users"]: writer.writerow(["top_user", row.full_name or row.username, row.bytes, row.count, "", row.bytes])
-    for row in data["top_objects"]: writer.writerow(["top_object", row.original_filename or "Không còn metadata", row.bytes, row.count, "", row.bytes])
+    def write_row(values):
+        writer.writerow([safe_csv_cell(value) for value in values])
+
+    write_row(["section", "label", "bytes", "count", "storage_egress_bytes", "client_egress_bytes"])
+    write_row(["overview", "originals", data["originals"], "", "", ""])
+    write_row(["overview", "derivatives", data["derivatives"], "", "", ""])
+    write_row(["overview", "legacy_zip", data["zips"], "", "", ""])
+    for row in data["usage_by_module"]: write_row(["storage_module", row["label"], row["total"], "", "", ""])
+    for row in data["module_breakdown"]: write_row(["bandwidth_module", row.label, "", row.count, row.storage_bytes, row.client_bytes])
+    for row in data["source_breakdown"]: write_row(["bandwidth_source", row.label, "", row.count, row.storage_bytes, row.client_bytes])
+    for row in data["top_users"]: write_row(["top_user", row.full_name or row.username, row.bytes, row.count, "", row.bytes])
+    for row in data["top_objects"]: write_row(["top_object", row.original_filename or "Không còn metadata", row.bytes, row.count, "", row.bytes])
     return Response("\ufeff" + output.getvalue(), mimetype="text/csv; charset=utf-8", headers={"Content-Disposition": "attachment; filename=storage-dashboard.csv"})

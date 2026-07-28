@@ -59,6 +59,9 @@ def _can(user, folder, capability, action, include_archived=False):
 
 def can_view_project_document_folder(user, folder, include_archived=False): return _can(user, folder, "can_view_documents", "view", include_archived)
 def can_create_project_document_folder(user, parent_folder): return _can(user, parent_folder, "can_edit_documents", "edit")
+def can_provision_project_document_root(user, project):
+    """Root creation is a project-scoped document-edit operation."""
+    return bool(project and project.deleted_at is None and _base(user, "can_edit_documents", project.id))
 def can_edit_project_document_folder(user, folder): return _can(user, folder, "can_edit_documents", "edit")
 def can_delete_project_document_folder(user, folder): return _can(user, folder, "can_archive_documents", "delete")
 def can_restore_project_document_folder(user, folder): return _can(user, folder, "can_restore_documents", "delete", include_archived=True)

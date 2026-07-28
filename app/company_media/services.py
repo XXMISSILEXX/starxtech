@@ -3,7 +3,8 @@ from pathlib import Path
 from sqlalchemy import func
 from app.audit import audit
 from app.extensions import db
-from app.models import CompanyMediaAlbum, CompanyMediaAlbumPermission, CompanyMediaFile, Role, StorageDerivative, UploadBatchItem, User
+from app.models import (CompanyMediaAlbum, CompanyMediaAlbumPermission, CompanyMediaFile, Role,
+    StorageDerivative, UploadBatchItem, User, UserRole)
 from app.storage.services import create_upload_batch_presign, complete_upload_item
 
 class CompanyMediaError(ValueError): pass
@@ -59,6 +60,63 @@ def _permission_principal(principal_type, principal_id):
     elif not db.session.get(Role, principal_id):
         raise CompanyMediaError("Vai trò không tồn tại.")
     return principal_id
+
+
+def _principal_label(principal_type, principal):
+    if principal_type == "user":
+        return (principal.full_name or principal.username or f"Người dùng #{principal.id}").strip()
+    return (principal.name or f"Vai trò #{principal.id}").strip()
+
+
+def assignable_album_principal_options(user, album):
+    """Return the smallest principal directory the actor may administer.
+
+    Global administrators retain the established directory administration
+    workflow.  A delegated album sharer sees only principals already attached
+    to this album (plus their own principal), which is sufficient to maintain
+    existing ACLs without exposing organization-wide directory data.
+    """
+    if user.role_code in {UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value}:
+        users = User.query.filter_by(is_active=True).order_by(User.full_name, User.username).all()
+        roles = Role.query.order_by(Role.name, Role.code).all()
+        principals = [("user", item) for item in users] + [("role", item) for item in roles]
+    else:
+        principals = []
+        for entry in album.permissions:
+            principal = entry.user if entry.principal_type == "user" else entry.role
+            if principal is not None:
+                principals.append((entry.principal_type, principal))
+        principals.append(("user", user))
+        if user.role is not None:
+            principals.append(("role", user.role))
+
+    seen = set()
+    options = []
+    for principal_type, principal in principals:
+        key = (principal_type, principal.id)
+        if key in seen:
+            continue
+        seen.add(key)
+        options.append({"type": principal_type, "id": principal.id, "label": _principal_label(principal_type, principal)})
+    return options
+
+
+def validate_assignable_album_principal(user, album, principal_type, principal_id):
+    """Authoritative POST validation matching the minimized picker scope."""
+    try:
+        normalized_id = _principal_id(principal_id)
+    except CompanyMediaError:
+        raise CompanyMediaError("Đối tượng phân quyền không hợp lệ.") from None
+    # Global administrators are entitled to the directory, including useful
+    # lifecycle validation for an inactive selected account.
+    if user.role_code in {UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value}:
+        return _permission_principal(principal_type, normalized_id)
+    if principal_type not in {"user", "role"} or not any(
+        option["type"] == principal_type and option["id"] == normalized_id
+        for option in assignable_album_principal_options(user, album)
+    ):
+        raise CompanyMediaError("Đối tượng phân quyền không hợp lệ.")
+    return normalized_id
 
 
 def validate_album_permission_grant(user, album, requested_flags):
@@ -154,6 +212,7 @@ def set_cover(user,a,media_id):
 def set_permission(user,a,typ,pid,form):
     # Complete validation precedes lookup/create/assignment, so rejected
     # requests cannot partially rewrite an existing ACL row.
+    pid = validate_assignable_album_principal(user, a, typ, pid)
     pid = _permission_principal(typ, pid)
     normalized = validate_album_permission_grant(user, a, form)
     key = typ + "_id"
