@@ -116,13 +116,25 @@ def cancel(project_id, session_id):
     project, error = _project(project_id)
     if error: return error
     try:
-        session = direct_uploads._session(current_user, project.id, session_id)
-        session.status = "cancelled"
-        from app.extensions import db
-        db.session.commit()
-        return _ok(upload_session_id=session.id, status=session.status)
+        session, cleanup = direct_uploads.cancel_upload_session_for_actor(
+            actor=current_user, project=project, session_id=session_id,
+        )
+        if not cleanup["complete"]:
+            return _fail(
+                "upload_session_cleanup_incomplete",
+                "Không thể dọn dẹp hoàn toàn phiên tải ảnh.",
+                409,
+                upload_session_id=session.id,
+                session_status=session.status,
+                cleanup=cleanup,
+            )
+        return _ok(upload_session_id=session.id, status=session.status, cleanup=cleanup)
     except StorageAuthorizationError: return _fail("upload_session_forbidden", "Phiên tải ảnh không hợp lệ.", 403)
     except StorageValidationError as exc: return _fail("upload_session_invalid", str(exc), 409)
+    except direct_uploads.UploadSessionCleanupError as exc:
+        from app.extensions import db
+        db.session.rollback()
+        return _fail("upload_session_cleanup_failed", str(exc), 500)
 
 
 @bp.post("/finalize")

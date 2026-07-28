@@ -166,6 +166,19 @@ def can_delete_report(user, report):
     return user_has_project_capability(user, report.project_id, "can_archive_reports")
 
 
+def can_delete_report_attachment(user, attachment):
+    """Attachment deletion needs both report scope and its dangerous grant."""
+    user = _user_or_current(user)
+    report = getattr(getattr(attachment, "section", None), "daily_report", None)
+    return bool(
+        user
+        and getattr(attachment, "deleted_at", None) is None
+        and report is not None
+        and can_edit_report(user, report)
+        and user.can("report_attachments.delete")
+    )
+
+
 def can_view_issue(user, issue):
     return user_has_project_capability(_user_or_current(user), issue.project_id, "can_view_issues")
 
@@ -187,7 +200,12 @@ def can_close_persistent_issue(issue, user=None):
 
 
 def can_delete_persistent_issue(issue, user=None):
-    return user_has_project_capability(_user_or_current(user), issue.project_id, "can_edit_issues")
+    user = _user_or_current(user)
+    return bool(
+        getattr(issue, "deleted_at", None) is None
+        and can_edit_persistent_issue(issue, user)
+        and user.can("issues.delete")
+    )
 
 
 def can_manage_categories_for_project(project_id, user=None):
@@ -212,7 +230,10 @@ def can_delete_report_for_project(project_id):
 
 
 def can_delete_issue_for_project(project_id):
-    return user_has_project_capability(current_user, project_id, "can_edit_issues")
+    return bool(
+        user_has_project_capability(current_user, project_id, "can_edit_issues")
+        and current_user.can("issues.delete")
+    )
 
 
 def can_manage_persistent_issues(project_id):

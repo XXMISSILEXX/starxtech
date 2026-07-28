@@ -3,9 +3,9 @@ from flask import abort, current_app, flash, jsonify, redirect, request, url_for
 from flask_login import current_user
 
 from app.attachments import bp
-from app.auth.permissions import can_edit_report, can_view_report
+from app.auth.permissions import (can_delete_report_attachment, can_view_report)
 from app.extensions import db
-from app.models import MediaProcessingJob, ReportAttachment, StorageDerivative
+from app.models import DailyReportSection, MediaProcessingJob, ReportAttachment, StorageDerivative
 from app.reports.services import delete_attachment
 from app.storage.providers import get_storage_provider
 from app.storage.quota import ensure_bandwidth, record_download
@@ -85,7 +85,7 @@ def download(attachment_id):
 def delete(attachment_id):
     attachment = _attachment_or_404(attachment_id)
     report = attachment.section.daily_report
-    if not can_edit_report(current_user, report): abort(403)
+    if not can_delete_report_attachment(current_user, attachment): abort(403)
     delete_attachment(attachment)
     flash("Đã xóa ảnh đính kèm.", "success")
     return redirect(request.form.get("next") or url_for("reports.edit", report_id=report.id))
@@ -98,7 +98,11 @@ def _authorised(attachment_id):
 
 
 def _attachment_or_404(attachment_id):
-    return ReportAttachment.query.filter(ReportAttachment.id == attachment_id, ReportAttachment.deleted_at.is_(None)).first_or_404()
+    return ReportAttachment.query.join(ReportAttachment.section).filter(
+        ReportAttachment.id == attachment_id,
+        ReportAttachment.deleted_at.is_(None),
+        DailyReportSection.deleted_at.is_(None),
+    ).first_or_404()
 
 
 def _preview_target(attachment, preferred_types):

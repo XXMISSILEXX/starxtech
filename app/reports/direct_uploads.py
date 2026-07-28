@@ -8,9 +8,10 @@ from sqlalchemy import delete, or_, select, update
 
 from app.admin.services import add_with_sqlite_id
 from app.extensions import db
-from app.models import (DownloadEvent, MediaProcessingJob, StorageDerivative,
-                        StorageObject, UploadBatch, UploadBatchItem,
-                        UploadSelectionSession)
+from app.models import (CompanyMediaFile, DownloadEvent, MediaProcessingJob,
+                        ProjectDocumentFile, ReportAttachment,
+                        StorageDerivative, StorageObject, UploadBatch,
+                        UploadBatchItem, UploadSelectionSession)
 from app.storage.exceptions import (StorageAuthorizationError, StorageNotFoundError,
                                     StorageValidationError)
 from app.storage.keys import build_original_key
@@ -32,6 +33,10 @@ class CompletedUpload:
     session: UploadSelectionSession
     items: list
     mapping: dict
+
+
+class UploadSessionCleanupError(RuntimeError):
+    """Raised when a selected upload session cannot be cleaned completely."""
 
 
 def _now():
@@ -287,28 +292,169 @@ def finalize_session(session):
     session.status = "finalized"; session.completed_at = _now()
 
 
-def cleanup_expired_sessions(*, dry_run=True, provider=None):
-    provider = provider or get_storage_provider(); sessions = UploadSelectionSession.query.filter(UploadSelectionSession.module_type == SCOPE[0], UploadSelectionSession.target_type == SCOPE[1], UploadSelectionSession.status != "finalized", or_(UploadSelectionSession.expires_at <= _now(), UploadSelectionSession.status == "cancelled")).all()
-    result = {"matched": len(sessions), "cleaned": 0, "dry_run": dry_run}
-    if dry_run: return result
+def cancel_upload_session_for_actor(*, actor, project, session_id, provider=None):
+    """Cancel and clean exactly one Daily Reports upload session.
+
+    This is deliberately distinct from ``cleanup_expired_sessions``.  A web
+    request is never allowed to select other users' cancelled or expired
+    sessions merely because they are eligible for the trusted global job.
+    """
+    from app.auth.permissions import can_create_report
+    from app.project_memberships import is_project_admin
+
+    if not can_create_report(actor, project.id):
+        raise StorageAuthorizationError("Bạn không có quyền tạo báo cáo cho dự án này.")
+
+    session = db.session.scalar(select(UploadSelectionSession).where(
+        UploadSelectionSession.id == session_id,
+    ).with_for_update())
+    if not session or (session.module_type, session.target_type, session.target_id) != (*SCOPE, project.id):
+        raise StorageAuthorizationError("Phiên tải ảnh không hợp lệ.")
+    if session.created_by_id != actor.id and not is_project_admin(actor):
+        raise StorageAuthorizationError("Phiên tải ảnh không hợp lệ.")
+    if session.status == "finalized":
+        raise StorageValidationError("Không thể hủy phiên tải ảnh đã hoàn tất.")
+
+    if session.status not in {"cancelled", "expired"}:
+        session.status = "expired" if session.expires_at <= _now() else "cancelled"
+
+    cleanup = cleanup_upload_session_objects(session, provider=provider)
+    db.session.commit()
+    return session, cleanup
+
+
+def cleanup_upload_session_objects(session, *, provider=None):
+    """Clean objects proven to be owned exclusively by one session.
+
+    The caller owns transaction finalization.  Bytes are removed before their
+    metadata so a retry can safely treat a missing object as already removed.
+    If anything cannot safely be removed, no selected-session metadata is
+    changed and the caller receives an explicit incomplete result.
+    """
+    batches = UploadBatch.query.filter_by(selection_session_id=session.id).all()
+    batch_ids = [batch.id for batch in batches]
+    items = UploadBatchItem.query.filter(UploadBatchItem.upload_batch_id.in_(batch_ids or [-1])).all()
+    blocked_item_ids = []
+    objects_by_id = {}
+    for item in items:
+        if item.finalized_at is not None:
+            blocked_item_ids.append(item.id)
+            continue
+        if item.storage_object and not _storage_object_is_exclusive_to_session(item.storage_object_id, session.id):
+            blocked_item_ids.append(item.id)
+            continue
+        if item.storage_object:
+            objects_by_id[item.storage_object_id] = item.storage_object
+
+    summary = {
+        "session_id": session.id,
+        "batches": len(batches),
+        "items": len(items),
+        "storage_objects": len(objects_by_id),
+        "complete": not blocked_item_ids,
+        "blocked_item_ids": blocked_item_ids,
+    }
+    if blocked_item_ids:
+        return summary
+
+    storage_ids = list(objects_by_id)
+    derivatives = StorageDerivative.query.filter(
+        StorageDerivative.storage_object_id.in_(storage_ids or [-1]),
+    ).all()
+    provider = provider or get_storage_provider()
+    _delete_session_storage_bytes(provider, [*derivatives, *objects_by_id.values()])
+
+    derivative_ids = [derivative.id for derivative in derivatives]
+    if derivative_ids:
+        db.session.execute(update(DownloadEvent).where(
+            DownloadEvent.derivative_id.in_(derivative_ids)
+        ).values(derivative_id=None))
+        db.session.execute(delete(StorageDerivative).where(
+            StorageDerivative.id.in_(derivative_ids)
+        ))
+    if storage_ids:
+        db.session.execute(delete(MediaProcessingJob).where(
+            MediaProcessingJob.storage_object_id.in_(storage_ids)
+        ))
+        db.session.execute(update(DownloadEvent).where(
+            DownloadEvent.storage_object_id.in_(storage_ids)
+        ).values(storage_object_id=None))
+    if items:
+        db.session.execute(delete(UploadBatchItem).where(
+            UploadBatchItem.id.in_([item.id for item in items])
+        ))
+    if batch_ids:
+        db.session.execute(delete(UploadBatch).where(UploadBatch.id.in_(batch_ids)))
+    if storage_ids:
+        db.session.execute(delete(StorageObject).where(StorageObject.id.in_(storage_ids)))
+    db.session.flush()
+    return summary
+
+
+def _storage_object_is_exclusive_to_session(storage_object_id, session_id):
+    """Return false whenever another live record could own this object."""
+    if db.session.scalar(select(UploadBatchItem.id).join(UploadBatch).where(
+        UploadBatchItem.storage_object_id == storage_object_id,
+        UploadBatch.selection_session_id != session_id,
+    ).limit(1)):
+        return False
+    if db.session.scalar(select(ReportAttachment.id).where(
+        ReportAttachment.storage_object_id == storage_object_id,
+    ).limit(1)):
+        return False
+    if db.session.scalar(select(ProjectDocumentFile.id).where(
+        ProjectDocumentFile.storage_object_id == storage_object_id,
+    ).limit(1)):
+        return False
+    return not db.session.scalar(select(CompanyMediaFile.id).where(
+        CompanyMediaFile.storage_object_id == storage_object_id,
+    ).limit(1))
+
+
+def _delete_session_storage_bytes(provider, objects):
+    failures = []
+    for obj in objects:
+        try:
+            provider.delete_object(obj.bucket, obj.object_key)
+        except StorageNotFoundError:
+            continue
+        except Exception as exc:
+            failures.append(f"{obj.bucket}/{obj.object_key}: {exc}")
+    if failures:
+        raise UploadSessionCleanupError(
+            "Không thể xóa toàn bộ tệp của phiên tải ảnh: " + "; ".join(failures)
+        )
+
+
+def cleanup_expired_sessions(*, dry_run=True, provider=None, batch_size=100):
+    """Trusted, bounded global cleanup for expired/cancelled report sessions."""
+    try:
+        batch_size = max(1, int(batch_size))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("batch_size must be a positive integer") from exc
+    sessions = UploadSelectionSession.query.filter(
+        UploadSelectionSession.module_type == SCOPE[0],
+        UploadSelectionSession.target_type == SCOPE[1],
+        UploadSelectionSession.status != "finalized",
+        or_(UploadSelectionSession.expires_at <= _now(), UploadSelectionSession.status == "cancelled"),
+    ).order_by(UploadSelectionSession.id.asc()).limit(batch_size).all()
+    result = {"matched": len(sessions), "cleaned": 0, "partial": 0, "failed": 0, "dry_run": dry_run}
+    if dry_run:
+        return result
     for session in sessions:
-        items = UploadBatchItem.query.join(UploadBatch).filter(UploadBatch.selection_session_id == session.id).all()
-        objects = [item.storage_object for item in items if item.storage_object]
-        ids = [obj.id for obj in objects]
-        derivatives = StorageDerivative.query.filter(StorageDerivative.storage_object_id.in_(ids or [-1])).all()
-        for obj in [*derivatives, *objects]:
-            try: provider.delete_object(obj.bucket, obj.object_key)
-            except StorageNotFoundError: pass
-        db.session.execute(update(DownloadEvent).where(DownloadEvent.derivative_id.in_([row.id for row in derivatives] or [-1])).values(derivative_id=None))
-        db.session.execute(delete(StorageDerivative).where(StorageDerivative.storage_object_id.in_(ids or [-1])))
-        db.session.execute(delete(MediaProcessingJob).where(MediaProcessingJob.storage_object_id.in_(ids or [-1])))
-        db.session.execute(update(DownloadEvent).where(DownloadEvent.storage_object_id.in_(ids or [-1])).values(storage_object_id=None))
-        db.session.execute(delete(UploadBatchItem).where(UploadBatchItem.upload_batch_id.in_(select(UploadBatch.id).where(UploadBatch.selection_session_id == session.id))))
-        db.session.execute(delete(UploadBatch).where(UploadBatch.selection_session_id == session.id)); db.session.execute(delete(StorageObject).where(StorageObject.id.in_(ids or [-1])))
-        if session.status != "cancelled":
-            session.status = "expired"
-        result["cleaned"] += 1
-    db.session.commit(); return result
+        try:
+            if session.status != "cancelled":
+                session.status = "expired"
+            summary = cleanup_upload_session_objects(session, provider=provider)
+            db.session.commit()
+            if summary["complete"]:
+                result["cleaned"] += 1
+            else:
+                result["partial"] += 1
+        except UploadSessionCleanupError:
+            db.session.rollback()
+            result["failed"] += 1
+    return result
 
 
 def _cfg(name):

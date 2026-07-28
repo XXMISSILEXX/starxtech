@@ -7,8 +7,9 @@ from werkzeug.datastructures import MultiDict
 
 from app.extensions import db
 from app.models import (AuditLog, DailyReport, DailyReportSection, MediaProcessingJob,
-                        ReportAttachment, StorageDerivative, StorageObject,
-                        UploadBatchItem, UploadSelectionSession, User)
+                        Permission, ReportAttachment, RolePermission,
+                        StorageDerivative, StorageObject, UploadBatchItem,
+                        UploadSelectionSession, User)
 from tests.helpers.daily_report_create_v2 import DailyReportV2UploadFile, submit_daily_report_create_v2
 
 
@@ -20,6 +21,14 @@ def login(client, username_or_email, password="password123"):
             "password": password,
         },
     )
+
+
+def grant_permission(app, username, code):
+    with app.app_context():
+        user = User.query.filter_by(username=username).one()
+        permission = Permission.query.filter_by(code=code).one()
+        db.session.add(RolePermission(role_id=user.role_id, permission_id=permission.id))
+        db.session.commit()
 
 
 def image_upload(name="photo.jpg", image_format="JPEG"):
@@ -294,6 +303,7 @@ def test_attachment_view_enforces_project_read_permission(client, app):
 
 
 def test_attachment_delete_hard_deletes_storage_and_audits(client, app):
+    grant_permission(app, "reporter", "report_attachments.delete")
     login(client, "reporter")
     direct_report(client, app)
 
@@ -322,6 +332,7 @@ def test_attachment_delete_hard_deletes_storage_and_audits(client, app):
 
 
 def test_reporter_cannot_delete_attachment_from_another_reporter(client, app):
+    grant_permission(app, "reporter", "report_attachments.delete")
     login(client, "super")
     direct_report(client, app)
     with app.app_context():
@@ -347,6 +358,7 @@ def test_viewer_admin_cannot_delete_report_attachment(client, app):
 
 
 def test_attachment_delete_requires_report_edit_capability(client, app):
+    grant_permission(app, "reporter", "report_attachments.delete")
     with app.app_context():
         reporter = User.query.filter_by(username="reporter").one()
         membership = reporter.project_assignments[0]

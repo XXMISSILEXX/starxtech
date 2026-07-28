@@ -36,7 +36,13 @@ from app.reports.services import (
     parse_report_date,
     reports_query,
 )
-from app.reports.direct_uploads import create_session as create_report_upload_session, presign as presign_report_uploads, complete as complete_report_upload, session_payload as report_upload_session_payload, _session as report_upload_session, cleanup_expired_sessions
+from app.reports.direct_uploads import (UploadSessionCleanupError,
+                                        cancel_upload_session_for_actor,
+                                        complete as complete_report_upload,
+                                        create_session as create_report_upload_session,
+                                        presign as presign_report_uploads,
+                                        session_payload as report_upload_session_payload,
+                                        _session as report_upload_session)
 from app.storage.exceptions import StorageAuthorizationError, StorageNotFoundError, StorageValidationError
 from app.extensions import limiter
 
@@ -182,14 +188,23 @@ def report_upload_session_cancel(project_id, session_id):
     project = _project_or_404(project_id)
     if not can_create_report(current_user, project.id): abort(403)
     try:
-        session = report_upload_session(current_user, project.id, session_id)
-        session.status = "cancelled"; db.session.commit()
-        # Cancellation is intentionally eager; the cleanup routine is
-        # idempotent and treats an S3 NotFound as already removed.
-        cleanup_expired_sessions(dry_run=False)
-        return jsonify(upload_session_id=session.id, status=session.status)
+        session, cleanup = cancel_upload_session_for_actor(
+            actor=current_user, project=project, session_id=session_id,
+        )
+        if not cleanup["complete"]:
+            return jsonify(
+                ok=False,
+                error="upload_session_cleanup_incomplete",
+                upload_session_id=session.id,
+                status=session.status,
+                cleanup=cleanup,
+            ), 409
+        return jsonify(upload_session_id=session.id, status=session.status, cleanup=cleanup)
     except StorageAuthorizationError: abort(403)
     except StorageValidationError as exc: return jsonify(error=str(exc)), 400
+    except UploadSessionCleanupError as exc:
+        db.session.rollback()
+        return jsonify(error=str(exc)), 500
 
 
 @bp.get("/<int:project_id>/issues")

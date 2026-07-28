@@ -169,7 +169,7 @@ def register_cli(app):
     def cleanup_expired_report_upload_sessions(dry_run):
         from app.reports.direct_uploads import cleanup_expired_sessions
         summary = cleanup_expired_sessions(dry_run=dry_run)
-        click.echo("mode={mode} matched={matched} cleaned={cleaned}".format(
+        click.echo("mode={mode} matched={matched} cleaned={cleaned} partial={partial} failed={failed}".format(
             mode="dry-run" if dry_run else "apply", **summary))
 
     @app.cli.command("daily-report-upload-sessions")
