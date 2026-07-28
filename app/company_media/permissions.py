@@ -5,6 +5,14 @@ from app.models import CompanyMediaAlbum, CompanyMediaAlbumPermission, UserRole
 
 
 READ_ACTIONS = {"view", "download"}
+ALBUM_PERMISSION_CAPABILITIES = {
+    "can_view": ("company_media_albums.view", "view", False),
+    "can_upload": ("company_media_files.upload", "upload", False),
+    "can_edit": ("company_media_albums.edit", "edit", False),
+    "can_delete": ("company_media_albums.delete", "delete", False),
+    "can_download": ("company_media_files.download", "download", False),
+    "can_share": ("company_media_albums.share", "share", True),
+}
 
 
 def _active_user(user):
@@ -43,7 +51,7 @@ def access(user):
 
 def _matching_acl_allows(user, album, action):
     return any(getattr(item, "can_" + action, False) for item in album.permissions
-               if item.user_id == user.id or item.role_id == user.role_id)
+               if item.user_id == user.id or (user.role_id is not None and item.role_id == user.role_id))
 
 
 def _acl(user, album, action):
@@ -66,6 +74,24 @@ def _can(user, album, code, action, archived=False):
     if _matching_acl_allows(user, album, action):
         return True
     return bool(has_module_access(user) and user.can(code) and _acl(user, album, action))
+
+
+def effective_album_capabilities(user, album):
+    """Return the capabilities the actor can exercise on this album now.
+
+    Company Media intentionally permits a matching ACL to be the actor's
+    module access for this *one* album.  The album creator receives no
+    implicit ACL bypass: their ceiling is still their current RBAC/ACL result.
+    This preserves the existing scoped-sharing model while making delegated
+    grants strictly monotonic.  Administrators retain their existing global
+    capabilities through ``_can``.
+    """
+    if not _active_user(user) or not album:
+        return frozenset()
+    return frozenset(
+        flag for flag, (code, action, allow_archived) in ALBUM_PERMISSION_CAPABILITIES.items()
+        if _can(user, album, code, action, archived=allow_archived)
+    )
 
 
 def create_album(user): return bool(has_module_access(user) and user.role_code != UserRole.VIEWER_ADMIN.value and user.can("company_media_albums.create"))

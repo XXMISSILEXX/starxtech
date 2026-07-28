@@ -1,6 +1,15 @@
 from app.project_memberships import is_project_admin, is_viewer_admin, user_has_project_capability
 
 
+FOLDER_PERMISSION_CAPABILITIES = {
+    "can_view": ("can_view_documents", "view", False),
+    "can_upload": ("can_upload_documents", "upload", False),
+    "can_edit": ("can_edit_documents", "edit", False),
+    "can_delete": ("can_archive_documents", "delete", False),
+    "can_share": ("can_share_documents", "share", True),
+}
+
+
 def _base(user, capability, project_id):
     if project_id is None:
         codes = {
@@ -55,6 +64,23 @@ def can_delete_project_document_folder(user, folder): return _can(user, folder, 
 def can_restore_project_document_folder(user, folder): return _can(user, folder, "can_restore_documents", "delete", include_archived=True)
 def can_share_project_document_folder(user, folder, include_archived=False): return _can(user, folder, "can_share_documents", "share", include_archived)
 def can_upload_project_document_folder(user, folder): return _can(user, folder, "can_upload_documents", "upload")
+
+
+def effective_folder_capabilities(user, folder):
+    """Return the capabilities the actor can exercise on this folder now.
+
+    Each result includes both the project/RBAC capability and the ACL result
+    at the nearest restriction anchor.  Inherited access may therefore be
+    delegated only at the same strength; it cannot become a stronger direct
+    ACL on a descendant.  Project administrators retain their existing
+    administrative bypass through ``_can``.
+    """
+    if not user or not getattr(user, "is_authenticated", False) or not folder:
+        return frozenset()
+    return frozenset(
+        flag for flag, (capability, action, include_archived) in FOLDER_PERMISSION_CAPABILITIES.items()
+        if _can(user, folder, capability, action, include_archived=include_archived)
+    )
 
 def can_view_project_document_file(user, file, include_archived=False):
     return bool(file and (include_archived or (file.is_active and file.deleted_at is None)) and _can(user, file.folder, "can_view_documents", "view", include_archived))

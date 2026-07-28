@@ -4,7 +4,7 @@ from app.company_media import bp
 from app.company_media import permissions as p
 from app.company_media import services as s
 from app.extensions import db
-from app.models import CompanyMediaAlbum, CompanyMediaAlbumPermission, CompanyMediaFile, Role, User
+from app.models import CompanyMediaAlbum, CompanyMediaFile, Role, User
 from app.models import BulkDownloadJob
 from app.bulk_downloads.services import (BulkDownloadError, parse_file_ids, preflight_media_download,
     request_media_download, stream_zip_download, serialize_job)
@@ -99,7 +99,8 @@ def complete(album_id):
 def preview(file_id):
     f=_one(CompanyMediaFile, file_id)
     if not p.view_file(current_user,f):abort(403)
-    return jsonify(s.signed_preview(f,(request.get_json() or {}).get("variant"),current_user))
+    try:return jsonify(s.signed_preview(f,(request.get_json() or {}).get("variant"),current_user))
+    except s.CompanyMediaError as e:return jsonify(error=str(e)),400
 @bp.post("/files/<int:file_id>/signed-download")
 def download(file_id):
     f=_one(CompanyMediaFile, file_id)
@@ -175,12 +176,11 @@ def permissions(album_id):
     if not p.share_album(current_user,a,True):abort(403)
     if request.method=="POST":
         if request.form.get("remove_id"):
-            entry=CompanyMediaAlbumPermission.query.filter_by(id=request.form.get("remove_id",type=int),album_id=a.id).first()
-            if not entry: flash("Không tìm thấy quyền chia sẻ.","danger")
-            else:s.db.session.delete(entry);s.db.session.commit()
+            try:s.remove_permission(current_user,a,request.form.get("remove_id"))
+            except s.CompanyMediaError as e:return jsonify(error=str(e)),400
         else:
             try:s.set_permission(current_user,a,request.form.get("principal_type"),request.form.get("principal_id"),request.form)
-            except s.CompanyMediaError as e:flash(str(e),"danger")
+            except s.CompanyMediaError as e:return jsonify(error=str(e)),400
         return redirect(url_for("company_media.permissions",album_id=a.id))
     users = User.query.filter_by(is_active=True).order_by(User.full_name, User.username).all()
     roles = Role.query.order_by(Role.name, Role.code).all()

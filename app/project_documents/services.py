@@ -16,6 +16,79 @@ class DocumentValidationError(ValueError):
     pass
 
 
+FOLDER_PERMISSION_FLAGS = ("can_view", "can_upload", "can_edit", "can_delete", "can_share")
+_TRUE_VALUES = {True, 1, "1", "true", "on", "yes"}
+_FALSE_VALUES = {False, 0, "0", "false", "off", "no", ""}
+
+
+def _permission_principal_id(value):
+    if isinstance(value, bool) or not str(value).isascii() or not str(value).isdigit():
+        raise DocumentValidationError("Đối tượng phân quyền không hợp lệ.")
+    value = int(value)
+    if value <= 0:
+        raise DocumentValidationError("Đối tượng phân quyền không hợp lệ.")
+    return value
+
+
+def _permission_flag_value(values, flag):
+    raw_values = values.getlist(flag) if hasattr(values, "getlist") else [values.get(flag)]
+    if not raw_values:
+        return False
+    if len(raw_values) != 1:
+        raise DocumentValidationError("Giá trị quyền không hợp lệ.")
+    raw_value = raw_values[0]
+    normalized = raw_value.strip().lower() if isinstance(raw_value, str) else raw_value
+    try:
+        if normalized in _TRUE_VALUES:
+            return True
+        if normalized in _FALSE_VALUES or raw_value is None:
+            return False
+    except TypeError:
+        pass
+    raise DocumentValidationError("Giá trị quyền không hợp lệ.")
+
+
+def normalize_folder_permission_flags(values):
+    normalized = {flag: _permission_flag_value(values, flag) for flag in FOLDER_PERMISSION_FLAGS}
+    if not any(normalized.values()):
+        raise DocumentValidationError("Hãy cấp ít nhất một quyền cho đối tượng được chia sẻ.")
+    return normalized
+
+
+def _folder_permission_principal(principal_type, principal_id):
+    if principal_type not in {"user", "role"}:
+        raise DocumentValidationError("Đối tượng phân quyền không hợp lệ.")
+    principal_id = _permission_principal_id(principal_id)
+    if principal_type == "user":
+        principal = db.session.get(User, principal_id)
+        if not principal or not principal.is_active:
+            raise DocumentValidationError("Người dùng không tồn tại hoặc đã ngừng hoạt động.")
+    elif not db.session.get(Role, principal_id):
+        raise DocumentValidationError("Vai trò không tồn tại.")
+    return principal_id
+
+
+def validate_folder_permission_grant(user, folder, requested_flags):
+    """Validate an ACL replacement before changing its target row.
+
+    The ceiling is the actor's current project/RBAC capability intersected with
+    the active restriction-anchor ACL for this folder. It applies identically
+    to user and role principals, including the actor's own row.
+    """
+    from app.project_documents.permissions import (can_share_project_document_folder,
+        effective_folder_capabilities)
+
+    if not can_share_project_document_folder(
+        user, folder, include_archived=not (folder.is_active and folder.deleted_at is None)
+    ):
+        raise DocumentValidationError("Bạn không có quyền chia sẻ thư mục này.")
+    normalized = normalize_folder_permission_flags(requested_flags)
+    ceiling = effective_folder_capabilities(user, folder)
+    if any(enabled and flag not in ceiling for flag, enabled in normalized.items()):
+        raise DocumentValidationError("Quyền được cấp vượt quá quyền hiện có của bạn.")
+    return normalized
+
+
 def get_or_create_project_root_folder(project, user):
     root = ProjectDocumentFolder.query.filter_by(project_id=project.id, is_root=True).filter(ProjectDocumentFolder.deleted_at.is_(None)).first()
     if root:
@@ -427,39 +500,34 @@ def restore_folder(user, folder):
 
 
 def set_folder_permission(user, folder, principal_type, principal_id, flags):
-    if principal_type not in {"user", "role"} or not str(principal_id).isdigit():
-        raise DocumentValidationError("Đối tượng phân quyền không hợp lệ.")
-    principal_id = int(principal_id)
-    if principal_id <= 0:
-        raise DocumentValidationError("Đối tượng phân quyền không hợp lệ.")
-    if principal_type == "user":
-        principal = db.session.get(User, principal_id)
-        if not principal or not principal.is_active:
-            raise DocumentValidationError("Người dùng không tồn tại hoặc đã ngừng hoạt động.")
-    elif not db.session.get(Role, principal_id):
-        raise DocumentValidationError("Vai trò không tồn tại.")
-
-    permission_flags = ("can_view", "can_upload", "can_edit", "can_delete", "can_share")
-    if not any(bool(flags.get(flag)) for flag in permission_flags):
-        raise DocumentValidationError("Hãy cấp ít nhất một quyền cho đối tượng được chia sẻ.")
-
-    query = ProjectDocumentFolderPermission.query.filter_by(
+    # Validate the full submitted state before loading/creating/mutating an ACL
+    # row. A rejected request therefore leaves the previous row untouched.
+    principal_id = _folder_permission_principal(principal_type, principal_id)
+    normalized = validate_folder_permission_grant(user, folder, flags)
+    entries = ProjectDocumentFolderPermission.query.filter_by(
         folder_id=folder.id,
         principal_type=principal_type,
         **{principal_type + "_id": principal_id},
-    )
-    entry = query.first()
-    if not entry:
-        entry = ProjectDocumentFolderPermission(folder_id=folder.id, principal_type=principal_type,
+    ).all()
+    if len(entries) > 1:
+        raise DocumentValidationError("Quyền chia sẻ không hợp lệ.")
+    entry = entries[0] if entries else ProjectDocumentFolderPermission(folder_id=folder.id, principal_type=principal_type,
             created_by_id=user.id, **{principal_type + "_id": principal_id})
-        db.session.add(entry)
-    for flag in permission_flags:
-        setattr(entry, flag, bool(flags.get(flag)))
+    for flag, enabled in normalized.items():
+        setattr(entry, flag, enabled)
+    db.session.add(entry)
     db.session.flush(); audit("document.folder.share", "ProjectDocumentFolder", folder.id,
-        new_values={"principal_type": principal_type, "principal_id": principal_id}); db.session.commit(); return entry
+        new_values={"principal_type": principal_type, "principal_id": principal_id, "flags": normalized}); db.session.commit(); return entry
 
 
 def remove_folder_permission(user, folder, permission_id):
+    from app.project_documents.permissions import can_share_project_document_folder
+    if not can_share_project_document_folder(
+        user, folder, include_archived=not (folder.is_active and folder.deleted_at is None)
+    ):
+        raise DocumentValidationError("Bạn không có quyền chia sẻ thư mục này.")
+    if isinstance(permission_id, bool) or not str(permission_id).isascii() or not str(permission_id).isdigit():
+        raise DocumentValidationError("Không tìm thấy quyền chia sẻ.")
     entry = ProjectDocumentFolderPermission.query.filter_by(id=permission_id, folder_id=folder.id).first()
     if not entry: raise DocumentValidationError("Không tìm thấy quyền chia sẻ.")
     db.session.delete(entry); audit("document.folder.revoke", "ProjectDocumentFolder", folder.id, old_values={"permission_id": permission_id}); db.session.commit()
