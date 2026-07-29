@@ -31,7 +31,7 @@ def read_csv_setting(name: str) -> tuple[str, ...]:
 
 
 class Config:
-    STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", "20260729-8201")
+    STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", "20260729-8202")
     # Do not supply an implicit environment.  A typo here used to silently
     # retain the development signing key while skipping production checks.
     APP_ENV = os.getenv("APP_ENV")
@@ -46,11 +46,14 @@ class Config:
     TMP_ROOT = os.getenv("TMP_ROOT", str(BASE_DIR / "tmp"))
     MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "10"))
     MAX_CONTENT_LENGTH = MAX_UPLOAD_MB * 1024 * 1024
-    MAX_IMAGES_PER_SECTION = int(os.getenv("MAX_IMAGES_PER_SECTION", "3"))
+    # Kept only for legacy callers outside Daily Reports.  Daily Reports use
+    # app.reports.constants.MAX_ATTACHMENTS_PER_REPORT_SECTION directly.
+    MAX_IMAGES_PER_SECTION = int(os.getenv("MAX_IMAGES_PER_SECTION", "10"))
     MAX_FORM_PARTS = int(os.getenv("MAX_FORM_PARTS", "1000"))
     DAILY_REPORT_DIRECT_UPLOAD_ENABLED = os.getenv("DAILY_REPORT_DIRECT_UPLOAD_ENABLED", "true").lower() == "true"
     DAILY_REPORT_MAX_FILES = int(os.getenv("DAILY_REPORT_MAX_FILES", "30"))
-    DAILY_REPORT_MAX_FILES_PER_SECTION = int(os.getenv("DAILY_REPORT_MAX_FILES_PER_SECTION", "3"))
+    # Deprecated: Daily Reports have a fixed product limit of 10 per section.
+    DAILY_REPORT_MAX_FILES_PER_SECTION = 10
     DAILY_REPORT_MAX_FILE_BYTES = int(os.getenv("DAILY_REPORT_MAX_FILE_BYTES", str(25 * 1024 * 1024)))
     DAILY_REPORT_MAX_TOTAL_BYTES = int(os.getenv("DAILY_REPORT_MAX_TOTAL_BYTES", str(300 * 1024 * 1024)))
     DAILY_REPORT_UPLOAD_CONCURRENCY = int(os.getenv("DAILY_REPORT_UPLOAD_CONCURRENCY", "3"))

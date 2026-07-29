@@ -36,8 +36,8 @@ def submit_daily_report_create_v2(client, app, *, project_id, report, sections,
     section_ids = [str(uuid4()) for _ in sections]
     if any(file.section_index < 0 or file.section_index >= len(sections) for file in files):
         raise ValueError("section_index must refer to a supplied section")
-    if any(sum(file.section_index == index for file in files) > 3 for index in range(len(sections))):
-        raise ValueError("at most three files are allowed per section")
+    if any(sum(file.section_index == index for file in files) > 10 for index in range(len(sections))):
+        raise ValueError("at most ten files are allowed per section")
     client_file_ids = [str(uuid4()) for _ in files]
     if len(set(client_file_ids)) != len(client_file_ids):
         raise AssertionError("client_file_id must be unique")

@@ -41,9 +41,10 @@ from app.reports.direct_uploads import (UploadSessionCleanupError,
                                         cancel_upload_session_for_actor,
                                         complete as complete_report_upload,
                                         create_session as create_report_upload_session,
-                                        presign as presign_report_uploads,
+                                        v2_presign as presign_report_uploads,
                                         session_payload as report_upload_session_payload,
                                         _session as report_upload_session)
+from app.reports.constants import MAX_ATTACHMENTS_PER_REPORT_SECTION
 from app.storage.exceptions import StorageAuthorizationError, StorageNotFoundError, StorageValidationError
 from app.extensions import limiter
 
@@ -270,7 +271,7 @@ def _render_create_form(project, report, form_data=None, form_errors=None):
         status_metadata=[status_presentation(status.value) for status in {*DailyReportStatus, *SectionStatus}],
         can_write=can_create_report(current_user, project.id),
         can_delete_attachment=False,
-        direct_upload_limits={"enabled": current_app.config["DAILY_REPORT_DIRECT_UPLOAD_ENABLED"], "max_files": current_app.config["DAILY_REPORT_MAX_FILES"], "max_files_per_section": current_app.config["DAILY_REPORT_MAX_FILES_PER_SECTION"], "max_file_bytes": current_app.config["DAILY_REPORT_MAX_FILE_BYTES"], "max_total_bytes": current_app.config["DAILY_REPORT_MAX_TOTAL_BYTES"], "concurrency": current_app.config["DAILY_REPORT_UPLOAD_CONCURRENCY"]},
+        direct_upload_limits={"enabled": current_app.config["DAILY_REPORT_DIRECT_UPLOAD_ENABLED"], "max_files": current_app.config["DAILY_REPORT_MAX_FILES"], "max_files_per_section": MAX_ATTACHMENTS_PER_REPORT_SECTION, "max_file_bytes": current_app.config["DAILY_REPORT_MAX_FILE_BYTES"], "max_total_bytes": current_app.config["DAILY_REPORT_MAX_TOTAL_BYTES"], "concurrency": current_app.config["DAILY_REPORT_UPLOAD_CONCURRENCY"]},
         daily_report_create_v2_enabled=True,
         create_v2_api_base=f"/api/projects/{project.id}/daily-reports",
         today_iso=local_today().isoformat(),

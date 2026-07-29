@@ -19,6 +19,7 @@ from app.storage.providers import get_storage_provider
 from app.storage.quota import ensure_storage_capacity
 from app.storage.services import _validate_head
 from app.storage.validation import validate_file_metadata
+from app.reports.constants import MAX_ATTACHMENTS_PER_REPORT_SECTION
 
 SCOPE = ("daily_reports", "project")
 
@@ -87,8 +88,8 @@ def presign(*, user, project_id, session_id, files, provider=None):
         if not isinstance(row, dict) or not str(row.get("client_section_id", "")).strip()[:80]:
             raise StorageValidationError("client_section_id là bắt buộc.")
         meta = validate_file_metadata(row.get("filename"), row.get("mime_type"), row.get("size"), row.get("checksum_sha256"), module_type="daily_reports")
-        if meta["file_ext"] not in {"jpg", "png", "webp", "heic", "heif"}:
-            raise StorageValidationError("Chỉ cho phép tệp jpg, jpeg, png, webp, heic hoặc heif.")
+        if meta["file_ext"] not in {"jpg", "png", "webp"}:
+            raise StorageValidationError("Chỉ cho phép tệp jpg, jpeg, png hoặc webp.")
         if meta["file_size"] > int(_cfg("DAILY_REPORT_MAX_FILE_BYTES")):
             raise StorageValidationError("Mỗi ảnh không được vượt quá 25 MB.")
         metas.append(meta)
@@ -132,13 +133,26 @@ def v2_presign(*, user, project_id, session_id, files, provider=None):
         UploadBatch.selection_session_id == session.id).all()}
     if len(existing) + len([file_id for file_id in ids if file_id not in existing]) > session.declared_files:
         raise StorageValidationError("Ảnh vượt quá giới hạn của phiên tải.")
+    per_section = {}
+    for item in existing.values():
+        per_section[item.client_section_id] = per_section.get(item.client_section_id, 0) + 1
+    for row in files:
+        client_file_id = str(row.get("client_file_id", "")) if isinstance(row, dict) else ""
+        client_section_id = str(row.get("client_section_id", "")).strip()[:80] if isinstance(row, dict) else ""
+        prior = existing.get(client_file_id)
+        if prior and prior.client_section_id != client_section_id:
+            raise StorageValidationError("Thông tin ảnh không khớp với lần tải trước.")
+        if not prior:
+            per_section[client_section_id] = per_section.get(client_section_id, 0) + 1
+    if any(count > MAX_ATTACHMENTS_PER_REPORT_SECTION for count in per_section.values()):
+        raise StorageValidationError("Mỗi đầu mục chỉ được có tối đa 10 ảnh.")
     output = []
     for row in files:
         if not isinstance(row, dict) or not str(row.get("client_section_id", "")).strip()[:80]:
             raise StorageValidationError("client_section_id là bắt buộc.")
         meta = validate_file_metadata(row.get("filename"), row.get("mime_type"), row.get("size"), row.get("checksum_sha256"), module_type="daily_reports")
-        if meta["file_ext"] not in {"jpg", "png", "webp", "heic", "heif"}:
-            raise StorageValidationError("Chỉ cho phép tệp jpg, jpeg, png, webp, heic hoặc heif.")
+        if meta["file_ext"] not in {"jpg", "png", "webp"}:
+            raise StorageValidationError("Chỉ cho phép tệp jpg, jpeg, png hoặc webp.")
         if meta["file_size"] > int(_cfg("DAILY_REPORT_MAX_FILE_BYTES")):
             raise StorageValidationError("Mỗi ảnh không được vượt quá 25 MB.")
         item = existing.get(str(row["client_file_id"]))
@@ -259,8 +273,8 @@ def parse_report_attachment_manifest(*, user, project_id, section_inputs, form):
         per_section[client_section_id] = per_section.get(client_section_id, 0) + 1
     if len(ids) != len(set(ids)):
         raise StorageValidationError("Danh sách ảnh đính kèm không hợp lệ.")
-    if any(count > int(_cfg("DAILY_REPORT_MAX_FILES_PER_SECTION")) for count in per_section.values()):
-        raise StorageValidationError("Mỗi phần chỉ được có tối đa 3 ảnh.")
+    if any(count > MAX_ATTACHMENTS_PER_REPORT_SECTION for count in per_section.values()):
+        raise StorageValidationError("Mỗi phần chỉ được có tối đa 10 ảnh.")
 
     items = db.session.scalars(select(UploadBatchItem).join(UploadBatch).where(
         UploadBatch.selection_session_id == session.id,

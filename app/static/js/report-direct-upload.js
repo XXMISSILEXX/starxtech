@@ -4,10 +4,10 @@
   if (!form || !JSON.parse(form.dataset.uploadLimits || "{}").enabled) return;
   const limits = JSON.parse(form.dataset.uploadLimits || "{}");
   const csrf = form.dataset.csrfToken;
-  const storageKey = `starx:report-upload:${form.dataset.projectId}`;
+  const storageKey = `starx:report-upload:${form.dataset.projectId}:${form.dataset.reportId || "new"}`;
   const entries = new Map();
   const states = new Set(["idle", "validating", "creating_session", "uploading", "verifying", "submitting_report", "succeeded", "failed"]);
-  let state = "idle", sessionId = null, finalSubmitting = false, beforeUnload = null;
+  let state = "idle", sessionId = null, finalSubmitting = false, beforeUnload = null, sessionReset = null;
   const overlay = form.querySelector("[data-report-save-overlay]");
   const uuid = () => globalThis.crypto?.randomUUID?.() || `section-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const endpoint = (base, id) => base.replace(/0(?=\D*$)/, String(id));
@@ -24,10 +24,11 @@
       overlay.querySelector("[data-save-cancel]").hidden = !["creating_session", "uploading", "verifying", "failed"].includes(next);
     }
     form.classList.toggle("report-save-locked", isLocked());
-    form.querySelectorAll("[data-report-submit], [data-add-section], [data-remove-section], [data-report-attachment-input]").forEach((el) => { el.disabled = isLocked(); });
+    form.querySelectorAll("[data-report-submit], [data-add-section], [data-remove-section]").forEach((el) => { el.disabled = isLocked(); });
     beforeUnload = isLocked() ? (event) => { event.preventDefault(); event.returnValue = ""; } : null;
     window.onbeforeunload = beforeUnload;
     renderProgress();
+    syncAllAttachmentCounters();
   };
   const sectionId = (row) => {
     let input = row.querySelector("[data-client-section-id]");
@@ -67,18 +68,39 @@
     }
   };
   const persist = () => sessionStorage.setItem(storageKey, JSON.stringify({sessionId, items: active().map(({id, clientSectionId, itemId, status, name, size, file}) => ({id, clientSectionId, itemId, status, name: file?.name || name, size: file?.size || size}))}));
-  const removeEntry = (entry) => { entry.status = "removed"; if (entry.preview) URL.revokeObjectURL(entry.preview); form.querySelector(`[data-direct-card="${entry.id}"]`)?.remove(); persist(); renderProgress(); };
+  const selectedForSection = (clientSectionId) => active().filter((entry) => entry.clientSectionId === clientSectionId && entry.status !== "failed");
+  const liveExisting = (row) => [...row.querySelectorAll("[data-existing-attachment]")].filter((card) => !card.hidden).length;
+  const syncAttachmentCounter = (row) => {
+    if (!row) return;
+    const id = sectionId(row), total = liveExisting(row) + selectedForSection(id).length;
+    const maximum = Number(limits.max_files_per_section) || 10, remaining = Math.max(0, maximum - total);
+    const counter = row.querySelector("[data-attachment-counter]"), help = row.querySelector("[data-attachment-help]"), input = row.querySelector("[data-report-attachment-input]"), zone = row.querySelector(".upload-dropzone");
+    if (counter) counter.textContent = `${total}/${maximum} ảnh`;
+    if (help) help.textContent = remaining ? `Có thể thêm ${remaining} ảnh.` : `Đã đạt giới hạn ${maximum} ảnh`;
+    if (input) input.disabled = isLocked() || remaining === 0;
+    if (zone) { zone.classList.toggle("disabled", isLocked() || remaining === 0); zone.setAttribute("aria-disabled", String(isLocked() || remaining === 0)); }
+  };
+  const syncAllAttachmentCounters = () => form.querySelectorAll("[data-section-row]").forEach(syncAttachmentCounter);
+  const invalidateSession = () => {
+    if (!sessionId) return;
+    const staleSessionId = sessionId; sessionId = null;
+    active().forEach((entry) => { entry.itemId = null; entry.signed = null; if (entry.status !== "removed") entry.status = "queued"; });
+    sessionReset = json(endpoint(form.dataset.cancelUrl, staleSessionId), {}).catch(() => null);
+  };
+  const removeEntry = (entry) => { invalidateSession(); entry.status = "removed"; if (entry.preview) URL.revokeObjectURL(entry.preview); form.querySelector(`[data-direct-card="${entry.id}"]`)?.remove(); persist(); renderProgress(); syncAllAttachmentCounters(); };
   const add = (row, files) => {
-    const current = active(), clientSectionId = sectionId(row); let total = current.reduce((sum, entry) => sum + entry.file.size, 0);
+    invalidateSession();
+    const current = active(), clientSectionId = sectionId(row); let total = current.reduce((sum, entry) => sum + entry.file.size, 0), rejected = 0;
     for (const file of files) {
-      const sectionCount = current.filter((entry) => entry.clientSectionId === clientSectionId).length;
-      if (!/\.(jpe?g|png|webp|heic|heif)$/i.test(file.name) || file.size > Number(limits.max_file_bytes) || current.length >= Number(limits.max_files) || sectionCount >= Number(limits.max_files_per_section) || total + file.size > Number(limits.max_total_bytes)) {
-        setState("failed", `Không thể thêm ${file.name}: vượt giới hạn ảnh.`); continue;
+      const sectionCount = selectedForSection(clientSectionId).length + liveExisting(row);
+      if (!/\.(jpe?g|png|webp)$/i.test(file.name) || file.size > Number(limits.max_file_bytes) || current.length >= Number(limits.max_files) || sectionCount >= Number(limits.max_files_per_section) || total + file.size > Number(limits.max_total_bytes)) {
+        rejected += 1; continue;
       }
       const entry = {id: uuid(), clientSectionId, file, name: file.name, size: file.size, status: "queued", preview: /^image\/(jpeg|png|webp)$/.test(file.type) ? URL.createObjectURL(file) : null};
       entries.set(entry.id, entry); current.push(entry); total += file.size; render(entry);
     }
-    persist(); renderProgress();
+    persist(); renderProgress(); syncAttachmentCounter(row);
+    if (rejected) setState("failed", `Chỉ có thể thêm tối đa ${Math.max(0, Number(limits.max_files_per_section) - liveExisting(row) - selectedForSection(clientSectionId).length)} ảnh cho đầu mục này.`);
   };
   const validate = () => {
     normalizeSections();
@@ -88,6 +110,7 @@
     return list;
   };
   const createAndPresign = async (list) => {
+    if (sessionReset) { await sessionReset; sessionReset = null; }
     if (!sessionId) {
       setState("creating_session", "Đang tạo phiên tải ảnh...");
       const data = await json(form.dataset.sessionUrl, {file_count: list.length, total_size_bytes: list.reduce((sum, entry) => sum + entry.file.size, 0)});
@@ -141,6 +164,19 @@
   form.addEventListener("change", (event) => { const input = event.target.closest("[data-report-attachment-input]"); if (!input) return; add(input.closest("[data-section-row]"), [...input.files]); input.value = ""; });
   form.addEventListener("drop", (event) => { const row = event.target.closest("[data-section-row]"); if (!row || isLocked()) return; event.preventDefault(); add(row, [...event.dataTransfer.files]); });
   form.addEventListener("dragover", (event) => { if (event.target.closest("[data-section-row]")) event.preventDefault(); });
+  form.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-mark-attachment-delete]");
+    if (!button || isLocked()) return;
+    const card = button.closest("[data-existing-attachment]"), id = button.dataset.attachmentId;
+    if (!card || !id) return;
+    const inputs = form.querySelector("[data-deleted-attachment-inputs]");
+    const pending = !card.hidden;
+    card.hidden = pending; button.innerHTML = pending ? '<i class="bi bi-arrow-counterclockwise me-1"></i>Hoàn tác' : '<i class="bi bi-trash me-1"></i>Xóa';
+    const prior = inputs?.querySelector(`[data-deleted-attachment-id="${id}"]`);
+    if (pending && !prior && inputs) { const input = document.createElement("input"); input.type = "hidden"; input.name = "deleted_attachment_ids"; input.value = id; input.dataset.deletedAttachmentId = id; inputs.append(input); }
+    if (!pending) prior?.remove();
+    syncAttachmentCounter(card.closest("[data-section-row]"));
+  });
   overlay?.querySelector("[data-save-retry]")?.addEventListener("click", retryFailed);
   overlay?.querySelector("[data-save-cancel]")?.addEventListener("click", async () => {
     if (sessionId) { try { await json(endpoint(form.dataset.cancelUrl, sessionId), {}); } catch (_) { /* Cleanup also expires cancelled sessions server-side. */ } }
@@ -148,9 +184,13 @@
     active().forEach((entry) => { if (entry.file) { entry.itemId = null; entry.signed = null; entry.status = "queued"; } else { removeEntry(entry); } });
     setState("idle"); persist();
   });
-  document.addEventListener("starx:report-section-added", normalizeSections);
+  document.addEventListener("starx:report-section-added", () => { normalizeSections(); syncAllAttachmentCounters(); });
   document.addEventListener("starx:report-section-removed", (event) => active().filter((entry) => entry.clientSectionId === event.detail).forEach(removeEntry));
   normalizeSections();
   form.querySelectorAll("[data-report-attachment-input]").forEach((input) => { input.dataset.originalName = input.name || ""; input.removeAttribute("name"); });
-  try { const saved = JSON.parse(sessionStorage.getItem(storageKey) || "null"); if (saved?.sessionId) { sessionId = saved.sessionId; fetch(endpoint(form.dataset.sessionStateUrl, sessionId), {credentials: "same-origin"}).then((response) => response.ok ? response.json() : null).then((data) => { (saved.items || []).forEach((old) => { const server = (data?.items || []).find((item) => item.id === old.itemId); if (server?.status === "completed") { const entry = {...old, status: "completed"}; entries.set(entry.id, entry); render(entry); } }); persist(); renderProgress(); }); } } catch (_) { /* Session recovery is best-effort. */ }
+  // Browser File objects cannot safely survive navigation.  Never restore a
+  // project-wide session into another report form; a stale session is cleaned
+  // by the server TTL/cancel endpoint instead.
+  sessionStorage.removeItem(storageKey);
+  syncAllAttachmentCounters();
 })();

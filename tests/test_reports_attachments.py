@@ -269,14 +269,78 @@ def test_duplicate_section_category_fails_v2_preflight_without_side_effects(clie
     with app.app_context(): assert DailyReport.query.count() == UploadSelectionSession.query.count() == StorageObject.query.count() == 0
 
 
-def test_upload_more_than_three_images_for_one_section_fails(client, app):
+def test_upload_more_than_ten_images_for_one_section_fails(client, app):
     login(client, "reporter")
-    files = [DailyReportV2UploadFile(image_bytes(), filename=f"photo-{index}.jpg") for index in range(4)]
+    files = [DailyReportV2UploadFile(image_bytes(), filename=f"photo-{index}.jpg") for index in range(11)]
     import pytest
-    with pytest.raises(ValueError, match="three"):
+    with pytest.raises(ValueError, match="ten"):
         direct_report(client, app, files=files)
     with app.app_context():
         assert db.session.scalar(select(DailyReport)) is None
+
+
+def test_upload_session_two_small_files_is_idempotent_and_uses_new_bytes_only(client, app):
+    login(client, "reporter")
+    first, second = image_bytes(), image_bytes()
+    session_response = client.post(
+        "/api/projects/1/daily-reports/upload-sessions",
+        json={"file_count": 2, "total_size_bytes": len(first) + len(second)},
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.get_json()["data"]["upload_session_id"]
+    files = [
+        {"client_file_id": str(uuid4()), "client_section_id": str(uuid4()), "filename": "one.jpg", "mime_type": "image/jpeg", "size": len(first)},
+        {"client_file_id": str(uuid4()), "client_section_id": str(uuid4()), "filename": "two.jpg", "mime_type": "image/jpeg", "size": len(second)},
+    ]
+    url = f"/api/projects/1/daily-reports/upload-sessions/{session_id}/presign"
+    assert client.post(url, json={"files": files}).status_code == 200
+    retry = client.post(url, json={"files": files})
+    assert retry.status_code == 200
+    with app.app_context():
+        session = db.session.get(UploadSelectionSession, session_id)
+        assert session.presigned_files == 2
+        assert session.presigned_size_bytes == len(first) + len(second)
+
+
+def test_edit_can_add_section_using_server_section_id(client, app):
+    login(client, "reporter")
+    direct_report(client, app, files=[])
+    with app.app_context():
+        report = DailyReport.query.one()
+        existing_section_id = report.sections[0].id
+        report_id = report.id
+    form = report_form(content="Updated existing section.")
+    form["sections-0-section-id"] = str(existing_section_id)
+    form["sections-0-client-section-id"] = "existing-section-stable-id"
+    form.update({
+        "sections-1-section-id": "",
+        "sections-1-client-section-id": "new-section-stable-id",
+        "sections-1-category_id": "2",
+        "sections-1-status": "INFO",
+        "sections-1-content": "New section from edit.",
+    })
+    response = client.post(f"/reports/{report_id}/edit", data=form)
+    assert response.status_code == 302
+    with app.app_context():
+        active = [row for row in db.session.get(DailyReport, report_id).sections if row.deleted_at is None]
+        assert [(row.report_category_id, row.content) for row in active] == [
+            (1, "Updated existing section."), (2, "New section from edit."),
+        ]
+
+
+def test_edit_rejects_section_id_from_another_report(client, app):
+    login(client, "reporter")
+    direct_report(client, app, files=[])
+    direct_report(client, app, form=report_form(report_date="2026-07-09"), files=[])
+    with app.app_context():
+        reports = DailyReport.query.order_by(DailyReport.id).all()
+        report_id, foreign_section_id = reports[0].id, reports[1].sections[0].id
+    form = report_form()
+    form["sections-0-section-id"] = str(foreign_section_id)
+    form["sections-0-client-section-id"] = "forged-section-id"
+    response = client.post(f"/reports/{report_id}/edit", data=form)
+    assert response.status_code == 400
+    assert "không thuộc báo cáo này".encode() in response.data
 
 
 def test_non_image_upload_fails(client, app):

@@ -24,6 +24,7 @@ from app.reports.services import (
     parse_report_date,
     format_report_date,
 )
+from app.reports.constants import MAX_ATTACHMENTS_PER_REPORT_SECTION
 
 
 @bp.get("")
@@ -205,7 +206,7 @@ def _flash_reselect_images_if_needed(files):
 
 def _direct_upload_limits():
     from flask import current_app
-    return {"enabled": current_app.config["DAILY_REPORT_DIRECT_UPLOAD_ENABLED"], "max_files": current_app.config["DAILY_REPORT_MAX_FILES"], "max_files_per_section": current_app.config["DAILY_REPORT_MAX_FILES_PER_SECTION"], "max_file_bytes": current_app.config["DAILY_REPORT_MAX_FILE_BYTES"], "max_total_bytes": current_app.config["DAILY_REPORT_MAX_TOTAL_BYTES"], "concurrency": current_app.config["DAILY_REPORT_UPLOAD_CONCURRENCY"]}
+    return {"enabled": current_app.config["DAILY_REPORT_DIRECT_UPLOAD_ENABLED"], "max_files": current_app.config["DAILY_REPORT_MAX_FILES"], "max_files_per_section": MAX_ATTACHMENTS_PER_REPORT_SECTION, "max_file_bytes": current_app.config["DAILY_REPORT_MAX_FILE_BYTES"], "max_total_bytes": current_app.config["DAILY_REPORT_MAX_TOTAL_BYTES"], "concurrency": current_app.config["DAILY_REPORT_UPLOAD_CONCURRENCY"]}
 
 
 def _reject_legacy_multipart_files(*, report):
