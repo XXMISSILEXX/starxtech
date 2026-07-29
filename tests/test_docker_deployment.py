@@ -137,6 +137,7 @@ def test_compose_defines_the_production_service_gate_without_cloudflared():
     assert "127.0.0.1:${HOST_WEB_PORT:-6655}:6655" in content
     assert "redis_password" in content
     assert "storage_access_key_id" in content
+    assert "MEDIA_CACHE_DELIVERY_MODE: ${MEDIA_CACHE_DELIVERY_MODE:-send_file}" in content
 
 
 def test_dockerfile_is_python_312_non_root_gunicorn_image():

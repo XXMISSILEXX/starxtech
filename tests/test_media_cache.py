@@ -1,6 +1,7 @@
 import io
 import multiprocessing
 import os
+import stat
 import threading
 import time
 
@@ -54,6 +55,68 @@ def test_cache_miss_fills_once_then_hit_does_not_open_source(tmp_path):
     assert calls == 1
     assert first.path == second.path
     assert first.path.read_bytes() == b"data"
+    assert stat.S_IMODE(first.path.stat().st_mode) == 0o640
+    assert not list(first.path.parent.glob(f".{first.path.name}.tmp-*"))
+    lock_path = first.path.with_name(f".{first.path.name}.lock")
+    assert stat.S_IMODE(lock_path.stat().st_mode) == 0o600
+
+
+def test_temporary_cache_file_stays_private_until_atomic_publish(tmp_path):
+    cache = MediaCache(_config(tmp_path))
+    path, _ = cache.cache_path(_source())
+    paused = threading.Event()
+    resume = threading.Event()
+    errors = []
+
+    class PausingSource:
+        def __init__(self):
+            self.reads = 0
+
+        def read(self, _size):
+            self.reads += 1
+            if self.reads == 1:
+                return b"da"
+            if self.reads == 2:
+                paused.set()
+                assert resume.wait(2)
+                return b"ta"
+            return b""
+
+        def close(self):
+            pass
+
+    def fill():
+        try:
+            cache.get_or_fill(_source(), PausingSource)
+        except Exception as exc:  # pragma: no cover - reported by the assertion below
+            errors.append(exc)
+
+    thread = threading.Thread(target=fill)
+    thread.start()
+    assert paused.wait(2)
+    temporary_files = list(path.parent.glob(f".{path.name}.tmp-*"))
+    assert len(temporary_files) == 1
+    assert stat.S_IMODE(temporary_files[0].stat().st_mode) == 0o600
+
+    resume.set()
+    thread.join(2)
+    assert not thread.is_alive()
+    assert not errors
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+    assert not list(path.parent.glob(f".{path.name}.tmp-*"))
+
+
+def test_cache_hit_does_not_rewrite_published_file(tmp_path):
+    cache = MediaCache(_config(tmp_path))
+    first = cache.get_or_fill(_source(), lambda: io.BytesIO(b"data"))
+    before = first.path.stat()
+
+    second = cache.get_or_fill(_source(), lambda: pytest.fail("cache hit opened the source"))
+
+    after = second.path.stat()
+    assert second.path == first.path
+    assert (after.st_ino, after.st_mtime_ns) == (before.st_ino, before.st_mtime_ns)
+    assert stat.S_IMODE(after.st_mode) == 0o640
 
 
 def test_competing_threads_fill_once(tmp_path):
