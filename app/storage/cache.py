@@ -144,9 +144,12 @@ class MediaCache:
         self._ensure_safe_directory(path.relative_to(self.root).parent)
         temporary = self._temporary_path(path)
         total = 0
+        fd = None
         try:
             fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-            with os.fdopen(fd, "wb") as output:
+            # Keep the descriptor open so the temporary file remains private
+            # until it has been fully written and validated.
+            with os.fdopen(fd, "wb", closefd=False) as output:
                 source_stream = open_source()
                 try:
                     while True:
@@ -162,10 +165,17 @@ class MediaCache:
                     if close:
                         close()
                 output.flush()
-                os.fsync(output.fileno())
+                os.fsync(fd)
             if total < 1 or total != expected_size:
                 raise MediaCacheError("Media object is empty or incomplete")
             self._assert_regular_file(temporary)
+            # The shared cache directory has a default ACL for Nginx.  Setting
+            # this mode immediately before publish also makes its ACL mask
+            # permit that named user to read the completed payload.
+            os.fchmod(fd, 0o640)
+            os.fsync(fd)
+            os.close(fd)
+            fd = None
             os.replace(temporary, path)
             self._fsync_directory(path.parent)
             final_size = self._valid_file(path)
@@ -173,6 +183,8 @@ class MediaCache:
                 raise MediaCacheError("Media cache validation failed")
             return total
         finally:
+            if fd is not None:
+                os.close(fd)
             try:
                 if os.path.lexists(temporary):
                     os.unlink(temporary)
