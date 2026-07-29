@@ -40,7 +40,7 @@ def validate_file_metadata(filename, mime_type, size, checksum_sha256=None, modu
         raise StorageValidationError("Kích thước file không hợp lệ.")
     if size <= 0:
         raise StorageValidationError("Kích thước file phải lớn hơn 0.")
-    if size > min(_max_size_bytes(category), int(current_app.config["UPLOAD_SINGLE_FILE_MAX_BYTES"])):
+    if size > max_file_size_for_category(category):
         raise StorageValidationError("File vượt quá dung lượng cho phép.")
     if checksum_sha256 and not CHECKSUM_RE.fullmatch(str(checksum_sha256)):
         raise StorageValidationError("Checksum SHA-256 không hợp lệ.")
@@ -54,3 +54,8 @@ def _mime_matches(expected, actual, ext):
 def _max_size_bytes(category):
     name = {"image": "STORAGE_MAX_IMAGE_SIZE_MB", "document": "STORAGE_MAX_DOCUMENT_SIZE_MB", "video": "STORAGE_MAX_VIDEO_SIZE_MB", "audio": "STORAGE_MAX_AUDIO_SIZE_MB", "archive": "STORAGE_MAX_DOCUMENT_SIZE_MB"}[category]
     return int(current_app.config[name]) * 1024 * 1024
+
+
+def max_file_size_for_category(category):
+    """Return the server-enforced byte cap used for a validated upload type."""
+    return min(_max_size_bytes(category), int(current_app.config["UPLOAD_SINGLE_FILE_MAX_BYTES"]))

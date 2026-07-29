@@ -154,7 +154,7 @@ flask cleanup-expired-report-upload-sessions --dry-run
 Daily Report attachments are uploaded directly to S3/MinIO with presigned PUT
 URLs. Configure the bucket CORS rule with your application origins from
 `STORAGE_CORS_ALLOWED_ORIGINS` (the local default is
-`http://192.168.1.159:5666`), methods `PUT, HEAD`, and request headers
+`http://192.168.1.159:5666`), methods `POST, PUT, HEAD`, and request headers
 `Content-Type, x-amz-meta-sha256`. Do not use `*` for credentialed origins;
 the browser does not send StarX application cookies to object storage.
 ```

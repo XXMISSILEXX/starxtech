@@ -148,7 +148,8 @@ def create_selection_session(folder_id):
 def finalize_selection_session(folder_id, session_id):
     folder = _folder_or_404(folder_id)
     if not can_upload_project_document_folder(current_user, folder): abort(403)
-    try: return jsonify(finalize_upload_selection_session(user=current_user, selection_session_id=session_id, module_type="project_documents", target_type="folder", target_id=folder.id))
+    payload = request.get_json(silent=True) or {}
+    try: return jsonify(finalize_upload_selection_session(user=current_user, selection_session_id=session_id, module_type="project_documents", target_type="folder", target_id=folder.id, failed_upload_batch_item_ids=payload.get("failed_upload_batch_item_ids")))
     except StorageAuthorizationError: abort(403)
     except StorageValidationError as exc: return jsonify(error=str(exc)), 400
 
@@ -161,6 +162,7 @@ def complete_upload(folder_id):
     try: upload_batch_item_id = int(payload.get("upload_batch_item_id"))
     except (TypeError, ValueError): return jsonify(error="upload_batch_item_id không hợp lệ."), 400
     try: result = complete_folder_upload_item(current_user, folder, upload_batch_item_id, payload)
+    except StorageAuthorizationError: abort(403)
     except (DocumentValidationError, StorageValidationError, StorageNotFoundError) as exc: return jsonify(error=str(exc)), 400
     return jsonify(result)
 

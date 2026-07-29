@@ -41,7 +41,7 @@ not place them in shell history, Git, Compose environment files, or logs.
 Provision one private bucket and a least-privilege credential limited to the
 StarX bucket/prefix. Require TLS endpoint, bucket, region, access key and
 secret key. Configure bucket CORS only for the explicit HTTPS Nginx origin,
-with `PUT, HEAD` and `Content-Type, x-amz-meta-sha256`; never use wildcard
+with `POST, PUT, HEAD` and `Content-Type, x-amz-meta-sha256`; never use wildcard
 origins. Define lifecycle/retention/versioning with the storage provider.
 Provider durability and backup replication are external operational decisions;
 this repository does not implement object-store backups.

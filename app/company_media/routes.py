@@ -9,7 +9,7 @@ from app.models import BulkDownloadJob
 from app.bulk_downloads.services import (BulkDownloadError, parse_file_ids, preflight_media_download,
     request_media_download, stream_zip_download, serialize_job)
 from app.storage.services import create_upload_selection_session, finalize_upload_selection_session
-from app.storage.exceptions import StorageAuthorizationError, StorageValidationError
+from app.storage.exceptions import StorageAuthorizationError, StorageNotFoundError, StorageValidationError
 
 def _one(model, ident): return db.get_or_404(model, ident)
 
@@ -94,14 +94,25 @@ def selection(album_id):
 def selection_finalize(album_id,session_id):
     a=_one(CompanyMediaAlbum, album_id)
     if not p.upload_album(current_user,a): abort(403)
-    try:return jsonify(finalize_upload_selection_session(user=current_user,selection_session_id=session_id,module_type="company_media",target_type="album",target_id=a.id))
+    data = request.get_json(silent=True) or {}
+    try:return jsonify(finalize_upload_selection_session(user=current_user,selection_session_id=session_id,module_type="company_media",target_type="album",target_id=a.id,failed_upload_batch_item_ids=data.get("failed_upload_batch_item_ids")))
     except StorageAuthorizationError: abort(403)
     except StorageValidationError as e:return jsonify(error=str(e)),400
 @bp.post("/albums/<int:album_id>/files/complete-upload")
 def complete(album_id):
     a=_one(CompanyMediaAlbum, album_id)
     if not p.upload_album(current_user,a):abort(403)
-    data=request.get_json() or {};return jsonify(s.complete(current_user,a,int(data.get("upload_batch_item_id")),data))
+    data=request.get_json(silent=True) or {}
+    try:
+        item_id = int(data.get("upload_batch_item_id"))
+    except (TypeError, ValueError):
+        return jsonify(error="upload_batch_item_id không hợp lệ."),400
+    try:
+        return jsonify(s.complete(current_user,a,item_id,data))
+    except StorageAuthorizationError:
+        abort(403)
+    except (StorageValidationError, StorageNotFoundError, s.CompanyMediaError) as exc:
+        return jsonify(error=str(exc)),400
 @bp.post("/files/<int:file_id>/signed-preview")
 def preview(file_id):
     f=_one(CompanyMediaFile, file_id)

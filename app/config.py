@@ -74,6 +74,12 @@ class Config:
     STORAGE_PREFIX = os.getenv("STORAGE_PREFIX", "").strip("/")
     STORAGE_UPLOAD_URL_TTL_SECONDS = int(os.getenv("STORAGE_UPLOAD_URL_TTL_SECONDS", "300"))
     STORAGE_DOWNLOAD_URL_TTL_SECONDS = int(os.getenv("STORAGE_DOWNLOAD_URL_TTL_SECONDS", "300"))
+    # CloudFly evaluates a presigned POST content-length-range against the
+    # complete multipart request, not only the file bytes.  Keep this bounded
+    # allowance explicit; exact object size is verified with HEAD on complete.
+    STORAGE_PRESIGNED_POST_MULTIPART_OVERHEAD_BYTES = int(
+        os.getenv("STORAGE_PRESIGNED_POST_MULTIPART_OVERHEAD_BYTES", str(1024 * 1024))
+    )
     STORAGE_MAX_IMAGE_SIZE_MB = int(os.getenv("STORAGE_MAX_IMAGE_SIZE_MB", "50"))
     STORAGE_MAX_DOCUMENT_SIZE_MB = int(os.getenv("STORAGE_MAX_DOCUMENT_SIZE_MB", "200"))
     STORAGE_MAX_VIDEO_SIZE_MB = int(os.getenv("STORAGE_MAX_VIDEO_SIZE_MB", "500"))
