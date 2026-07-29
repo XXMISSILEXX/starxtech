@@ -125,3 +125,12 @@ class Config:
     MEDIA_VIDEO_POSTER_MAX_SIZE = int(os.getenv("MEDIA_VIDEO_POSTER_MAX_SIZE", "720"))
     MEDIA_TEMP_ROOT = os.getenv("MEDIA_TEMP_ROOT", str(BASE_DIR / "tmp" / "media_processing"))
     MEDIA_ENABLE_PROCESSING = os.getenv("MEDIA_ENABLE_PROCESSING", "true").lower() == "true"
+    MEDIA_CACHE_ENABLED = os.getenv("MEDIA_CACHE_ENABLED", "false").lower() == "true"
+    MEDIA_CACHE_ROOT = os.getenv(
+        "MEDIA_CACHE_ROOT",
+        "/tmp/starx-media-cache" if os.getenv("APP_ENV") in {"local", "development", "testing"} else "/app/cache/media",
+    )
+    MEDIA_CACHE_DELIVERY_MODE = os.getenv("MEDIA_CACHE_DELIVERY_MODE", "send_file")
+    MEDIA_CACHE_X_ACCEL_PREFIX = os.getenv("MEDIA_CACHE_X_ACCEL_PREFIX", "/_protected_media_cache/")
+    MEDIA_CACHE_MAX_BYTES = int(os.getenv("MEDIA_CACHE_MAX_BYTES", str(5 * 1024 * 1024 * 1024)))
+    MEDIA_CACHE_MAX_AGE_DAYS = int(os.getenv("MEDIA_CACHE_MAX_AGE_DAYS", "30"))

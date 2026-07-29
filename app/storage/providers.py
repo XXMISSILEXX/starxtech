@@ -131,7 +131,13 @@ class S3StorageProvider(StorageProvider):
         self.client.delete_object(Bucket=bucket, Key=object_key)
 
     def open_object(self, bucket, object_key):
-        return self.client.get_object(Bucket=bucket, Key=object_key)["Body"]
+        try:
+            return self.client.get_object(Bucket=bucket, Key=object_key)["Body"]
+        except Exception as exc:
+            error = getattr(exc, "response", {}).get("Error", {}).get("Code")
+            if str(error) in {"404", "NoSuchKey", "NotFound"}:
+                raise StorageNotFoundError("Object không tồn tại.") from exc
+            raise
 
     def download_object(self, bucket, object_key, destination_path):
         self.client.download_file(bucket, object_key, str(destination_path))

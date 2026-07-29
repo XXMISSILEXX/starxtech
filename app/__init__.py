@@ -41,11 +41,17 @@ def create_app(config_class=Config):
         "CELERY_TASK_TIME_LIMIT_BULK_DOWNLOAD_SECONDS": 1800, "REPORT_UPLOAD_CLEANUP_INTERVAL_SECONDS": 3600,
         "MEDIA_RECONCILIATION_INTERVAL_SECONDS": 900, "BULK_DOWNLOAD_CLEANUP_INTERVAL_SECONDS": 3600,
         "MEDIA_TEMP_ROOT": "/tmp/starx-media-processing", "MEDIA_IMAGE_THUMBNAIL_MAX_SIZE": 480, "MEDIA_IMAGE_PREVIEW_MAX_SIZE": 1600, "MEDIA_VIDEO_POSTER_MAX_SIZE": 720,
+        "MEDIA_CACHE_ENABLED": False,
+        "MEDIA_CACHE_ROOT": "/tmp/starx-media-cache" if app.config.get("TESTING") else "/app/cache/media",
+        "MEDIA_CACHE_DELIVERY_MODE": "send_file", "MEDIA_CACHE_X_ACCEL_PREFIX": "/_protected_media_cache/",
+        "MEDIA_CACHE_MAX_BYTES": 5 * 1024 * 1024 * 1024, "MEDIA_CACHE_MAX_AGE_DAYS": 30,
     }.items():
         app.config.setdefault(key, value)
     if app.config.get("MAX_CONTENT_LENGTH") is None:
         app.config["MAX_CONTENT_LENGTH"] = int(app.config.get("MAX_UPLOAD_MB", 10)) * 1024 * 1024
     startup_errors = configuration_errors(app.config)
+    from app.storage.cache import validate_cache_config
+    startup_errors.extend(validate_cache_config(app.config))
     if startup_errors:
         raise RuntimeError("Unsafe production configuration: " + "; ".join(startup_errors))
     proxy_hops = int(app.config.get("TRUST_PROXY_HOPS", 0))
@@ -112,6 +118,8 @@ def register_blueprints(app):
     from app.users import bp as users_bp
 
     app.register_blueprint(admin_bp)
+    from app.branding import logo as branding_logo
+    app.add_url_rule("/branding/logo", endpoint="branding.logo", view_func=branding_logo, methods=["GET"])
     app.register_blueprint(account_bp)
     from app.account.routes import media_display_preview
     app.add_url_rule("/media-display-preview", endpoint="media_display_preview", view_func=media_display_preview, methods=["POST"])

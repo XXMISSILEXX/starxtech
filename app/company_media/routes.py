@@ -4,7 +4,7 @@ from app.company_media import bp
 from app.company_media import permissions as p
 from app.company_media import services as s
 from app.extensions import db
-from app.models import CompanyMediaAlbum, CompanyMediaFile
+from app.models import CompanyMediaAlbum, CompanyMediaFile, StorageDerivative
 from app.models import BulkDownloadJob
 from app.bulk_downloads.services import (BulkDownloadError, parse_file_ids, preflight_media_download,
     request_media_download, stream_zip_download, serialize_job)
@@ -26,7 +26,7 @@ def index():
     for album in items:
         custom=CompanyMediaFile.query.filter_by(id=album.cover_media_id,album_id=album.id,is_active=True).filter(CompanyMediaFile.deleted_at.is_(None)).first() if album.cover_media_id else None
         covers[album.id]=custom or CompanyMediaFile.query.filter_by(album_id=album.id,is_active=True).filter(CompanyMediaFile.deleted_at.is_(None)).order_by(CompanyMediaFile.created_at).first()
-    return render_template("company_media/index.html",albums=items,covers=covers,album_status=status,q=request.args.get("q",""),can_create=p.create_album(current_user))
+    return render_template("company_media/index.html",albums=items,covers=covers,thumbnail_version_by_file=_thumbnail_versions(covers.values()),album_status=status,q=request.args.get("q",""),can_create=p.create_album(current_user))
 @bp.post("/albums/create")
 def create():
     if not p.create_album(current_user): abort(403)
@@ -38,7 +38,7 @@ def album(album_id):
     a=_one(CompanyMediaAlbum, album_id)
     if not p.view_album(current_user,a,True): abort(403)
     c=_ctx(); items=s.files(current_user,a,c["media_status"],c["q"]);active=a.is_active and not a.deleted_at
-    return render_template("company_media/album.html",album=a,files=items,active=active,**c,can_upload=p.upload_album(current_user,a),can_edit=p.edit_album(current_user,a),can_delete=p.delete_album(current_user,a),can_restore=p.restore_album(current_user,a),can_share=p.share_album(current_user,a,not active),can_download={x.id:p.download_file(current_user,x) for x in items},can_edit_file={x.id:p.edit_file(current_user,x) for x in items},can_delete_file={x.id:p.delete_file(current_user,x) for x in items},can_restore_file={x.id:p.restore_file(current_user,x) for x in items})
+    return render_template("company_media/album.html",album=a,files=items,active=active,thumbnail_version_by_file=_thumbnail_versions(items),**c,can_upload=p.upload_album(current_user,a),can_edit=p.edit_album(current_user,a),can_delete=p.delete_album(current_user,a),can_restore=p.restore_album(current_user,a),can_share=p.share_album(current_user,a,not active),can_download={x.id:p.download_file(current_user,x) for x in items},can_edit_file={x.id:p.edit_file(current_user,x) for x in items},can_delete_file={x.id:p.delete_file(current_user,x) for x in items},can_restore_file={x.id:p.restore_file(current_user,x) for x in items})
 @bp.post("/albums/<int:album_id>/rename")
 def rename(album_id):
     a=_one(CompanyMediaAlbum, album_id)
@@ -119,12 +119,49 @@ def preview(file_id):
     if not p.view_file(current_user,f):abort(403)
     try:return jsonify(s.signed_preview(f,(request.get_json() or {}).get("variant"),current_user))
     except s.CompanyMediaError as e:return jsonify(error=str(e)),400
+@bp.get("/files/<int:file_id>/thumbnail")
+def thumbnail(file_id):
+    f=_one(CompanyMediaFile, file_id)
+    if not f.is_active or f.deleted_at or not p.view_file(current_user,f): abort(403)
+    derivative=_thumbnail_derivative(f)
+    if derivative is None: return _thumbnail_placeholder()
+    if not current_app.config["MEDIA_CACHE_ENABLED"]:
+        from app.storage.providers import get_storage_provider
+        return redirect(get_storage_provider().create_presigned_download(derivative.bucket,derivative.object_key,current_app.config["STORAGE_DOWNLOAD_URL_TTL_SECONDS"],"inline",f.display_name)["url"])
+    from app.storage.cache import CacheSource, MediaCacheSourceMissing, serve_cached_source
+    source=CacheSource(category="company-media-thumbnail",object_id=f.id,derivative_type=derivative.derivative_type,immutable_key=derivative.object_key,version_id=derivative.id,extension=derivative.file_ext,mime_type=derivative.mime_type,file_size=derivative.file_size,bucket=derivative.bucket)
+    cache_control="private, max-age=3600" if request.args.get("v")==str(derivative.id) else "private, max-age=0, must-revalidate"
+    try:return serve_cached_source(source,cache_control=cache_control)
+    except MediaCacheSourceMissing: abort(404)
 @bp.post("/files/<int:file_id>/signed-download")
 def download(file_id):
     f=_one(CompanyMediaFile, file_id)
     if not p.download_file(current_user,f):abort(403)
     try:return jsonify(s.signed_download(f,current_user))
     except s.CompanyMediaError as e:return jsonify(error=str(e)),400
+
+
+def _thumbnail_derivative(f):
+    obj=f.storage_object
+    if not obj or obj.upload_status!="active" or obj.deleted_at is not None:return None
+    kinds=("thumbnail",) if obj.mime_type.startswith("image/") else ("poster",) if obj.mime_type.startswith("video/") else ()
+    if not kinds:return None
+    return StorageDerivative.query.filter(StorageDerivative.storage_object_id==obj.id,StorageDerivative.derivative_type.in_(kinds),StorageDerivative.deleted_at.is_(None),StorageDerivative.object_key.is_not(None),StorageDerivative.object_key!="").first()
+
+
+def _thumbnail_versions(files):
+    object_to_file={f.storage_object_id:f.id for f in files if f and f.is_active and not f.deleted_at}
+    if not object_to_file:return {}
+    rows=StorageDerivative.query.filter(StorageDerivative.storage_object_id.in_(object_to_file),StorageDerivative.derivative_type.in_(("thumbnail","poster")),StorageDerivative.deleted_at.is_(None),StorageDerivative.object_key.is_not(None),StorageDerivative.object_key!="").all()
+    return {object_to_file[row.storage_object_id]:row.id for row in rows}
+
+
+def _thumbnail_placeholder():
+    from pathlib import Path
+    from flask import send_file
+    response=send_file(Path(current_app.static_folder)/"img"/"attachment-processing.svg",mimetype="image/svg+xml",max_age=0)
+    response.headers["Cache-Control"]="no-store, private";response.headers["X-Content-Type-Options"]="nosniff"
+    return response
 @bp.post("/files/<int:file_id>/rename")
 def file_rename(file_id):
     f=_one(CompanyMediaFile, file_id)

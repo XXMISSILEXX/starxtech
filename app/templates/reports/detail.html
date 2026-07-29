@@ -48,7 +48,7 @@
                       data-media-preview-trigger data-preview-endpoint="{{ url_for('attachments.view', attachment_id=attachment.id) }}"
                       data-download-endpoint="{{ url_for('attachments.download', attachment_id=attachment.id) }}"
                       data-media-type="image" data-enable-image-tools="false" data-filename="{{ attachment.original_filename }}">
-                      <img class="report-thumb" src="{{ url_for('attachments.thumbnail', attachment_id=attachment.id) }}" alt="{{ attachment.original_filename }}">
+                      <img class="report-thumb" src="{{ url_for('attachments.thumbnail', attachment_id=attachment.id) }}" alt="{{ attachment.original_filename }}" loading="lazy" decoding="async" width="480" height="480">
                     </button>
                     <div class="small text-muted" data-report-attachment-processing>Đang tạo xem trước...</div>
                     <div class="dropdown position-absolute top-0 end-0 m-1" data-attachment-menu>

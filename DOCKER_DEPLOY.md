@@ -17,6 +17,7 @@ STORAGE_BUCKET=replace-with-private-bucket
 STORAGE_REGION=replace-with-region
 STORAGE_CORS_ALLOWED_ORIGINS=https://report.example.invalid
 TRUSTED_HOSTS=report.example.invalid
+MEDIA_CACHE_HOST_ROOT=/opt/starxtech/cache/media
 ```
 
 Run this release gate on staging first:
@@ -39,6 +40,10 @@ The worker consumes `media_image`, `media_video`, `storage_cleanup`, and
 reconciliation every 15 minutes, and expired bulk-download cleanup hourly.
 Redis is private, password-protected, AOF-persistent, and intentionally has no
 host port. Its loss is a recovery event, not a reason to bypass S3/Redis guards.
+
+The web service alone gets the writable private media-cache bind mount. Create
+that host directory before Compose starts; it is served only through Nginx's
+`internal` X-Accel location after Flask authorisation, never as a public volume.
 
 Record the Git commit, immutable image tag and resolved image digest for each
 release. Inspect build context before build; `.dockerignore` excludes Git,

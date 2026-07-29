@@ -55,14 +55,23 @@ def avatar():
     obj = current_user.avatar_storage_object
     if not obj or obj.deleted_at is not None or obj.upload_status != "active":
         abort(404)
-    from app.storage.providers import get_storage_provider
-    url = get_storage_provider().create_presigned_download(obj.bucket, obj.object_key,
-        current_app.config["STORAGE_DOWNLOAD_URL_TTL_SECONDS"], "inline", obj.original_filename)["url"]
-    response = redirect(url)
-    response.headers["Cache-Control"] = "no-store, private"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Referrer-Policy"] = "no-referrer"
-    return response
+    if not current_app.config["MEDIA_CACHE_ENABLED"]:
+        from app.storage.providers import get_storage_provider
+        url = get_storage_provider().create_presigned_download(obj.bucket, obj.object_key,
+            current_app.config["STORAGE_DOWNLOAD_URL_TTL_SECONDS"], "inline", obj.original_filename)["url"]
+        response = redirect(url)
+        response.headers["Cache-Control"] = "no-store, private"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+    from app.storage.cache import CacheSource, MediaCacheSourceMissing, serve_cached_source
+    source = CacheSource(category="user-avatar", object_id=current_user.id, derivative_type="avatar",
+        immutable_key=obj.object_key, version_id=obj.id, extension=obj.file_ext, mime_type=obj.mime_type,
+        file_size=obj.file_size, bucket=obj.bucket)
+    try:
+        return serve_cached_source(source, cache_control="private, max-age=86400, immutable")
+    except MediaCacheSourceMissing:
+        abort(404)
 
 
 @login_required

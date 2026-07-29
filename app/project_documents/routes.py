@@ -1,9 +1,11 @@
-from flask import abort, flash, jsonify, redirect, render_template, request, url_for
+from pathlib import Path
+
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user
 from markupsafe import Markup
 
 from app.extensions import db
-from app.models import Project, ProjectDocumentFolder, ProjectDocumentFolderPermission, Role, User
+from app.models import Project, ProjectDocumentFolder, ProjectDocumentFolderPermission, Role, StorageDerivative, User
 from app.project_documents import bp
 from app.project_documents.permissions import (can_access_project_documents, can_create_project_document_folder,
     can_delete_project_document_folder, can_edit_project_document_folder, can_restore_project_document_folder, can_share_project_document_folder,
@@ -118,6 +120,7 @@ def folder(folder_id):
         can_bulk_archive=any(can_delete_project_document_file(current_user, item) for item in files if item.is_active),
         can_bulk_restore=any(can_restore_project_document_file(current_user, item) for item in files if not item.is_active or item.deleted_at),
         can_bulk_download=any(can_download_project_document_file(current_user, item) for item in files if item.is_active),
+        thumbnail_version_by_file=_thumbnail_versions(files),
         can_any_edit_file=any(can_edit_project_document_file(current_user, item) for item in files if item.is_active))
 
 
@@ -182,6 +185,62 @@ def signed_preview(file_id):
     payload = request.get_json(silent=True) or {}
     try: return jsonify(create_file_preview_url(current_user, document_file, variant=payload.get("variant")))
     except DocumentValidationError as exc: return jsonify(error=str(exc)), 400
+
+
+@bp.get("/files/<int:file_id>/thumbnail")
+def thumbnail(file_id):
+    document_file = _document_file_or_404(file_id)
+    if not can_view_project_document_file(current_user, document_file):
+        abort(403)
+    derivative = _thumbnail_derivative(document_file)
+    if derivative is None:
+        return _thumbnail_placeholder()
+    if not current_app.config["MEDIA_CACHE_ENABLED"]:
+        from app.storage.providers import get_storage_provider
+        return redirect(get_storage_provider().create_presigned_download(
+            derivative.bucket, derivative.object_key, current_app.config["STORAGE_DOWNLOAD_URL_TTL_SECONDS"],
+            "inline", document_file.display_name)["url"])
+    from app.storage.cache import CacheSource, MediaCacheSourceMissing, serve_cached_source
+    source = CacheSource(category="project-document-thumbnail", object_id=document_file.id,
+        derivative_type=derivative.derivative_type, immutable_key=derivative.object_key, version_id=derivative.id,
+        extension=derivative.file_ext, mime_type=derivative.mime_type, file_size=derivative.file_size,
+        bucket=derivative.bucket)
+    cache_control = "private, max-age=3600" if request.args.get("v") == str(derivative.id) else "private, max-age=0, must-revalidate"
+    try:
+        return serve_cached_source(source, cache_control=cache_control)
+    except MediaCacheSourceMissing:
+        abort(404)
+
+
+def _thumbnail_derivative(document_file):
+    object_ = document_file.storage_object
+    if not object_ or object_.upload_status != "active" or object_.deleted_at is not None:
+        return None
+    kinds = ("thumbnail",) if object_.mime_type.startswith("image/") else ("poster",) if object_.mime_type.startswith("video/") else ()
+    if not kinds:
+        return None
+    return StorageDerivative.query.filter(
+        StorageDerivative.storage_object_id == object_.id, StorageDerivative.derivative_type.in_(kinds),
+        StorageDerivative.deleted_at.is_(None), StorageDerivative.object_key.is_not(None), StorageDerivative.object_key != "",
+    ).first()
+
+
+def _thumbnail_versions(files):
+    object_to_file = {file.storage_object_id: file.id for file in files if file.is_active and file.deleted_at is None}
+    if not object_to_file:
+        return {}
+    rows = StorageDerivative.query.filter(
+        StorageDerivative.storage_object_id.in_(object_to_file), StorageDerivative.derivative_type.in_(("thumbnail", "poster")),
+        StorageDerivative.deleted_at.is_(None), StorageDerivative.object_key.is_not(None), StorageDerivative.object_key != "",
+    ).all()
+    return {object_to_file[row.storage_object_id]: row.id for row in rows}
+
+
+def _thumbnail_placeholder():
+    response = send_file(Path(current_app.static_folder) / "img" / "attachment-processing.svg", mimetype="image/svg+xml", max_age=0)
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @bp.post("/files/<int:file_id>/rename")
