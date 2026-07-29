@@ -154,7 +154,7 @@ flask cleanup-expired-report-upload-sessions --dry-run
 Daily Report attachments are uploaded directly to S3/MinIO with presigned PUT
 URLs. Configure the bucket CORS rule with your application origins from
 `STORAGE_CORS_ALLOWED_ORIGINS` (the local default is
-`http://192.168.1.159:5666`), methods `PUT, HEAD`, and request headers
+`http://192.168.1.159:5666`), methods `POST, PUT, HEAD`, and request headers
 `Content-Type, x-amz-meta-sha256`. Do not use `*` for credentialed origins;
 the browser does not send StarX application cookies to object storage.
 ```
@@ -162,6 +162,22 @@ the browser does not send StarX application cookies to object storage.
 `memory://` is local/test-only. Production requires explicit `APP_ENV=production`,
 PostgreSQL, authenticated Redis for rate limiting/Celery, and S3-compatible
 storage; unknown or empty environments fail during application startup.
+
+### Private media cache
+
+Logo, user avatar, and generated thumbnails can use an authorised local
+read-through cache. Local development defaults to `send_file`; production
+Compose uses the host bind mount `/opt/starxtech/cache/media` at
+`/app/cache/media` and Nginx's internal `/_protected_media_cache/` location.
+This cache never stores originals, previews, video originals, or ZIP files.
+
+```bash
+# Safe default: inspect only
+flask media-cache-cleanup --dry-run
+
+# Delete expired/over-limit cache payloads after reviewing the dry run
+flask media-cache-cleanup --apply
+```
 
 Run the app locally:
 

@@ -7,7 +7,7 @@ from app.storage.exceptions import StorageConfigurationError, StorageNotFoundErr
 
 
 class StorageProvider:
-    def create_presigned_upload(self, bucket, object_key, mime_type, file_size, expires_in, metadata=None):
+    def create_presigned_upload(self, bucket, object_key, mime_type, file_size, expires_in, *, max_file_size, metadata=None):
         raise NotImplementedError
 
     def create_presigned_put(self, bucket, object_key, mime_type, file_size, expires_in, metadata=None):
@@ -34,7 +34,7 @@ class FakeStorageProvider(StorageProvider):
         self.objects = {}
         self.deleted = []
 
-    def create_presigned_upload(self, bucket, object_key, mime_type, file_size, expires_in, metadata=None):
+    def create_presigned_upload(self, bucket, object_key, mime_type, file_size, expires_in, *, max_file_size, metadata=None):
         return {"method": "POST", "url": f"https://fake-storage.invalid/{bucket}", "fields": {"key": object_key, "Content-Type": mime_type}, "expires_at": _expires_at(expires_in)}
 
     def create_presigned_put(self, bucket, object_key, mime_type, file_size, expires_in, metadata=None):
@@ -86,9 +86,31 @@ class S3StorageProvider(StorageProvider):
         except ImportError as exc:
             raise StorageConfigurationError("S3 storage cần dependency boto3 đã pin.") from exc
         self.client = boto3.client("s3", endpoint_url=config.get("STORAGE_ENDPOINT_URL"), region_name=config.get("STORAGE_REGION"), aws_access_key_id=config.get("STORAGE_ACCESS_KEY_ID"), aws_secret_access_key=config.get("STORAGE_SECRET_ACCESS_KEY"))
+        self.multipart_overhead_bytes = int(config.get("STORAGE_PRESIGNED_POST_MULTIPART_OVERHEAD_BYTES", 1024 * 1024))
 
-    def create_presigned_upload(self, bucket, object_key, mime_type, file_size, expires_in, metadata=None):
-        result = self.client.generate_presigned_post(bucket, object_key, Fields={"Content-Type": mime_type}, Conditions=[["content-length-range", file_size, file_size], {"Content-Type": mime_type}], ExpiresIn=expires_in)
+    def create_presigned_upload(self, bucket, object_key, mime_type, file_size, expires_in, *, max_file_size, metadata=None):
+        """Create a browser multipart POST policy without trusting its body size.
+
+        CloudFly-compatible providers can apply ``content-length-range`` to the
+        entire multipart request.  The object itself remains exact-size bound by
+        the server-side HEAD check in ``complete_upload_item``.
+        """
+        max_file_size = int(max_file_size)
+        if max_file_size < 1:
+            raise StorageConfigurationError("Giới hạn kích thước upload không hợp lệ.")
+        overhead = self.multipart_overhead_bytes
+        if overhead < 0:
+            raise StorageConfigurationError("Multipart upload overhead không hợp lệ.")
+        result = self.client.generate_presigned_post(
+            bucket,
+            object_key,
+            Fields={"Content-Type": mime_type},
+            Conditions=[
+                ["content-length-range", 1, max_file_size + overhead],
+                {"Content-Type": mime_type},
+            ],
+            ExpiresIn=expires_in,
+        )
         return {"method": "POST", "url": result["url"], "fields": result["fields"], "expires_at": _expires_at(expires_in)}
 
     def create_presigned_put(self, bucket, object_key, mime_type, file_size, expires_in, metadata=None):
@@ -109,7 +131,13 @@ class S3StorageProvider(StorageProvider):
         self.client.delete_object(Bucket=bucket, Key=object_key)
 
     def open_object(self, bucket, object_key):
-        return self.client.get_object(Bucket=bucket, Key=object_key)["Body"]
+        try:
+            return self.client.get_object(Bucket=bucket, Key=object_key)["Body"]
+        except Exception as exc:
+            error = getattr(exc, "response", {}).get("Error", {}).get("Code")
+            if str(error) in {"404", "NoSuchKey", "NotFound"}:
+                raise StorageNotFoundError("Object không tồn tại.") from exc
+            raise
 
     def download_object(self, bucket, object_key, destination_path):
         self.client.download_file(bucket, object_key, str(destination_path))

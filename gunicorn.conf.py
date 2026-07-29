@@ -3,6 +3,7 @@ import os
 bind = f"0.0.0.0:{os.getenv('APP_PORT', '6655')}"
 
 workers = int(os.getenv("WEB_CONCURRENCY", "2"))
+worker_tmp_dir = "/app/tmp"
 threads = int(os.getenv("GUNICORN_THREADS", "2"))
 
 worker_class = "gthread"

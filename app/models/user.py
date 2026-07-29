@@ -5,6 +5,9 @@ from app.extensions import db
 from app.models.mixins import SoftDeleteMixin, TimestampMixin
 
 
+DEFAULT_UI_PREFERENCES = {"appearance": "system", "accent": "blue"}
+
+
 class User(UserMixin, TimestampMixin, SoftDeleteMixin, db.Model):
     __tablename__ = "users"
     # `role_id` is canonical.  The old column remains a compatibility mirror
@@ -26,6 +29,14 @@ class User(UserMixin, TimestampMixin, SoftDeleteMixin, db.Model):
         db.ForeignKey("storage_objects.id", name="fk_users_avatar_storage_object_id", ondelete="SET NULL", use_alter=True),
         nullable=True,
         index=True,
+    )
+    # Personal display preferences are deliberately kept with the user record:
+    # the database is canonical, while the browser cache is only a paint aid.
+    ui_preferences = db.Column(
+        db.JSON,
+        nullable=False,
+        default=lambda: dict(DEFAULT_UI_PREFERENCES),
+        server_default='{"appearance":"system","accent":"blue"}',
     )
     role = db.relationship("Role", back_populates="users")
     avatar_storage_object = db.relationship("StorageObject", foreign_keys=[avatar_storage_object_id])

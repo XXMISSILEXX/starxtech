@@ -97,6 +97,31 @@ def test_batch_rejects_duplicate_ids_and_total_limit(app):
             create_upload_batch_presign(user=user, module_type="project_documents", target_type="folder", target_id=1, files=[{"client_file_id": "x", "filename": "a.pdf", "mime_type": "application/pdf", "size": 1}])
 
 
+@pytest.mark.parametrize("filename,mime,size", [
+    ("empty.jpg", "image/jpeg", 0),
+    ("too-large.jpg", "image/jpeg", 50 * 1024 * 1024 + 1),
+])
+def test_invalid_size_is_rejected_before_presign(app, filename, mime, size):
+    class RecordingProvider(FakeStorageProvider):
+        def __init__(self):
+            super().__init__()
+            self.presign_calls = 0
+
+        def create_presigned_upload(self, *args, **kwargs):
+            self.presign_calls += 1
+            return super().create_presigned_upload(*args, **kwargs)
+
+    with app.app_context():
+        provider = RecordingProvider()
+        result = create_upload_batch_presign(
+            user=db.session.get(User, 3), module_type="company_media", target_type="album", target_id=1,
+            files=[{"client_file_id": "invalid-size", "filename": filename, "mime_type": mime, "size": size}], provider=provider,
+        )
+        assert result["items"][0]["client_file_id"] == "invalid-size"
+        assert result["items"][0]["accepted"] is False
+        assert provider.presign_calls == 0
+
+
 def test_complete_and_download_are_idempotent_and_safe(app):
     with app.app_context():
         provider, user = FakeStorageProvider(), db.session.get(User, 3)
@@ -120,6 +145,37 @@ def test_complete_head_failure_never_activates(app):
         assert item.storage_object.upload_status == "pending" and item.status == "failed"
         with pytest.raises(StorageNotFoundError):
             create_signed_download_url(user=user, storage_object_id=item.storage_object_id, provider=provider)
+
+
+@pytest.mark.parametrize("actual_size", [9, 11])
+def test_complete_rejects_head_size_that_is_not_exact(app, actual_size):
+    with app.app_context():
+        provider, user = FakeStorageProvider(), db.session.get(User, 3)
+        result = create_upload_batch_presign(
+            user=user, module_type="company_media", target_type="album", target_id=1,
+            files=[{"client_file_id": "size-check", "filename": "size-check.jpg", "mime_type": "image/jpeg", "size": 10}], provider=provider,
+        )
+        item = db.session.get(UploadBatchItem, result["items"][0]["upload_batch_item_id"])
+        provider.register_object(item.storage_object.bucket, item.storage_object.object_key, actual_size, "image/jpeg")
+        with pytest.raises(StorageValidationError, match="Kích thước object không khớp"):
+            complete_upload_item(user=user, upload_batch_item_id=item.id, provider=provider)
+        assert item.status == "failed"
+        assert item.storage_object.upload_status == "pending"
+
+
+def test_complete_rejects_another_users_upload_item(app):
+    with app.app_context():
+        provider, owner, other = FakeStorageProvider(), db.session.get(User, 3), db.session.get(User, 5)
+        result = create_upload_batch_presign(
+            user=owner, module_type="company_media", target_type="album", target_id=1,
+            files=[{"client_file_id": "owner-only", "filename": "owner-only.jpg", "mime_type": "image/jpeg", "size": 1}], provider=provider,
+        )
+        item = db.session.get(UploadBatchItem, result["items"][0]["upload_batch_item_id"])
+        provider.register_object(item.storage_object.bucket, item.storage_object.object_key, 1, "image/jpeg")
+        from app.storage.exceptions import StorageAuthorizationError
+        with pytest.raises(StorageAuthorizationError):
+            complete_upload_item(user=other, upload_batch_item_id=item.id, provider=provider)
+        assert item.status == "accepted" and item.storage_object.upload_status == "pending"
 
 
 def test_cleanup_pending_dry_run_and_execute(app):

@@ -1,5 +1,6 @@
 import sys
 import types
+from datetime import datetime
 
 import pytest
 
@@ -69,8 +70,18 @@ def test_s3_provider_validates_config_and_presign_shape(monkeypatch):
     with pytest.raises(StorageConfigurationError):
         S3StorageProvider({"STORAGE_BUCKET": "", "STORAGE_ACCESS_KEY_ID": "x", "STORAGE_SECRET_ACCESS_KEY": "y"})
     class Client:
-        def generate_presigned_post(self, *args, **kwargs): return {"url": "http://s3.test/bucket", "fields": {"key": "generated"}}
-    monkeypatch.setitem(sys.modules, "boto3", types.SimpleNamespace(client=lambda *args, **kwargs: Client()))
-    provider = S3StorageProvider({"STORAGE_BUCKET": "bucket", "STORAGE_ACCESS_KEY_ID": "key", "STORAGE_SECRET_ACCESS_KEY": "secret", "STORAGE_REGION": "us-east-1", "STORAGE_ENDPOINT_URL": "http://s3.test"})
-    result = provider.create_presigned_upload("bucket", "generated", "application/pdf", 1, 300)
+        kwargs = None
+        def generate_presigned_post(self, *args, **kwargs):
+            self.kwargs = kwargs
+            return {"url": "http://s3.test/bucket", "fields": {"key": "generated"}}
+    client = Client()
+    monkeypatch.setitem(sys.modules, "boto3", types.SimpleNamespace(client=lambda *args, **kwargs: client))
+    provider = S3StorageProvider({"STORAGE_BUCKET": "bucket", "STORAGE_ACCESS_KEY_ID": "key", "STORAGE_SECRET_ACCESS_KEY": "secret", "STORAGE_REGION": "us-east-1", "STORAGE_ENDPOINT_URL": "http://s3.test", "STORAGE_PRESIGNED_POST_MULTIPART_OVERHEAD_BYTES": 1024})
+    result = provider.create_presigned_upload("bucket", "generated", "application/pdf", 1, 300, max_file_size=200 * 1024 * 1024)
     assert result["method"] == "POST" and result["url"] == "http://s3.test/bucket" and "fields" in result
+    conditions = client.kwargs["Conditions"]
+    assert ["content-length-range", 1, 200 * 1024 * 1024 + 1024] in conditions
+    assert ["content-length-range", 1, 1] not in conditions
+    assert {"Content-Type": "application/pdf"} in conditions
+    assert client.kwargs["ExpiresIn"] == 300
+    assert datetime.fromisoformat(result["expires_at"]).tzinfo is not None

@@ -8,7 +8,7 @@ from app.models import StorageObject, UploadBatch, UploadBatchItem, UploadSelect
 from app.storage.exceptions import StorageAuthorizationError, StorageNotFoundError, StorageValidationError
 from app.storage.keys import build_original_key, normalize_storage_module
 from app.storage.providers import get_storage_provider
-from app.storage.validation import validate_file_metadata
+from app.storage.validation import max_file_size_for_category, validate_file_metadata
 
 
 VALID_SCOPES = {("project_documents", "folder"), ("company_media", "album")}
@@ -24,10 +24,32 @@ def create_upload_selection_session(*, user, module_type, target_type, target_id
     session = UploadSelectionSession(module_type=module_type, target_type=target_type, target_id=int(target_id), created_by_id=user.id, declared_files=declared_files, declared_size_bytes=declared_size_bytes, expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=int(_config("UPLOAD_SELECTION_TTL_SECONDS"))))
     _add(session); db.session.commit(); return {"selection_session_id": session.id, "expires_at": session.expires_at.isoformat()}
 
-def finalize_upload_selection_session(*, user, selection_session_id, module_type, target_type, target_id):
+def finalize_upload_selection_session(*, user, selection_session_id, module_type, target_type, target_id,
+                                      failed_upload_batch_item_ids=None):
     session = _selection_session(user, selection_session_id, module_type, target_type, target_id)
-    session.status = "completed"; session.completed_at = datetime.now(timezone.utc).replace(tzinfo=None); db.session.commit()
-    return {"selection_session_id": session.id, "status": session.status}
+    failed_ids = _normalize_failed_item_ids(failed_upload_batch_item_ids)
+    items = UploadBatchItem.query.join(UploadBatch).filter(
+        UploadBatch.selection_session_id == session.id,
+    ).all()
+    retryable = {item.id: item for item in items if item.status in {"accepted", "uploading"}}
+    failed_or_retryable = {item.id for item in items if item.status in {"accepted", "uploading", "failed"}}
+    if set(failed_ids) - failed_or_retryable:
+        raise StorageValidationError("Danh sách tệp lỗi không hợp lệ.")
+    for item_id in failed_ids:
+        if item_id in retryable:
+            _mark_item_failed(retryable[item_id], terminal=True)
+    unfinished = [item for item in items if item.status not in {"completed", "failed", "rejected", "cancelled"}]
+    if unfinished:
+        raise StorageValidationError("Một số tệp chưa hoàn tất tải lên.")
+    session.status = "completed"
+    session.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.session.commit()
+    return {
+        "selection_session_id": session.id,
+        "status": session.status,
+        "succeeded_files": sum(item.status == "completed" for item in items),
+        "failed_files": sum(item.status in {"failed", "rejected", "cancelled"} for item in items),
+    }
 
 def create_upload_batch_presign(*, user, module_type, target_type, target_id, files, selection_session_id=None, provider=None):
     _require_active_user(user)
@@ -72,7 +94,15 @@ def create_upload_batch_presign(*, user, module_type, target_type, target_id, fi
             # SQLite/SQLAlchemy can defer INSERT until commit; response contract
             # requires this id before the browser starts direct upload.
             db.session.flush()
-            upload = provider.create_presigned_upload(storage_object.bucket, storage_object.object_key, storage_object.mime_type, storage_object.file_size, _config("STORAGE_UPLOAD_URL_TTL_SECONDS"), metadata={"sha256": storage_object.checksum_sha256} if storage_object.checksum_sha256 else None)
+            upload = provider.create_presigned_upload(
+                storage_object.bucket,
+                storage_object.object_key,
+                storage_object.mime_type,
+                storage_object.file_size,
+                _config("STORAGE_UPLOAD_URL_TTL_SECONDS"),
+                max_file_size=max_file_size_for_category(meta["category"]),
+                metadata={"sha256": storage_object.checksum_sha256} if storage_object.checksum_sha256 else None,
+            )
             batch.accepted_files += 1
             response_items.append({"client_file_id": client_file_id, "accepted": True, "upload_batch_item_id": batch_item.id, "storage_object_id": storage_object.id, **upload})
         except StorageValidationError as exc:
@@ -207,6 +237,27 @@ def _safe_size(value):
         return max(0, int(value))
     except (TypeError, ValueError):
         return 0
+
+
+def _normalize_failed_item_ids(value):
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise StorageValidationError("Danh sách tệp lỗi không hợp lệ.")
+    ids = []
+    for item_id in value:
+        if isinstance(item_id, bool):
+            raise StorageValidationError("Danh sách tệp lỗi không hợp lệ.")
+        try:
+            normalized = int(item_id)
+        except (TypeError, ValueError) as exc:
+            raise StorageValidationError("Danh sách tệp lỗi không hợp lệ.") from exc
+        if normalized < 1:
+            raise StorageValidationError("Danh sách tệp lỗi không hợp lệ.")
+        ids.append(normalized)
+    if len(ids) != len(set(ids)):
+        raise StorageValidationError("Danh sách tệp lỗi không hợp lệ.")
+    return ids
 
 
 def _config(name):

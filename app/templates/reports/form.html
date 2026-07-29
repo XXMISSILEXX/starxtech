@@ -135,7 +135,7 @@
               {% for attachment in section.attachments %}
                 {% if not attachment.deleted_at %}
                   <div class="attachment-card">
-                    <button class="btn p-0 border-0 bg-transparent" type="button" data-media-preview-url="{{ url_for('attachments.view', attachment_id=attachment.id) }}" data-media-preview-download="{{ url_for('attachments.download', attachment_id=attachment.id) }}" data-media-preview-name="{{ attachment.original_filename }}"><img class="report-thumb" src="{{ url_for('attachments.view', attachment_id=attachment.id) }}" alt="{{ attachment.original_filename }}"></button>
+                    <button class="btn p-0 border-0 bg-transparent" type="button" data-media-preview-url="{{ url_for('attachments.view', attachment_id=attachment.id) }}" data-media-preview-download="{{ url_for('attachments.download', attachment_id=attachment.id) }}" data-media-preview-name="{{ attachment.original_filename }}"><img class="report-thumb" src="{{ url_for('attachments.thumbnail', attachment_id=attachment.id) }}" alt="{{ attachment.original_filename }}" loading="lazy" decoding="async" width="480" height="480"></button>
                     {% if can_delete_attachment %}
                       <button class="btn btn-sm btn-outline-danger mt-2" type="submit" form="delete-attachment-{{ attachment.id }}" data-confirm="Xóa ảnh này?"><i class="bi bi-trash me-1"></i>Xóa</button>
                     {% endif %}

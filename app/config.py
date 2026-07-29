@@ -31,7 +31,7 @@ def read_csv_setting(name: str) -> tuple[str, ...]:
 
 
 class Config:
-    STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", "20260725-8106")
+    STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", "20260729-8201")
     # Do not supply an implicit environment.  A typo here used to silently
     # retain the development signing key while skipping production checks.
     APP_ENV = os.getenv("APP_ENV")
@@ -74,6 +74,12 @@ class Config:
     STORAGE_PREFIX = os.getenv("STORAGE_PREFIX", "").strip("/")
     STORAGE_UPLOAD_URL_TTL_SECONDS = int(os.getenv("STORAGE_UPLOAD_URL_TTL_SECONDS", "300"))
     STORAGE_DOWNLOAD_URL_TTL_SECONDS = int(os.getenv("STORAGE_DOWNLOAD_URL_TTL_SECONDS", "300"))
+    # CloudFly evaluates a presigned POST content-length-range against the
+    # complete multipart request, not only the file bytes.  Keep this bounded
+    # allowance explicit; exact object size is verified with HEAD on complete.
+    STORAGE_PRESIGNED_POST_MULTIPART_OVERHEAD_BYTES = int(
+        os.getenv("STORAGE_PRESIGNED_POST_MULTIPART_OVERHEAD_BYTES", str(1024 * 1024))
+    )
     STORAGE_MAX_IMAGE_SIZE_MB = int(os.getenv("STORAGE_MAX_IMAGE_SIZE_MB", "50"))
     STORAGE_MAX_DOCUMENT_SIZE_MB = int(os.getenv("STORAGE_MAX_DOCUMENT_SIZE_MB", "200"))
     STORAGE_MAX_VIDEO_SIZE_MB = int(os.getenv("STORAGE_MAX_VIDEO_SIZE_MB", "500"))
@@ -119,3 +125,12 @@ class Config:
     MEDIA_VIDEO_POSTER_MAX_SIZE = int(os.getenv("MEDIA_VIDEO_POSTER_MAX_SIZE", "720"))
     MEDIA_TEMP_ROOT = os.getenv("MEDIA_TEMP_ROOT", str(BASE_DIR / "tmp" / "media_processing"))
     MEDIA_ENABLE_PROCESSING = os.getenv("MEDIA_ENABLE_PROCESSING", "true").lower() == "true"
+    MEDIA_CACHE_ENABLED = os.getenv("MEDIA_CACHE_ENABLED", "false").lower() == "true"
+    MEDIA_CACHE_ROOT = os.getenv(
+        "MEDIA_CACHE_ROOT",
+        "/tmp/starx-media-cache" if os.getenv("APP_ENV") in {"local", "development", "testing"} else "/app/cache/media",
+    )
+    MEDIA_CACHE_DELIVERY_MODE = os.getenv("MEDIA_CACHE_DELIVERY_MODE", "send_file")
+    MEDIA_CACHE_X_ACCEL_PREFIX = os.getenv("MEDIA_CACHE_X_ACCEL_PREFIX", "/_protected_media_cache/")
+    MEDIA_CACHE_MAX_BYTES = int(os.getenv("MEDIA_CACHE_MAX_BYTES", str(5 * 1024 * 1024 * 1024)))
+    MEDIA_CACHE_MAX_AGE_DAYS = int(os.getenv("MEDIA_CACHE_MAX_AGE_DAYS", "30"))

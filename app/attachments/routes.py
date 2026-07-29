@@ -15,8 +15,9 @@ from app.storage.quota import ensure_bandwidth, record_download
 @bp.after_request
 def private_media_cache_headers(response):
     """Never allow an authorised media response to survive a session change."""
-    response.headers["Cache-Control"] = "no-store, private"
-    response.headers["Pragma"] = "no-cache"
+    response.headers.setdefault("Cache-Control", "no-store, private")
+    if response.headers.get("Cache-Control", "").startswith("no-store"):
+        response.headers.setdefault("Pragma", "no-cache")
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["X-Content-Type-Options"] = "nosniff"
     return response
@@ -47,11 +48,22 @@ def thumbnail(attachment_id):
     obj, derivative = _preview_target(attachment, ("thumbnail",))
     if derivative is None:
         return _no_store(redirect(url_for("static", filename="img/attachment-processing.svg")))
-    response = redirect(get_storage_provider().create_presigned_download(
-        derivative.bucket, derivative.object_key,
-        current_app.config["STORAGE_DOWNLOAD_URL_TTL_SECONDS"], "inline", obj.original_filename,
-    )["url"])
-    return response
+    if not current_app.config["MEDIA_CACHE_ENABLED"]:
+        response = redirect(get_storage_provider().create_presigned_download(
+            derivative.bucket, derivative.object_key,
+            current_app.config["STORAGE_DOWNLOAD_URL_TTL_SECONDS"], "inline", obj.original_filename,
+        )["url"])
+        return response
+    from app.storage.cache import CacheSource, MediaCacheSourceMissing, serve_cached_source
+    source = CacheSource(category="daily-report-thumbnail", object_id=attachment.id,
+        derivative_type=derivative.derivative_type, immutable_key=derivative.object_key,
+        version_id=derivative.id, extension=derivative.file_ext, mime_type=derivative.mime_type,
+        file_size=derivative.file_size, bucket=derivative.bucket)
+    cache_control = "private, max-age=3600" if request.args.get("v") == str(derivative.id) else "private, max-age=0, must-revalidate"
+    try:
+        return serve_cached_source(source, cache_control=cache_control)
+    except MediaCacheSourceMissing:
+        abort(404)
 
 
 @bp.get("/<int:attachment_id>/status")

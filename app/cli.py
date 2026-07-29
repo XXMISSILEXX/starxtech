@@ -191,6 +191,15 @@ def register_cli(app):
         click.echo("mode={mode} matched={matched} cleaned={cleaned} failed={failed}".format(
             mode="dry-run" if dry_run else "apply", **summary))
 
+    @app.cli.command("media-cache-cleanup")
+    @click.option("--dry-run/--apply", "dry_run", default=True,
+                  help="Preview or remove expired local private-media cache files.")
+    def media_cache_cleanup(dry_run):
+        from app.storage.cache import cleanup_media_cache
+        summary = cleanup_media_cache(dry_run=dry_run)
+        click.echo("mode={mode} scanned={scanned} deleted={deleted} reclaimed_bytes={reclaimed_bytes} errors={errors}".format(
+            mode="dry-run" if dry_run else "apply", **summary))
+
     @app.cli.command("daily-report-upload-sessions")
     @click.option("--list-active", "list_active", is_flag=True, help="List non-finalized Daily Report upload sessions.")
     @click.option("--show", "session_id", type=int, help="Show one upload session and its items.")

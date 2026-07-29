@@ -28,10 +28,17 @@ x-app-environment: &app-environment
   REPORT_UPLOAD_CLEANUP_INTERVAL_SECONDS: ${REPORT_UPLOAD_CLEANUP_INTERVAL_SECONDS:-3600}
   MEDIA_RECONCILIATION_INTERVAL_SECONDS: ${MEDIA_RECONCILIATION_INTERVAL_SECONDS:-900}
   BULK_DOWNLOAD_CLEANUP_INTERVAL_SECONDS: ${BULK_DOWNLOAD_CLEANUP_INTERVAL_SECONDS:-3600}
+  TMPDIR: /app/tmp
   UPLOAD_ROOT: /app/storage/uploads
   TMP_ROOT: /app/tmp
   MEDIA_TEMP_ROOT: /app/tmp/media_processing
   BULK_DOWNLOAD_TEMP_ROOT: /app/tmp/bulk_downloads
+  MEDIA_CACHE_ENABLED: "true"
+  MEDIA_CACHE_ROOT: /app/cache/media
+  MEDIA_CACHE_DELIVERY_MODE: x_accel
+  MEDIA_CACHE_X_ACCEL_PREFIX: /_protected_media_cache/
+  MEDIA_CACHE_MAX_BYTES: ${MEDIA_CACHE_MAX_BYTES:-5368709120}
+  MEDIA_CACHE_MAX_AGE_DAYS: ${MEDIA_CACHE_MAX_AGE_DAYS:-30}
 
 x-app-common: &app-common
   image: ${APP_IMAGE:?Set APP_IMAGE to an immutable commit/version tag}
@@ -77,6 +84,9 @@ services:
     command: ["gunicorn", "--config", "gunicorn.conf.py", "wsgi:app"]
     ports:
       - "127.0.0.1:${HOST_WEB_PORT:-6655}:6655"
+    volumes:
+      - app_tmp:/app/tmp
+      - ${MEDIA_CACHE_HOST_ROOT:-/opt/starxtech/cache/media}:/app/cache/media
     depends_on:
       migrate:
         condition: service_completed_successfully

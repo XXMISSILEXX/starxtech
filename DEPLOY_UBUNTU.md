@@ -41,7 +41,7 @@ not place them in shell history, Git, Compose environment files, or logs.
 Provision one private bucket and a least-privilege credential limited to the
 StarX bucket/prefix. Require TLS endpoint, bucket, region, access key and
 secret key. Configure bucket CORS only for the explicit HTTPS Nginx origin,
-with `PUT, HEAD` and `Content-Type, x-amz-meta-sha256`; never use wildcard
+with `POST, PUT, HEAD` and `Content-Type, x-amz-meta-sha256`; never use wildcard
 origins. Define lifecycle/retention/versioning with the storage provider.
 Provider durability and backup replication are external operational decisions;
 this repository does not implement object-store backups.
@@ -68,6 +68,25 @@ permissions. Bootstrap a first admin only via a separately approved, audited
 one-shot command after migration; never put its password in Compose secrets.
 
 ## Nginx and TLS
+
+### Private media cache
+
+Before deploying the Compose change, create the writable host directory owned
+by the account that runs Docker:
+
+```bash
+sudo install -d -m 0750 -o starxreport -g starxreport /opt/starxtech/cache/media
+```
+
+The web container alone mounts this path at `/app/cache/media`. Keep the Nginx
+location in `deploy/nginx/starx-report.conf` internal with the exact trailing
+slash pair `location /_protected_media_cache/` and
+`alias /opt/starxtech/cache/media/`; do not add a public location or a global
+Cache-Control header there. Flask authorises every request before issuing
+`X-Accel-Redirect` and sets the media-specific cache policy itself.
+
+After release, run `flask media-cache-cleanup --dry-run` from the web container
+and only use `--apply` after reviewing its counters.
 
 Install [deploy/nginx/starx-report.conf](deploy/nginx/starx-report.conf) after
 replacing the example hostname, run `sudo nginx -t`, enable the site, then run

@@ -246,8 +246,9 @@ def complete_folder_upload_item(user, folder, upload_batch_item_id, metadata=Non
     if not item or item.upload_batch.module_type != "project_documents" or item.upload_batch.target_type != "folder" or item.upload_batch.target_id != folder.id:
         raise DocumentValidationError("Upload item không thuộc thư mục này.")
     completed = complete_upload_item(user=user, upload_batch_item_id=upload_batch_item_id, checksum_sha256=(metadata or {}).get("checksum_sha256"), provider=provider)
+    existing_document = ProjectDocumentFile.query.filter_by(storage_object_id=item.storage_object_id).first()
     document_file = create_project_document_file_from_storage_object(user, folder, item.storage_object)
-    if item.storage_object.mime_type.startswith(("image/", "video/")):
+    if existing_document is None and item.storage_object.mime_type.startswith(("image/", "video/")):
         try:
             from app.media_processing.services import enqueue_media_processing_for_storage_object
             enqueue_media_processing_for_storage_object(item.storage_object_id)

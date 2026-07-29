@@ -1,6 +1,6 @@
 import io
 
-from flask import abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -11,6 +11,8 @@ from app.display_images import (DisplayImageCleanupError, DisplayImageError,
 from app.extensions import db
 from app.extensions import limiter
 from app.display_images import IMAGE_EXTENSIONS, MAX_DISPLAY_IMAGE_BYTES
+from app.account.preferences import validate_ui_preferences
+from app.audit import log_audit
 
 
 @bp.route("/", methods=["GET", "POST"])
@@ -34,6 +36,28 @@ def profile():
     return render_template("account/profile.html")
 
 
+@bp.post("/preferences")
+@login_required
+def save_preferences():
+    """Persist allowlisted preferences; no client value is accepted blindly."""
+    values, errors = validate_ui_preferences(request.form.get("appearance"), request.form.get("accent"))
+    wants_json = request.accept_mimetypes.best == "application/json"
+    if errors:
+        if wants_json:
+            return jsonify(message="Không thể lưu cài đặt.", errors=errors), 400
+        flash("Không thể lưu giao diện: dữ liệu không hợp lệ.", "danger")
+        return redirect(url_for("account.profile"))
+
+    old_values = dict(current_user.ui_preferences or {})
+    current_user.ui_preferences = values
+    log_audit("account.ui_preferences.updated", "User", current_user.id, old_values=old_values, new_values=values)
+    db.session.commit()
+    if wants_json:
+        return jsonify(message="Đã lưu giao diện cá nhân.", preferences=values)
+    flash("Đã lưu giao diện cá nhân.", "success")
+    return redirect(url_for("account.profile"))
+
+
 @bp.post("/avatar/delete")
 @login_required
 def delete_avatar():
@@ -55,14 +79,23 @@ def avatar():
     obj = current_user.avatar_storage_object
     if not obj or obj.deleted_at is not None or obj.upload_status != "active":
         abort(404)
-    from app.storage.providers import get_storage_provider
-    url = get_storage_provider().create_presigned_download(obj.bucket, obj.object_key,
-        current_app.config["STORAGE_DOWNLOAD_URL_TTL_SECONDS"], "inline", obj.original_filename)["url"]
-    response = redirect(url)
-    response.headers["Cache-Control"] = "no-store, private"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Referrer-Policy"] = "no-referrer"
-    return response
+    if not current_app.config["MEDIA_CACHE_ENABLED"]:
+        from app.storage.providers import get_storage_provider
+        url = get_storage_provider().create_presigned_download(obj.bucket, obj.object_key,
+            current_app.config["STORAGE_DOWNLOAD_URL_TTL_SECONDS"], "inline", obj.original_filename)["url"]
+        response = redirect(url)
+        response.headers["Cache-Control"] = "no-store, private"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+    from app.storage.cache import CacheSource, MediaCacheSourceMissing, serve_cached_source
+    source = CacheSource(category="user-avatar", object_id=current_user.id, derivative_type="avatar",
+        immutable_key=obj.object_key, version_id=obj.id, extension=obj.file_ext, mime_type=obj.mime_type,
+        file_size=obj.file_size, bucket=obj.bucket)
+    try:
+        return serve_cached_source(source, cache_control="private, max-age=86400, immutable")
+    except MediaCacheSourceMissing:
+        abort(404)
 
 
 @login_required

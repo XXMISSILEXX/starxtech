@@ -15,8 +15,9 @@ def create_app(config_class=Config):
     app.config.setdefault("RATELIMIT_LOGIN_LIMIT", "5 per minute")
     app.config.setdefault("RATELIMIT_EXPORT_LIMIT", "10 per hour")
     for key, value in {
-        "STORAGE_PROVIDER": "fake", "STORAGE_BUCKET": "starx-local", "STORAGE_PREFIX": "", "STATIC_ASSET_VERSION": "20260725-8106",
+        "STORAGE_PROVIDER": "fake", "STORAGE_BUCKET": "starx-local", "STORAGE_PREFIX": "", "STATIC_ASSET_VERSION": "20260729-8201",
         "STORAGE_UPLOAD_URL_TTL_SECONDS": 300, "STORAGE_DOWNLOAD_URL_TTL_SECONDS": 300,
+        "STORAGE_PRESIGNED_POST_MULTIPART_OVERHEAD_BYTES": 1024 * 1024,
         "STORAGE_MAX_IMAGE_SIZE_MB": 50, "STORAGE_MAX_DOCUMENT_SIZE_MB": 200,
         "STORAGE_MAX_VIDEO_SIZE_MB": 500, "STORAGE_MAX_AUDIO_SIZE_MB": 200,
         "STORAGE_MAX_FILES_PER_BATCH": 50, "STORAGE_MAX_BATCH_SIZE_MB": 512,
@@ -40,11 +41,17 @@ def create_app(config_class=Config):
         "CELERY_TASK_TIME_LIMIT_BULK_DOWNLOAD_SECONDS": 1800, "REPORT_UPLOAD_CLEANUP_INTERVAL_SECONDS": 3600,
         "MEDIA_RECONCILIATION_INTERVAL_SECONDS": 900, "BULK_DOWNLOAD_CLEANUP_INTERVAL_SECONDS": 3600,
         "MEDIA_TEMP_ROOT": "/tmp/starx-media-processing", "MEDIA_IMAGE_THUMBNAIL_MAX_SIZE": 480, "MEDIA_IMAGE_PREVIEW_MAX_SIZE": 1600, "MEDIA_VIDEO_POSTER_MAX_SIZE": 720,
+        "MEDIA_CACHE_ENABLED": False,
+        "MEDIA_CACHE_ROOT": "/tmp/starx-media-cache" if app.config.get("TESTING") else "/app/cache/media",
+        "MEDIA_CACHE_DELIVERY_MODE": "send_file", "MEDIA_CACHE_X_ACCEL_PREFIX": "/_protected_media_cache/",
+        "MEDIA_CACHE_MAX_BYTES": 5 * 1024 * 1024 * 1024, "MEDIA_CACHE_MAX_AGE_DAYS": 30,
     }.items():
         app.config.setdefault(key, value)
     if app.config.get("MAX_CONTENT_LENGTH") is None:
         app.config["MAX_CONTENT_LENGTH"] = int(app.config.get("MAX_UPLOAD_MB", 10)) * 1024 * 1024
     startup_errors = configuration_errors(app.config)
+    from app.storage.cache import validate_cache_config
+    startup_errors.extend(validate_cache_config(app.config))
     if startup_errors:
         raise RuntimeError("Unsafe production configuration: " + "; ".join(startup_errors))
     proxy_hops = int(app.config.get("TRUST_PROXY_HOPS", 0))
@@ -75,12 +82,14 @@ def create_app(config_class=Config):
     register_upload_error_handlers(app)
     register_template_helpers(app)
     from app.branding import get_current_branding
+    from app.account.preferences import normalized_ui_preferences
     from app.navigation import get_active_module, get_sidebar_items, is_project_configuration_endpoint
     @app.context_processor
     def inject_shell_context():
         return {"branding": get_current_branding(), "nav_active_module": get_active_module(),
                 "nav_project_configuration": is_project_configuration_endpoint(),
-                "sidebar_items": get_sidebar_items(current_user) if current_user.is_authenticated else []}
+                "sidebar_items": get_sidebar_items(current_user) if current_user.is_authenticated else [],
+                "ui_preferences": normalized_ui_preferences(current_user.ui_preferences) if current_user.is_authenticated else normalized_ui_preferences(None)}
     register_cli(app)
 
     return app
@@ -111,6 +120,8 @@ def register_blueprints(app):
     from app.users import bp as users_bp
 
     app.register_blueprint(admin_bp)
+    from app.branding import logo as branding_logo
+    app.add_url_rule("/branding/logo", endpoint="branding.logo", view_func=branding_logo, methods=["GET"])
     app.register_blueprint(account_bp)
     from app.account.routes import media_display_preview
     app.add_url_rule("/media-display-preview", endpoint="media_display_preview", view_func=media_display_preview, methods=["POST"])

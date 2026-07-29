@@ -164,13 +164,18 @@ def restore_album(user,a): a.is_active=True;a.deleted_at=None;a.updated_by_id=us
 def presign(user,a,items,selection_session_id=None): return create_upload_batch_presign(user=user,module_type="company_media",target_type="album",target_id=a.id,files=items,selection_session_id=selection_session_id)
 def complete(user,a,item_id,payload):
     item=db.session.get(UploadBatchItem,item_id)
-    if not item or item.upload_batch.module_type!="company_media" or item.upload_batch.target_id!=a.id: raise CompanyMediaError("Upload item không thuộc album.")
+    if not item or item.upload_batch.module_type!="company_media" or item.upload_batch.target_type!="album" or item.upload_batch.target_id!=a.id: raise CompanyMediaError("Upload item không thuộc album.")
     result=complete_upload_item(user=user,upload_batch_item_id=item_id,checksum_sha256=payload.get("checksum_sha256"));obj=item.storage_object
     if not obj.mime_type.startswith(("image/","video/")): raise CompanyMediaError("Album chỉ nhận ảnh hoặc video.")
-    media=CompanyMediaFile.query.filter_by(storage_object_id=obj.id).first() or CompanyMediaFile(album_id=a.id,storage_object_id=obj.id,display_name=obj.original_filename,media_type="image" if obj.mime_type.startswith("image/") else "video",created_by_id=user.id)
-    db.session.add(media);db.session.flush();audit("company_media.file.create","CompanyMediaFile",media.id);db.session.commit()
-    from app.media_processing.services import enqueue_media_processing_for_storage_object
-    enqueue_media_processing_for_storage_object(obj.id);return {**result,"file":{"id":media.id,"display_name":media.display_name}}
+    media=CompanyMediaFile.query.filter_by(storage_object_id=obj.id).first()
+    created = media is None
+    if created:
+        media = CompanyMediaFile(album_id=a.id,storage_object_id=obj.id,display_name=obj.original_filename,media_type="image" if obj.mime_type.startswith("image/") else "video",created_by_id=user.id)
+        db.session.add(media);db.session.flush();audit("company_media.file.create","CompanyMediaFile",media.id);db.session.commit()
+    if created:
+        from app.media_processing.services import enqueue_media_processing_for_storage_object
+        enqueue_media_processing_for_storage_object(obj.id)
+    return {**result,"file":{"id":media.id,"display_name":media.display_name}}
 def signed_preview(f,variant=None,user=None):
     if not f or not f.is_active or f.deleted_at:
         raise CompanyMediaError("Tệp chưa sẵn sàng.")
