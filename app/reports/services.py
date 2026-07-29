@@ -38,8 +38,9 @@ from app.storage.quota import ensure_storage_capacity
 from app.storage.validation import validate_file_metadata
 from app.project_memberships import accessible_project_ids
 from app.auth.permissions import project_accepts_report_mutation
+from app.reports.constants import MAX_ATTACHMENTS_PER_REPORT_SECTION
 
-ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "heic", "heif"}
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 IMAGE_FORMATS = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp", "HEIF": "heic"}
 try:
     from pillow_heif import register_heif_opener
@@ -145,7 +146,7 @@ def validate_daily_report_create_v2_payload(*, project, payload, preflight=False
                 meta = validate_file_metadata(row.get("filename"), row.get("mime_type"), row.get("size"), row.get("checksum_sha256"), module_type="daily_reports")
             except StorageValidationError as exc:
                 raise DailyReportCreateV2Error("invalid_attachment", "Thông tin ảnh không hợp lệ.", errors={"files": "Thông tin ảnh không hợp lệ."}) from exc
-            if meta["file_ext"] not in {"jpg", "png", "webp", "heic", "heif"} or meta["file_size"] > int(current_app.config["DAILY_REPORT_MAX_FILE_BYTES"]):
+            if meta["file_ext"] not in {"jpg", "png", "webp"} or meta["file_size"] > int(current_app.config["DAILY_REPORT_MAX_FILE_BYTES"]):
                 raise DailyReportCreateV2Error("attachment_limit", "Định dạng hoặc dung lượng ảnh không hợp lệ.", errors={"files": "Mỗi ảnh tối đa 25 MB; chỉ nhận định dạng ảnh được hỗ trợ."})
             item_ids.add(file_id); total_size += meta["file_size"]
             parsed_attachments.append({"client_file_id": file_id, "client_section_id": section_id, "sort_order": sort_order, **meta})
@@ -156,8 +157,8 @@ def validate_daily_report_create_v2_payload(*, project, payload, preflight=False
             if item_id in item_ids: raise DailyReportCreateV2Error("invalid_attachment", "Ảnh đính kèm không hợp lệ.")
             item_ids.add(item_id); parsed_attachments.append({"upload_item_id": item_id, "client_section_id": section_id, "sort_order": sort_order})
         per_section[section_id] = per_section.get(section_id, 0) + 1
-    if any(count > int(current_app.config["DAILY_REPORT_MAX_FILES_PER_SECTION"]) for count in per_section.values()):
-        raise DailyReportCreateV2Error("attachment_limit", "Mỗi phần chỉ được có tối đa 3 ảnh.", errors={"files": "Mỗi phần chỉ được có tối đa 3 ảnh."})
+    if any(count > MAX_ATTACHMENTS_PER_REPORT_SECTION for count in per_section.values()):
+        raise DailyReportCreateV2Error("attachment_limit", "Mỗi phần chỉ được có tối đa 10 ảnh.", errors={"files": "Mỗi phần chỉ được có tối đa 10 ảnh."})
     if preflight and total_size > int(current_app.config["DAILY_REPORT_MAX_TOTAL_BYTES"]):
         raise DailyReportCreateV2Error("attachment_limit", "Tổng dung lượng ảnh vượt giới hạn.", errors={"files": "Tổng dung lượng ảnh vượt giới hạn."})
     if not preflight and bool(payload.get("upload_session_id")) != bool(attachments):
@@ -383,6 +384,7 @@ def update_report(report, form, files=None):
     try:
         section_inputs = parse_sections(form)
         prepared_upload = _prepare_direct_uploads(report.project_id, form, section_inputs)
+        _mark_requested_attachments_deleted(report, form)
         report.report_date = proposed_date
         _assign_report_fields(report, form)
         report.updated_by_user_id = current_user.id
@@ -601,6 +603,10 @@ def parse_sections(form):
         sections.append(
             {
                 "index": index,
+                "section_id": _parse_optional_positive_id(
+                    form.get(f"sections-{index}-section-id", ""),
+                    field=f"sections-{index}-section-id",
+                ),
                 "report_category_id": category_id,
                 "status": status,
                 "content": content,
@@ -609,6 +615,19 @@ def parse_sections(form):
             }
         )
     return sections
+
+
+def _parse_optional_positive_id(value, *, field):
+    value = str(value or "").strip()
+    if not value:
+        return None
+    try:
+        result = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ReportValidationError("Mã phần báo cáo không hợp lệ.", {field: "Mã phần báo cáo không hợp lệ."}) from exc
+    if result < 1:
+        raise ReportValidationError("Mã phần báo cáo không hợp lệ.", {field: "Mã phần báo cáo không hợp lệ."})
+    return result
 
 
 def validate_categories(project_id, section_inputs):
@@ -652,18 +671,29 @@ def _assign_report_fields(report, form):
 
 def _replace_sections(report, section_inputs):
     validate_categories(report.project_id, section_inputs)
-    existing_by_category = {section.report_category_id: section for section in report.sections}
-    submitted_category_ids = {section["report_category_id"] for section in section_inputs}
+    existing_by_id = {section.id: section for section in report.sections if section.deleted_at is None}
+    existing_by_category = {section.report_category_id: section for section in existing_by_id.values()}
+    submitted_ids = [section_input["section_id"] for section_input in section_inputs if section_input["section_id"]]
+    if len(submitted_ids) != len(set(submitted_ids)):
+        raise ReportValidationError("Một phần báo cáo được gửi nhiều lần.")
+    unknown_ids = set(submitted_ids) - set(existing_by_id)
+    if unknown_ids:
+        # A section can never be moved between reports by a browser supplied id.
+        raise ReportValidationError("Phần báo cáo không thuộc báo cáo này.")
 
     for section in report.sections:
-        if section.report_category_id not in submitted_category_ids:
+        if section.deleted_at is None and section.id not in submitted_ids:
             section.deleted_at = db.func.now()
             for attachment in section.attachments:
                 if attachment.deleted_at is None:
                     attachment.deleted_at = db.func.now()
 
     for section_input in section_inputs:
-        section = existing_by_category.get(section_input["report_category_id"])
+        section = existing_by_id.get(section_input["section_id"])
+        # Compatibility for the pre-server-id edit markup.  New markup always
+        # sends section_id; this fallback can only resolve inside this report.
+        if section is None and section_input["section_id"] is None:
+            section = existing_by_category.get(section_input["report_category_id"])
         if section is None:
             section = DailyReportSection(
                 report_category_id=section_input["report_category_id"],
@@ -675,6 +705,41 @@ def _replace_sections(report, section_inputs):
         section.content = section_input["content"]
         section.sort_order = section_input["sort_order"]
         section._form_index = str(section_input["index"])
+
+
+def _mark_requested_attachments_deleted(report, form):
+    """Soft-delete only attachments owned by the edited report.
+
+    The browser may request an id many times, but it must never make an
+    attachment from another report disappear.  Physical object cleanup remains
+    outside this transaction.
+    """
+    raw_ids = form.getlist("deleted_attachment_ids") if hasattr(form, "getlist") else []
+    if not raw_ids:
+        return
+    try:
+        attachment_ids = {int(value) for value in raw_ids}
+    except (TypeError, ValueError) as exc:
+        raise ReportValidationError("Ảnh cần xóa không hợp lệ.") from exc
+    if any(value < 1 for value in attachment_ids):
+        raise ReportValidationError("Ảnh cần xóa không hợp lệ.")
+    rows = ReportAttachment.query.join(DailyReportSection).filter(
+        ReportAttachment.id.in_(attachment_ids),
+        DailyReportSection.daily_report_id == report.id,
+        DailyReportSection.deleted_at.is_(None),
+        ReportAttachment.deleted_at.is_(None),
+    ).all()
+    if {row.id for row in rows} != attachment_ids:
+        raise ReportValidationError("Ảnh cần xóa không thuộc báo cáo này.")
+    for attachment in rows:
+        attachment.deleted_at = db.func.now()
+        audit(
+            "attachment.delete",
+            "ReportAttachment",
+            attachment.id,
+            old_values={"daily_report_section_id": attachment.daily_report_section_id},
+            new_values={"deleted_at": True},
+        )
 
 
 def _save_section_uploads(report, files):
@@ -692,9 +757,9 @@ def _save_section_uploads(report, files):
         if not uploads:
             continue
         current_count = len(active_attachments(section))
-        max_images = current_app.config["MAX_IMAGES_PER_SECTION"]
+        max_images = MAX_ATTACHMENTS_PER_REPORT_SECTION
         if current_count + len(uploads) > max_images:
-            raise ReportValidationError("Mỗi phần chỉ được có tối đa 3 ảnh đang hoạt động.")
+            raise ReportValidationError("Mỗi phần chỉ được có tối đa 10 ảnh đang hoạt động.")
         for upload in uploads:
             attachment = _store_attachment(report, section, upload)
             db.session.flush()
@@ -736,9 +801,9 @@ def _attach_direct_uploads(report, section_inputs, prepared_upload):
     additions_by_section = {}
     for item in items:
         additions_by_section[mapping[item.id]["index"]] = additions_by_section.get(mapping[item.id]["index"], 0) + 1
-    if any(len(active_attachments(section_by_index[index])) + count > int(current_app.config["DAILY_REPORT_MAX_FILES_PER_SECTION"])
+    if any(len(active_attachments(section_by_index[index])) + count > MAX_ATTACHMENTS_PER_REPORT_SECTION
            for index, count in additions_by_section.items()):
-        raise ReportValidationError("Mỗi phần chỉ được có tối đa 3 ảnh đang hoạt động.")
+        raise ReportValidationError("Mỗi phần chỉ được có tối đa 10 ảnh đang hoạt động.")
     objects = []
     for item in items:
         section = section_by_index[mapping[item.id]["index"]]
@@ -893,18 +958,24 @@ def validate_report_form(form, project_id):
 
 def build_report_form_data(form, report=None):
     existing_by_category = {}
+    existing_by_id = {}
     if report:
         for section in report.sections:
             if section.deleted_at is None:
                 existing_by_category[section.report_category_id] = section
+                existing_by_id[section.id] = section
 
     sections = []
     for sort_order, index in enumerate(_section_indexes(form)):
         category_raw = form.get(f"sections-{index}-category_id", "").strip()
         category_id = int(category_raw) if category_raw.isdigit() else None
-        existing = existing_by_category.get(category_id)
+        submitted_id_raw = str(form.get(f"sections-{index}-section-id", "")).strip()
+        submitted_section_id = int(submitted_id_raw) if submitted_id_raw.isdigit() and int(submitted_id_raw) > 0 else None
+        existing = existing_by_id.get(submitted_section_id) or existing_by_category.get(category_id)
         sections.append(
             SimpleNamespace(
+                id=submitted_section_id,
+                client_section_id=form.get(f"sections-{index}-client-section-id", ""),
                 form_index=index,
                 report_category_id=category_id,
                 status=form.get(f"sections-{index}-status", "").strip(),

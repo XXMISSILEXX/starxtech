@@ -15,7 +15,7 @@
       data-presign-url="{{ url_for('projects.report_upload_session_presign', project_id=project.id, session_id=0) }}"
       data-complete-url="{{ url_for('projects.report_upload_session_complete', project_id=project.id, session_id=0) }}"
       data-cancel-url="{{ url_for('projects.report_upload_session_cancel', project_id=project.id, session_id=0) }}"
-      data-csrf-token="{{ csrf_token() }}" data-project-id="{{ project.id }}"
+      data-csrf-token="{{ csrf_token() }}" data-project-id="{{ project.id }}" data-report-id="{{ report.id or 'new' }}"
       data-upload-limits='{{ direct_upload_limits|default({})|tojson }}'>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
@@ -68,7 +68,7 @@
         <div class="col-md-5"><label class="form-label">Hạng mục</label><select class="form-select" data-section-category required><option value="">Chọn hạng mục</option>{% for category in categories %}<option value="{{ category.id }}">{{ category_icon(category.icon) }} {{ category.name }}</option>{% endfor %}</select><div class="invalid-feedback" data-category-error></div></div>
         <div class="col-md-4"><label class="form-label">Trạng thái</label><select class="form-select" data-section-status data-custom-select="status" required>{% for status in section_statuses %}{% set meta = status_presentation(status) %}<option value="{{ status }}" data-icon-key="{{ meta.icon_key }}" data-tone="{{ meta.tone }}" {% if status == 'INFO' %}selected{% endif %}>{{ meta.label }}</option>{% endfor %}</select></div>
         <div class="col-12"><label class="form-label">Nội dung</label><textarea class="form-control" rows="3" data-section-content required minlength="1"></textarea><div class="invalid-feedback" data-content-error></div></div>
-        <div class="col-12" data-report-attachment-picker><label class="form-label">Ảnh đính kèm</label><label class="upload-dropzone" role="button" tabindex="0"><input class="visually-hidden" type="file" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/jpeg,image/png,image/webp,image/heic,image/heif" multiple data-report-attachment-input><span class="upload-title"><i class="bi bi-images me-1"></i>Chọn ảnh đính kèm</span><span class="upload-help">Kéo thả ảnh vào đây hoặc bấm để chọn</span></label><div class="upload-preview-grid mt-2" data-attachment-preview></div></div>
+        <div class="col-12" data-report-attachment-picker><div class="d-flex flex-wrap justify-content-between gap-2 align-items-baseline"><label class="form-label mb-0">Ảnh đính kèm</label><span class="small text-muted" data-attachment-counter aria-live="polite"></span></div><label class="upload-dropzone" role="button" tabindex="0"><input class="visually-hidden" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple data-report-attachment-input><span class="upload-title"><i class="bi bi-images me-1"></i>Chọn ảnh đính kèm</span><span class="upload-help" data-attachment-help>Kéo thả ảnh vào đây hoặc bấm để chọn</span></label><div class="upload-preview-grid mt-2" data-attachment-preview></div></div>
       </div>
     </section>
   </template>
@@ -82,7 +82,8 @@
     {% for section in active_sections %}
       {% set section_index = section.form_index if form_data else loop.index0 %}
       <div class="report-section p-3 mb-3" data-section-row>
-        <input type="hidden" name="sections-{{ section_index }}-client-section-id" value="{% if daily_report_create_v2_enabled|default(false) %}{% else %}section-{{ section_index }}{% endif %}" data-client-section-id>
+        <input type="hidden" name="sections-{{ section_index }}-section-id" value="{{ section.id if section.id is defined else '' }}" data-server-section-id>
+        <input type="hidden" name="sections-{{ section_index }}-client-section-id" value="{% if section.client_section_id is defined and section.client_section_id %}{{ section.client_section_id }}{% elif section.id is defined and section.id %}section-{{ section.id }}{% else %}section-{{ section_index }}{% endif %}" data-client-section-id>
         <div class="row g-3">
           <div class="col-md-5">
             <label class="form-label">Hạng mục</label>
@@ -122,11 +123,11 @@
             {% if form_errors.get(content_error_key) %}<div class="invalid-feedback">{{ form_errors.get(content_error_key) }}</div>{% endif %}
           </div>
           <div class="col-12" data-report-attachment-picker>
-            <label class="form-label">Ảnh đính kèm</label>
+            <div class="d-flex flex-wrap justify-content-between gap-2 align-items-baseline"><label class="form-label mb-0">Ảnh đính kèm</label><span class="small text-muted" data-attachment-counter aria-live="polite"></span></div>
             <label class="upload-dropzone {% if not can_write %}disabled{% endif %}" for="section-{{ section_index }}-images" role="button" tabindex="0">
-              <input class="visually-hidden" id="section-{{ section_index }}-images" name="sections-{{ section_index }}-images" type="file" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/jpeg,image/png,image/webp,image/heic,image/heif" multiple data-report-attachment-input {% if not can_write %}disabled{% endif %}>
+            <input class="visually-hidden" id="section-{{ section_index }}-images" name="sections-{{ section_index }}-images" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple data-report-attachment-input {% if not can_write %}disabled{% endif %}>
               <span class="upload-title"><i class="bi bi-images me-1"></i>Chọn ảnh đính kèm</span>
-              <span class="upload-help">Kéo thả ảnh vào đây hoặc bấm để chọn</span>
+              <span class="upload-help" data-attachment-help>Kéo thả ảnh vào đây hoặc bấm để chọn</span>
             </label>
             <div class="upload-preview-grid mt-2" data-attachment-preview></div>
           </div>
@@ -134,10 +135,10 @@
             <div class="col-12 d-flex flex-wrap gap-2">
               {% for attachment in section.attachments %}
                 {% if not attachment.deleted_at %}
-                  <div class="attachment-card">
+                  <div class="attachment-card" data-existing-attachment data-attachment-id="{{ attachment.id }}">
                     <button class="btn p-0 border-0 bg-transparent" type="button" data-media-preview-url="{{ url_for('attachments.view', attachment_id=attachment.id) }}" data-media-preview-download="{{ url_for('attachments.download', attachment_id=attachment.id) }}" data-media-preview-name="{{ attachment.original_filename }}"><img class="report-thumb" src="{{ url_for('attachments.thumbnail', attachment_id=attachment.id) }}" alt="{{ attachment.original_filename }}" loading="lazy" decoding="async" width="480" height="480"></button>
                     {% if can_delete_attachment %}
-                      <button class="btn btn-sm btn-outline-danger mt-2" type="submit" form="delete-attachment-{{ attachment.id }}" data-confirm="Xóa ảnh này?"><i class="bi bi-trash me-1"></i>Xóa</button>
+                      <button class="btn btn-sm btn-outline-danger mt-2" type="button" data-mark-attachment-delete data-attachment-id="{{ attachment.id }}"><i class="bi bi-trash me-1"></i>Xóa</button>
                     {% endif %}
                   </div>
                 {% endif %}
@@ -148,6 +149,7 @@
       </div>
     {% endfor %}
   </div>
+  {% if can_write and not daily_report_create_v2_enabled|default(false) %}<button class="btn btn-outline-primary w-100 mb-3" type="button" data-add-section><i class="bi bi-plus-lg me-1"></i>Thêm đầu mục</button>{% endif %}
   {% endif %}
 
   {% if can_write %}
@@ -157,6 +159,7 @@
         <input type="hidden" name="attachment_manifest" data-attachment-manifest>
         <input type="hidden" name="direct_upload_expected" data-direct-upload-expected>
         <input type="hidden" name="direct_upload_selected_count" data-direct-upload-selected-count value="0">
+        <div data-deleted-attachment-inputs></div>
       {% endif %}
       <button class="btn btn-primary" type="submit" data-report-submit><i class="bi bi-check2 me-1"></i>Lưu báo cáo</button>
       <a class="btn btn-outline-secondary" href="{{ url_for('projects.reports', project_id=project.id) }}">Hủy</a>
@@ -173,16 +176,4 @@
     <div class="d-flex justify-content-center gap-2 mt-3"><button class="btn btn-primary" type="button" data-save-retry hidden>Thử lại</button><button class="btn btn-outline-secondary" type="button" data-save-cancel hidden>Quay lại biểu mẫu</button></div>
   </div>
 </div>
-{% if can_delete_attachment and report.id %}
-  {% for section in report.sections|selectattr('deleted_at', 'none')|list %}
-    {% for attachment in section.attachments %}
-      {% if not attachment.deleted_at %}
-        <form id="delete-attachment-{{ attachment.id }}" method="post" action="{{ url_for('attachments.delete', attachment_id=attachment.id) }}" class="d-none">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="next" value="{{ url_for('reports.edit', report_id=report.id) }}">
-        </form>
-      {% endif %}
-    {% endfor %}
-  {% endfor %}
-{% endif %}
 {% endblock %}

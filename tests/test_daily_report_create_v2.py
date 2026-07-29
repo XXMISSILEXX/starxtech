@@ -130,14 +130,14 @@ def test_v2_maps_attachments_to_multiple_section_uuids(client, app):
     assert len(result["section_ids"]) == 2
 
 
-def test_v2_helper_rejects_more_than_three_files_per_section(client, app):
+def test_v2_helper_rejects_more_than_ten_files_per_section(client, app):
     _login(client)
     import pytest
-    with pytest.raises(ValueError, match="three"):
+    with pytest.raises(ValueError, match="ten"):
         submit_daily_report_create_v2(client, app, project_id=1,
             report={"report_date": "2026-07-21", "highlight": "Nhiều ảnh"},
             sections=[{"report_category_id": 1, "content": "Phần"}],
-            files=[DailyReportV2UploadFile(_jpg(), f"{i}.jpg") for i in range(4)])
+            files=[DailyReportV2UploadFile(_jpg(), f"{i}.jpg") for i in range(11)])
 
 
 def test_create_and_edit_load_isolated_controllers(client, app):

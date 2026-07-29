@@ -85,6 +85,7 @@ function initReportSections() {
     section.className = "report-section p-3 mb-3";
     section.dataset.sectionRow = "";
     section.innerHTML = `
+      <input type="hidden" name="sections-${index}-section-id" value="" data-server-section-id>
       <input type="hidden" name="sections-${index}-client-section-id" value="" data-client-section-id>
       <div class="row g-3">
         <div class="col-md-5">
@@ -108,11 +109,11 @@ function initReportSections() {
           <textarea class="form-control" name="sections-${index}-content" rows="3"></textarea>
         </div>
         <div class="col-12" data-report-attachment-picker>
-          <label class="form-label">Ảnh đính kèm</label>
+          <div class="d-flex flex-wrap justify-content-between gap-2 align-items-baseline"><label class="form-label mb-0">Ảnh đính kèm</label><span class="small text-muted" data-attachment-counter aria-live="polite"></span></div>
           <label class="upload-dropzone" for="section-${index}-images" role="button" tabindex="0">
-            <input class="visually-hidden" id="section-${index}-images" name="sections-${index}-images" type="file" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/jpeg,image/png,image/webp,image/heic,image/heif" multiple data-report-attachment-input>
+            <input class="visually-hidden" id="section-${index}-images" name="sections-${index}-images" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple data-report-attachment-input>
             <span class="upload-title"><i class="bi bi-images me-1"></i>Chọn ảnh đính kèm</span>
-            <span class="upload-help">Kéo thả ảnh vào đây hoặc bấm để chọn</span>
+            <span class="upload-help" data-attachment-help>Kéo thả ảnh vào đây hoặc bấm để chọn</span>
           </label>
           <div class="upload-preview-grid mt-2" data-attachment-preview></div>
         </div>
