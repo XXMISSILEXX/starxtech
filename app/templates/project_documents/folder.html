@@ -63,29 +63,8 @@
 {% if can_any_edit_file %}<div class="modal fade" id="projectDocumentRenameModal" tabindex="-1" aria-labelledby="projectDocumentRenameTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><form class="modal-content" method="post" data-rename-form><div class="modal-header"><h2 class="modal-title h6" id="projectDocumentRenameTitle">Đổi tên tệp</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button></div><div class="modal-body"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="folder_status" value="{{ folder_status }}"><input type="hidden" name="file_status" value="{{ file_status }}"><label class="form-label" for="projectDocumentRenameInput">Tên hiển thị</label><input id="projectDocumentRenameInput" class="form-control" name="display_name" required maxlength="255"></div><div class="modal-footer"><button class="btn btn-primary" type="submit">Lưu</button></div></form></div></div>{% endif %}
 {% if can_any_edit_folder %}<div class="modal fade" id="projectDocumentFolderActionModal" tabindex="-1" aria-labelledby="projectDocumentFolderActionTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><form class="modal-content" method="post" data-folder-action-form><div class="modal-header"><h2 class="modal-title h6" id="projectDocumentFolderActionTitle">Thư mục</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button></div><div class="modal-body"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="folder_status" value="{{ folder_status }}"><input type="hidden" name="file_status" value="{{ file_status }}"><div data-folder-rename-fields><label class="form-label" for="projectDocumentFolderName">Tên thư mục</label><input id="projectDocumentFolderName" class="form-control" name="name" required maxlength="255"></div><div class="d-none" data-folder-move-fields><label class="form-label" for="projectDocumentFolderDestination">Thư mục đích</label><select id="projectDocumentFolderDestination" class="form-select" name="parent_id"></select></div></div><div class="modal-footer"><button class="btn btn-primary" type="submit" data-folder-action-submit>Lưu</button></div></form></div></div>{% endif %}
 {% if can_create %}<div class="modal fade" id="newFolder" tabindex="-1"><div class="modal-dialog"><form class="modal-content" method="post" action="{{ url_for('project_documents.new_folder') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="parent_id" value="{{ folder.id }}"><input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="folder_status" value="{{ folder_status }}"><input type="hidden" name="file_status" value="{{ file_status }}"><div class="modal-body"><input class="form-control" name="name" required placeholder="Tên thư mục"></div><div class="modal-footer"><button class="btn btn-primary" type="submit">Tạo</button></div></form></div></div>{% endif %}
-{% if can_upload %}<script src="{{ url_for('static', filename='js/project-document-upload.js') }}"></script>{% endif %}
-<script src="{{ url_for('static', filename='js/project-document-preview.js') }}"></script><script src="{{ url_for('static', filename='js/project-document-file-actions.js') }}"></script>
-{% if can_any_edit_folder %}<script>
-(() => {
-  const modal = document.getElementById('projectDocumentFolderActionModal');
-  const form = modal?.querySelector('[data-folder-action-form]');
-  const title = modal?.querySelector('[data-folder-action-title]') || modal?.querySelector('#projectDocumentFolderActionTitle');
-  const nameFields = modal?.querySelector('[data-folder-rename-fields]');
-  const moveFields = modal?.querySelector('[data-folder-move-fields]');
-  const nameInput = modal?.querySelector('[name="name"]');
-  const destination = modal?.querySelector('[name="parent_id"]');
-  const submit = modal?.querySelector('[data-folder-action-submit]');
-  document.querySelectorAll('[data-folder-rename], [data-folder-move]').forEach((button) => button.addEventListener('click', () => {
-    const isMove = button.hasAttribute('data-folder-move');
-    form.action = button.dataset.folderUrl;
-    title.textContent = isMove ? 'Di chuyển thư mục' : 'Đổi tên thư mục';
-    nameFields.classList.toggle('d-none', isMove); moveFields.classList.toggle('d-none', !isMove);
-    nameInput.required = !isMove; destination.required = isMove; submit.textContent = isMove ? 'Di chuyển' : 'Lưu';
-    if (isMove) { destination.replaceChildren(); JSON.parse(button.dataset.destinations || '[]').forEach((item) => { const option = new Option(item.name, item.id); destination.add(option); }); }
-    else { nameInput.value = button.dataset.folderName || ''; }
-    bootstrap.Modal.getOrCreateInstance(modal).show();
-  }));
-})();
-</script>{% endif %}
+{% if can_upload %}<script src="{{ url_for('static', filename='js/project-document-upload.js', v=static_asset_version) }}"></script>{% endif %}
+<script src="{{ url_for('static', filename='js/project-document-preview.js', v=static_asset_version) }}"></script><script src="{{ url_for('static', filename='js/project-document-file-actions.js', v=static_asset_version) }}"></script>
+{% if can_any_edit_folder %}<script src="{{ url_for('static', filename='js/project-document-folder-actions.js', v=static_asset_version) }}"></script>{% endif %}
 <span hidden data-bulk-download-validate-url="{{ url_for('project_documents.bulk_download_validate', folder_id=folder.id) }}"></span>
 {% endblock %}

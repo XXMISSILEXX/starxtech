@@ -1,8 +1,13 @@
 (() => {
   const STATUS_COUNT = 5;
-  const COLORS = ['#6c757d', '#198754', '#0dcaf0', '#ffc107', '#dc3545'];
+  const colors = () => {
+    const style = getComputedStyle(document.documentElement);
+    return ['--sx-chart-neutral', '--sx-chart-good', '--sx-chart-info', '--sx-chart-attention', '--sx-chart-critical']
+      .map((token) => style.getPropertyValue(token).trim());
+  };
 
   const init = async () => {
+    window.StarXTheme?.applyChartDefaults();
     const root = document.getElementById('project-dashboard-charts');
     if (!root || !root.dataset.sectionStatusApi || root.dataset.chartsInitialized === 'true') return;
     root.dataset.chartsInitialized = 'true';
@@ -40,6 +45,7 @@
         && trend.days.length === 7
         && status?.keys?.every((key) => Array.isArray(trend.series?.[key]) && trend.series[key].length === trend.days.length);
       if (!validStatus || !validTrend) throw new Error('chart contract invalid');
+      const statusColors = colors();
 
       if (status.total === 0) {
         pieCanvas.classList.add('d-none');
@@ -49,7 +55,7 @@
           type: 'doughnut',
           data: {
             labels: status.labels,
-            datasets: [{ data: status.values, backgroundColor: COLORS }],
+            datasets: [{ data: status.values, backgroundColor: statusColors }],
           },
           options: chartOptions,
         });
@@ -70,7 +76,7 @@
             datasets: status.keys.map((key, index) => ({
               label: status.labels[index],
               data: trend.series[key],
-              backgroundColor: COLORS[index],
+              backgroundColor: statusColors[index],
               stack: 'section-status',
             })),
           },

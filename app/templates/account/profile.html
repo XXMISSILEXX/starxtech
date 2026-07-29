@@ -1,4 +1,30 @@
-{% extends "base.html" %}{% block title %}Cài đặt cá nhân{% endblock %}{% block page_title %}Cài đặt cá nhân{% endblock %}{% block content %}
-<div class="card"><div class="card-body"><dl><dt>Họ tên</dt><dd>{{ current_user.full_name }}</dd><dt>Tên đăng nhập</dt><dd>{{ current_user.username }}</dd><dt>Email</dt><dd>{{ current_user.email or '-' }}</dd></dl><a class="btn btn-outline-secondary" href="{{ url_for('auth.change_password') }}">Đổi mật khẩu</a></div></div>
+{% extends "base.html" %}
+{% block title %}Cài đặt cá nhân{% endblock %}
+{% block page_title %}Cài đặt cá nhân{% endblock %}
+{% block content %}
+<div class="card"><div class="card-body"><dl class="mb-0"><dt>Họ tên</dt><dd>{{ current_user.full_name }}</dd><dt>Tên đăng nhập</dt><dd>{{ current_user.username }}</dd><dt>Email</dt><dd>{{ current_user.email or '-' }}</dd></dl><a class="btn btn-outline-secondary" href="{{ url_for('auth.change_password') }}">Đổi mật khẩu</a></div></div>
+
+<form class="card mt-3" method="post" action="{{ url_for('account.save_preferences') }}" data-account-preferences>
+  <div class="card-body">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <h2 class="h5">Giao diện</h2>
+    <p class="text-muted">Xem trước thay đổi ngay lập tức; cài đặt chỉ được lưu khi bạn bấm Lưu cài đặt.</p>
+    <fieldset class="mb-4"><legend class="h6">Chế độ hiển thị</legend><div class="row g-2" role="radiogroup" aria-label="Chế độ hiển thị">
+      {% for value, label, description in [('system', 'Theo hệ thống', 'Theo giao diện của thiết bị'), ('light', 'Sáng', 'Nền sáng, tương phản cao'), ('dark', 'Tối', 'Nền tối, tương phản cao')] %}
+      <div class="col-md-4"><input class="theme-choice-input" type="radio" name="appearance" id="appearance-{{ value }}" value="{{ value }}" {% if ui_preferences.appearance == value %}checked{% endif %}><label class="theme-choice-card h-100" for="appearance-{{ value }}"><span class="fw-semibold">{{ label }}</span><span class="small text-muted d-block">{{ description }}</span></label></div>
+      {% endfor %}
+    </div></fieldset>
+    <fieldset><legend class="h6">Màu nhấn</legend><div class="d-flex flex-wrap gap-2" role="radiogroup" aria-label="Màu nhấn">
+      {% for value, label in [('blue', 'Xanh dương'), ('green', 'Xanh lá'), ('purple', 'Tím'), ('orange', 'Cam')] %}
+      <input class="theme-choice-input" type="radio" name="accent" id="accent-{{ value }}" value="{{ value }}" {% if ui_preferences.accent == value %}checked{% endif %}><label class="accent-choice accent-choice-{{ value }}" for="accent-{{ value }}"><span aria-hidden="true" class="accent-swatch"></span>{{ label }}</label>
+      {% endfor %}
+    </div></fieldset>
+    <div class="theme-preview mt-4" aria-label="Xem trước giao diện"><span class="theme-preview-title">Xem trước</span><button class="btn btn-primary btn-sm" type="button" tabindex="-1">Nút chính</button><span class="badge text-bg-success">Tốt</span></div>
+    <div class="d-flex align-items-center gap-3 mt-4"><button class="btn btn-primary" type="submit" data-preferences-save>Lưu cài đặt</button><div data-preferences-toast class="alert" role="status" aria-live="polite" tabindex="-1" hidden></div></div>
+  </div>
+</form>
+
 <form class="card mt-3" method="post" enctype="multipart/form-data"><div class="card-body" data-display-image-picker><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label class="form-label">Ảnh đại diện</label><div data-display-image-preview class="display-image-preview-circle mb-2">{% if current_user.avatar_storage_object %}<img src="{{ url_for('account.avatar') }}?v={{ current_user.avatar_storage_object_id }}" alt="Ảnh đại diện hiện tại" decoding="async" width="128" height="128">{% else %}<span>{{ current_user.full_name[:1] or current_user.username[:1] }}</span>{% endif %}</div><label class="upload-dropzone d-block p-3" data-dropzone for="avatar"><input class="visually-hidden" id="avatar" type="file" name="avatar" accept=".jpg,.jpeg,.png,.webp,.heic,.heif" data-file-input required><span class="upload-title">Kéo thả ảnh hoặc bấm để chọn</span></label><div data-picker-status class="small text-muted mt-2"></div><button class="btn btn-outline-secondary btn-sm mt-2" type="button" data-remove-selection>Bỏ lựa chọn</button><button class="btn btn-primary mt-3">Lưu ảnh</button></div></form>
-{% if current_user.avatar_storage_object %}<form method="post" action="{{ url_for('account.delete_avatar') }}" class="mt-2"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-outline-danger">Xóa ảnh</button></form>{% endif %}{% endblock %}
+{% if current_user.avatar_storage_object %}<form method="post" action="{{ url_for('account.delete_avatar') }}" class="mt-2"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-outline-danger">Xóa ảnh</button></form>{% endif %}
+{% endblock %}
+{% block extra_scripts %}<script src="{{ url_for('static', filename='js/account-preferences.js', v=static_asset_version) }}"></script>{% endblock %}

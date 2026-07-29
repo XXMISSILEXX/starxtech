@@ -1,9 +1,11 @@
 (() => {
-  const SECTION_COLORS = ['#6c757d', '#198754', '#0dcaf0', '#ffc107', '#dc3545'];
-  const ISSUE_COLORS = ['#0dcaf0', '#ffc107', '#198754', '#6c757d'];
-  const OVERALL_COLORS = { UPDATED: '#6c757d', GOOD: '#198754', PROCESSING: '#0dcaf0', ATTENTION: '#ffc107', CRITICAL: '#dc3545' };
-  const CONTRACTOR_COVERAGE_COLORS = ['#0d6efd', '#6f42c1', '#198754', '#fd7e14', '#0dcaf0', '#dc3545', '#20c997', '#ffc107', '#6610f2', '#6c757d'];
-  const PROJECT_ACTIVITY_COLORS = ['#0d6efd', '#6f42c1', '#198754', '#fd7e14', '#0dcaf0', '#dc3545', '#20c997', '#ffc107', '#6610f2', '#6c757d'];
+  const color = (token) => getComputedStyle(document.documentElement).getPropertyValue(token).trim();
+  const sectionColors = () => ['--sx-chart-neutral', '--sx-chart-good', '--sx-chart-info', '--sx-chart-attention', '--sx-chart-critical'].map(color);
+  const issueColors = () => ['--sx-chart-info', '--sx-chart-attention', '--sx-chart-good', '--sx-chart-neutral'].map(color);
+  const overallColors = () => ({ UPDATED: color('--sx-chart-neutral'), GOOD: color('--sx-chart-good'), PROCESSING: color('--sx-chart-info'), ATTENTION: color('--sx-chart-attention'), CRITICAL: color('--sx-chart-critical') });
+  const palette = () => ['--sx-primary', '--sx-chart-purple', '--sx-chart-good', '--sx-chart-orange', '--sx-chart-info', '--sx-chart-critical', '--sx-chart-teal', '--sx-chart-attention', '--sx-chart-processing', '--sx-chart-neutral'].map(color);
+  // Named contract retained for the dashboard coverage chart; values come from CSS tokens.
+  const CONTRACTOR_COVERAGE_COLORS = () => palette();
 
   const canvas = (id) => document.getElementById(id);
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -45,7 +47,8 @@
   const projectColorMap = (issues, reports) => {
     const ids = [...new Set([...(issues.project_ids || []), ...(reports.project_ids || [])])]
       .sort((left, right) => String(left).localeCompare(String(right), 'en', { numeric: true }));
-    return new Map(ids.map((projectId, index) => [String(projectId), PROJECT_ACTIVITY_COLORS[index] || generatedProjectColor(projectId)]));
+    const colors = palette();
+    return new Map(ids.map((projectId, index) => [String(projectId), colors[index] || generatedProjectColor(projectId)]));
   };
   const activityDoughnut = (id, activity, colors, datasetLabel, singular, emptyText) => {
     const elements = activityElements(id);
@@ -94,6 +97,7 @@
   };
 
   const init = async () => {
+    window.StarXTheme?.applyChartDefaults();
     const root = document.getElementById('scoped-dashboard-charts');
     if (!root || !root.dataset.dashboardApi || root.dataset.chartsInitialized === 'true') return;
     root.dataset.chartsInitialized = 'true';
@@ -104,24 +108,27 @@
       const section = data.section_status;
       if (!section || section.keys.length !== 5 || section.values.length !== 5 || !data.trend) throw new Error('dashboard contract invalid');
 
+      const statusColors = sectionColors();
+      const overall = overallColors();
+      const paletteColors = palette();
       chart('scoped-section-pie', {
         type: 'doughnut',
-        data: { labels: section.labels, datasets: [{ data: section.values, backgroundColor: SECTION_COLORS }] },
+        data: { labels: section.labels, datasets: [{ data: section.values, backgroundColor: statusColors }] },
       });
       chart('scoped-section-trend', {
         type: 'bar',
         data: {
           labels: data.trend.days,
-          datasets: section.keys.map((key, index) => ({ label: section.labels[index], data: data.trend.series[key], backgroundColor: SECTION_COLORS[index], stack: 'sections' })),
+          datasets: section.keys.map((key, index) => ({ label: section.labels[index], data: data.trend.series[key], backgroundColor: statusColors[index], stack: 'sections' })),
         },
         options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } },
       });
-      chart('scoped-submissions', bars(data.submissions.labels, data.submissions.values, '#198754'));
-      chart('scoped-overall-status', bars(data.overall_status.labels, data.overall_status.keys.map((key) => OVERALL_COLORS[key] ? 1 : 0), data.overall_status.keys.map((key) => OVERALL_COLORS[key] || '#dee2e6')));
-      chart('scoped-issues-status', bars(data.persistent_issues.status.labels, data.persistent_issues.status.values, ISSUE_COLORS));
-      chart('scoped-issues-severity', bars(data.persistent_issues.severity.labels, data.persistent_issues.severity.values, ['#6c757d', '#0dcaf0', '#ffc107', '#dc3545']));
-      chart('scoped-issues-project', bars(data.persistent_issues.by_project.labels, data.persistent_issues.by_project.values, '#dc3545'));
-      chart('scoped-contractors-role', bars(data.contractors.labels, data.contractors.values, ['#0d6efd', '#6f42c1']));
+      chart('scoped-submissions', bars(data.submissions.labels, data.submissions.values, color('--sx-chart-good')));
+      chart('scoped-overall-status', bars(data.overall_status.labels, data.overall_status.keys.map((key) => overall[key] ? 1 : 0), data.overall_status.keys.map((key) => overall[key] || color('--sx-surface-emphasis'))));
+      chart('scoped-issues-status', bars(data.persistent_issues.status.labels, data.persistent_issues.status.values, issueColors()));
+      chart('scoped-issues-severity', bars(data.persistent_issues.severity.labels, data.persistent_issues.severity.values, [color('--sx-chart-neutral'), color('--sx-chart-info'), color('--sx-chart-attention'), color('--sx-chart-critical')]));
+      chart('scoped-issues-project', bars(data.persistent_issues.by_project.labels, data.persistent_issues.by_project.values, color('--sx-chart-critical')));
+      chart('scoped-contractors-role', bars(data.contractors.labels, data.contractors.values, [color('--sx-primary'), color('--sx-chart-purple')]));
 
       if (data.system_analytics) {
         const analytics = data.system_analytics;
@@ -133,11 +140,11 @@
         const activityColors = projectColorMap(issues, reports);
         chart('system-customer-project-share', {
           type: 'doughnut',
-          data: { labels: customers.labels, datasets: [{ data: customers.values, backgroundColor: ['#0d6efd', '#6f42c1', '#198754', '#fd7e14', '#6c757d', '#20c997'] }] },
+          data: { labels: customers.labels, datasets: [{ data: customers.values, backgroundColor: paletteColors.slice(0, 6) }] },
         });
         chart('system-project-status-distribution', {
           type: 'doughnut',
-          data: { labels: statuses.labels, datasets: [{ data: statuses.values, backgroundColor: ['#198754', '#ffc107', '#0dcaf0', '#6c757d'] }] },
+          data: { labels: statuses.labels, datasets: [{ data: statuses.values, backgroundColor: [color('--sx-chart-good'), color('--sx-chart-attention'), color('--sx-chart-info'), color('--sx-chart-neutral')] }] },
         });
         chart('system-contractor-project-coverage', contractorCoverageBars(coverage.labels, coverage.values));
         activityDoughnut('system-current-issues', issues, activityColors, 'Số vấn đề tồn đọng', 'vấn đề', 'Chưa có vấn đề tồn đọng trong phạm vi được phân quyền.');
@@ -165,7 +172,7 @@
     type: 'bar',
     data: {
       labels,
-      datasets: [{ data: values, backgroundColor: labels.map((_label, index) => CONTRACTOR_COVERAGE_COLORS[index % CONTRACTOR_COVERAGE_COLORS.length]) }],
+      datasets: [{ data: values, backgroundColor: labels.map((_label, index) => { const colors = CONTRACTOR_COVERAGE_COLORS(); return colors[index % colors.length]; }) }],
     },
     options: {
       responsive: true,

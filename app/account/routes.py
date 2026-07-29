@@ -1,6 +1,6 @@
 import io
 
-from flask import abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -11,6 +11,8 @@ from app.display_images import (DisplayImageCleanupError, DisplayImageError,
 from app.extensions import db
 from app.extensions import limiter
 from app.display_images import IMAGE_EXTENSIONS, MAX_DISPLAY_IMAGE_BYTES
+from app.account.preferences import validate_ui_preferences
+from app.audit import log_audit
 
 
 @bp.route("/", methods=["GET", "POST"])
@@ -32,6 +34,28 @@ def profile():
                 flash("Đã cập nhật ảnh đại diện.", "success")
         return redirect(url_for("account.profile"))
     return render_template("account/profile.html")
+
+
+@bp.post("/preferences")
+@login_required
+def save_preferences():
+    """Persist allowlisted preferences; no client value is accepted blindly."""
+    values, errors = validate_ui_preferences(request.form.get("appearance"), request.form.get("accent"))
+    wants_json = request.accept_mimetypes.best == "application/json"
+    if errors:
+        if wants_json:
+            return jsonify(message="Không thể lưu cài đặt.", errors=errors), 400
+        flash("Không thể lưu giao diện: dữ liệu không hợp lệ.", "danger")
+        return redirect(url_for("account.profile"))
+
+    old_values = dict(current_user.ui_preferences or {})
+    current_user.ui_preferences = values
+    log_audit("account.ui_preferences.updated", "User", current_user.id, old_values=old_values, new_values=values)
+    db.session.commit()
+    if wants_json:
+        return jsonify(message="Đã lưu giao diện cá nhân.", preferences=values)
+    flash("Đã lưu giao diện cá nhân.", "success")
+    return redirect(url_for("account.profile"))
 
 
 @bp.post("/avatar/delete")
