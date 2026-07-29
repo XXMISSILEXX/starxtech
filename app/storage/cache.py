@@ -147,6 +147,10 @@ class MediaCache:
         fd = None
         try:
             fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            # A restrictive umask or a default ACL may alter the creation
+            # mode.  Keep the payload private until it is atomically
+            # published below.
+            os.fchmod(fd, 0o600)
             # Keep the descriptor open so the temporary file remains private
             # until it has been fully written and validated.
             with os.fdopen(fd, "wb", closefd=False) as output:
@@ -192,8 +196,9 @@ class MediaCache:
                 pass
 
     def _ensure_root(self) -> None:
-        self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self.root.mkdir(mode=0o750, parents=True, exist_ok=True)
         self._assert_directory(self.root)
+        self._set_directory_mode(self.root)
         self.root = self.root.resolve(strict=True)
 
     def _ensure_safe_directory(self, relative: Path) -> Path:
@@ -206,10 +211,13 @@ class MediaCache:
                 self._assert_directory(current)
             else:
                 try:
-                    current.mkdir(mode=0o700)
+                    current.mkdir(mode=0o750)
                 except FileExistsError:
                     pass
                 self._assert_directory(current)
+            # Ensure default ACLs and umasks leave the Nginx traversal ACL
+            # mask effective.  fchmod works on a no-follow directory fd.
+            self._set_directory_mode(current)
         return current
 
     def _safe_path(self, relative: Path) -> Path:
@@ -244,6 +252,17 @@ class MediaCache:
             raise MediaCacheError("Unsafe cache directory")
 
     @staticmethod
+    def _set_directory_mode(path: Path) -> None:
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISDIR(info.st_mode):
+                raise MediaCacheError("Unsafe cache directory")
+            os.fchmod(fd, 0o750)
+        finally:
+            os.close(fd)
+
+    @staticmethod
     def _fsync_directory(directory: Path) -> None:
         fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
         try:
@@ -276,6 +295,7 @@ class _CacheKeyLock:
             info = os.fstat(self.fd)
             if not stat.S_ISREG(info.st_mode):
                 raise MediaCacheError("Unsafe media cache lock")
+            os.fchmod(self.fd, 0o600)
             fcntl.flock(self.fd, fcntl.LOCK_EX | (fcntl.LOCK_NB if self.nonblocking else 0))
         except Exception:
             os.close(self.fd)

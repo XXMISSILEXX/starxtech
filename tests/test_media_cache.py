@@ -61,6 +61,29 @@ def test_cache_miss_fills_once_then_hit_does_not_open_source(tmp_path):
     assert stat.S_IMODE(lock_path.stat().st_mode) == 0o600
 
 
+def test_new_cache_directories_are_0750_despite_restrictive_umask(tmp_path):
+    original_umask = os.umask(0o077)
+    try:
+        cache = MediaCache(_config(tmp_path))
+        cached = cache.get_or_fill(
+            _source(category="company-media-thumbnail"), lambda: io.BytesIO(b"data")
+        )
+    finally:
+        os.umask(original_umask)
+
+    directories = [cache.root]
+    directory = cache.root
+    for part in cached.path.relative_to(cache.root).parent.parts:
+        directory = directory / part
+        directories.append(directory)
+
+    assert len(directories) == 4
+    assert all(stat.S_IMODE(directory.stat().st_mode) == 0o750 for directory in directories)
+    assert stat.S_IMODE(cached.path.stat().st_mode) == 0o640
+    lock_path = cached.path.with_name(f".{cached.path.name}.lock")
+    assert stat.S_IMODE(lock_path.stat().st_mode) == 0o600
+
+
 def test_temporary_cache_file_stays_private_until_atomic_publish(tmp_path):
     cache = MediaCache(_config(tmp_path))
     path, _ = cache.cache_path(_source())
