@@ -31,7 +31,7 @@ def read_csv_setting(name: str) -> tuple[str, ...]:
 
 
 class Config:
-    STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", "20260729-8202")
+    STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", "20260730-8301")
     # Do not supply an implicit environment.  A typo here used to silently
     # retain the development signing key while skipping production checks.
     APP_ENV = os.getenv("APP_ENV")

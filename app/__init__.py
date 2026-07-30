@@ -15,7 +15,7 @@ def create_app(config_class=Config):
     app.config.setdefault("RATELIMIT_LOGIN_LIMIT", "5 per minute")
     app.config.setdefault("RATELIMIT_EXPORT_LIMIT", "10 per hour")
     for key, value in {
-        "STORAGE_PROVIDER": "fake", "STORAGE_BUCKET": "starx-local", "STORAGE_PREFIX": "", "STATIC_ASSET_VERSION": "20260729-8201",
+        "STORAGE_PROVIDER": "fake", "STORAGE_BUCKET": "starx-local", "STORAGE_PREFIX": "", "STATIC_ASSET_VERSION": "20260730-8301",
         "STORAGE_UPLOAD_URL_TTL_SECONDS": 300, "STORAGE_DOWNLOAD_URL_TTL_SECONDS": 300,
         "STORAGE_PRESIGNED_POST_MULTIPART_OVERHEAD_BYTES": 1024 * 1024,
         "STORAGE_MAX_IMAGE_SIZE_MB": 50, "STORAGE_MAX_DOCUMENT_SIZE_MB": 200,

@@ -10,6 +10,7 @@ from app.bulk_downloads.services import (BulkDownloadError, parse_file_ids, pref
     request_media_download, stream_zip_download, serialize_job)
 from app.storage.services import create_upload_selection_session, finalize_upload_selection_session
 from app.storage.exceptions import StorageAuthorizationError, StorageNotFoundError, StorageValidationError
+from app.storage.downloads import SignedDownloadError, error_payload
 
 def _one(model, ident): return db.get_or_404(model, ident)
 
@@ -138,6 +139,9 @@ def download(file_id):
     f=_one(CompanyMediaFile, file_id)
     if not p.download_file(current_user,f):abort(403)
     try:return jsonify(s.signed_download(f,current_user))
+    except SignedDownloadError as e:
+        current_app.logger.warning("signed_download_failed event=CM-SIGNED-DOWNLOAD module=company_media file_id=%s actor_id=%s status=%s category=%s", f.id, current_user.id, e.status_code, e.category)
+        return jsonify(error_payload(e)), e.status_code
     except s.CompanyMediaError as e:return jsonify(error=str(e)),400
 
 

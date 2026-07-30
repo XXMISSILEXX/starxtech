@@ -203,13 +203,24 @@ def signed_preview(f,variant=None,user=None):
 def signed_download(f, user=None):
     from app.storage.providers import get_storage_provider
     from flask import current_app
+    from app.storage.downloads import create_attachment_download, signing_unavailable_error, unavailable_source_error
     user=user or db.session.get(User, f.created_by_id)
-    if f.storage_object.file_size > int(current_app.config["DOWNLOAD_SINGLE_FILE_MAX_BYTES"]): raise CompanyMediaError("Dung lượng tải xuống tối đa là 300 MB mỗi lần.")
+    obj = f.storage_object if f and f.storage_object_id else None
+    # CompanyMediaFile points only to an original StorageObject. Derivatives
+    # live in StorageDerivative and are intentionally never signed here.
+    if not obj or obj.id != f.storage_object_id or obj.upload_status != "active" or obj.deleted_at is not None:
+        raise unavailable_source_error()
+    if obj.file_size > int(current_app.config["DOWNLOAD_SINGLE_FILE_MAX_BYTES"]): raise CompanyMediaError("Dung lượng tải xuống tối đa là 300 MB mỗi lần.")
     from app.storage.quota import ensure_bandwidth, record_download
-    try: ensure_bandwidth(user,f.storage_object.file_size)
+    try: ensure_bandwidth(user,obj.file_size)
     except ValueError as exc: raise CompanyMediaError(str(exc))
-    record_download(user,kind="original",source_type="original",module="company-media",estimated_bytes=f.storage_object.file_size,storage_object_id=f.storage_object_id,estimated_storage_egress_bytes=f.storage_object.file_size,estimated_client_egress_bytes=f.storage_object.file_size);db.session.commit()
-    return get_storage_provider().create_presigned_download(f.storage_object.bucket,f.storage_object.object_key,300,"attachment",f.display_name)
+    try:
+        provider = get_storage_provider()
+    except Exception as exc:
+        raise signing_unavailable_error("provider_configuration") from exc
+    result = create_attachment_download(provider, obj, f.display_name)
+    record_download(user,kind="original",source_type="original",module="company-media",estimated_bytes=obj.file_size,storage_object_id=obj.id,estimated_storage_egress_bytes=obj.file_size,estimated_client_egress_bytes=obj.file_size);db.session.commit()
+    return result
 def set_cover(user,a,media_id):
     f=db.session.get(CompanyMediaFile,media_id)
     if not f or f.album_id!=a.id or not f.is_active or f.deleted_at: raise CompanyMediaError("Ảnh bìa phải là media đang hoạt động trong album.")

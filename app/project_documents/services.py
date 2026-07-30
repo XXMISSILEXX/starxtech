@@ -269,8 +269,9 @@ def create_file_download_url(user, document_file, provider=None):
     if not can_download_project_document_file(user, document_file):
         raise DocumentValidationError("Bạn không có quyền tải tệp này.")
     storage_object = document_file.storage_object
-    if storage_object.upload_status != "active" or storage_object.deleted_at is not None:
-        raise DocumentValidationError("Tệp chưa sẵn sàng.")
+    if not storage_object or storage_object.upload_status != "active" or storage_object.deleted_at is not None:
+        from app.storage.downloads import unavailable_source_error
+        raise unavailable_source_error()
     from flask import current_app
     if storage_object.file_size > int(current_app.config["DOWNLOAD_SINGLE_FILE_MAX_BYTES"]):
         raise DocumentValidationError("Dung lượng tải xuống tối đa là 300 MB mỗi lần.")
@@ -278,8 +279,13 @@ def create_file_download_url(user, document_file, provider=None):
     try: ensure_bandwidth(user, storage_object.file_size)
     except ValueError as exc: raise DocumentValidationError(str(exc))
     from app.storage.providers import get_storage_provider
-    provider = provider or get_storage_provider()
-    result = provider.create_presigned_download(storage_object.bucket, storage_object.object_key, 300, "attachment", document_file.display_name)
+    from app.storage.downloads import create_attachment_download, signing_unavailable_error
+    if provider is None:
+        try:
+            provider = get_storage_provider()
+        except Exception as exc:
+            raise signing_unavailable_error("provider_configuration") from exc
+    result = create_attachment_download(provider, storage_object, document_file.display_name)
     audit("document.file.download", "ProjectDocumentFile", document_file.id)
     record_download(user, kind="original", source_type="original", module="document-library",
         estimated_bytes=storage_object.file_size, storage_object_id=storage_object.id,
