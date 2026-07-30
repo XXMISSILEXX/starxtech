@@ -6,7 +6,7 @@ from app.extensions import db
 from app.models import (CompanyMediaAlbum, CompanyMediaAlbumPermission, CompanyMediaFile,
                         Permission, Role, RolePermission, StorageObject, User)
 from app.storage.providers import FakeStorageProvider
-from app.storage.exceptions import StorageValidationError
+from app.storage.exceptions import StorageUploadContractError, StorageValidationError
 from app.storage.services import create_upload_selection_session, finalize_upload_selection_session
 
 
@@ -174,7 +174,7 @@ def test_normal_user_requires_acl_to_read_restricted_album_and_can_upload_with_a
     _login(client, "reporter")
     assert client.get(f"/company-media/albums/{album_id}").status_code == 200
     assert client.post(f"/company-media/albums/{album_id}/files/presign-batch", json=upload_payload).status_code == 200
-    assert client.post(f"/company-media/albums/{album_id}/files/presign-batch", json={"files": []}).status_code == 400
+    assert client.post(f"/company-media/albums/{album_id}/files/presign-batch", json={"files": []}).status_code == 422
 
 
 def test_company_media_upload_page_has_persistent_result_overlay(client, app):
@@ -248,7 +248,8 @@ def test_company_media_does_not_enqueue_derivative_when_head_validation_fails(ap
         provider.register_object(storage.bucket, storage.object_key, 4, "image/jpeg")
         enqueued = []
         monkeypatch.setattr("app.media_processing.services.enqueue_media_processing_for_storage_object", enqueued.append)
-        with pytest.raises(StorageValidationError, match="Kích thước object không khớp"):
+        with pytest.raises(StorageUploadContractError, match="Không thể xác minh") as exc_info:
             media_services.complete(admin, album, item["upload_batch_item_id"], {})
+        assert exc_info.value.code == "head_verification_failed"
         assert enqueued == []
         assert CompanyMediaFile.query.filter_by(album_id=album.id).count() == 0

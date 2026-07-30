@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models import StorageObject, UploadBatchItem, User
-from app.storage.exceptions import StorageNotFoundError, StorageValidationError
+from app.storage.exceptions import StorageNotFoundError, StorageUploadContractError, StorageValidationError
 from app.storage.providers import FakeStorageProvider
 from app.storage.keys import STORAGE_MODULE_DOCUMENT_LIBRARY
 from app.storage.services import cleanup_pending_uploads, complete_upload_item, create_signed_download_url, create_upload_batch_presign
@@ -80,7 +80,7 @@ def test_browser_mime_fallback_does_not_allow_unsafe_extensions(app, filename, m
 
 def test_heic_presign_keeps_single_file_limit(app):
     with app.app_context():
-        with pytest.raises(StorageValidationError, match="300 MB"):
+        with pytest.raises(StorageValidationError, match="300 MiB"):
             create_upload_batch_presign(
                 user=db.session.get(User, 3), module_type="company_media", target_type="album", target_id=1,
                 files=[{"client_file_id": "large", "filename": "large.heic", "mime_type": "", "size": 300 * 1024 * 1024 + 1}], provider=FakeStorageProvider(),
@@ -140,8 +140,9 @@ def test_complete_head_failure_never_activates(app):
         result = create_upload_batch_presign(user=user, module_type="company_media", target_type="album", target_id=1, files=[{"client_file_id": "a", "filename": "a.jpg", "mime_type": "image/jpeg", "size": 10}], provider=provider)
         assert result["items"][0]["accepted"] is True, result
         item = db.session.get(UploadBatchItem, result["items"][0]["upload_batch_item_id"])
-        with pytest.raises(StorageNotFoundError):
+        with pytest.raises(StorageUploadContractError, match="Không thể xác minh") as exc_info:
             complete_upload_item(user=user, upload_batch_item_id=item.id, provider=provider)
+        assert exc_info.value.code == "head_verification_failed"
         assert item.storage_object.upload_status == "pending" and item.status == "failed"
         with pytest.raises(StorageNotFoundError):
             create_signed_download_url(user=user, storage_object_id=item.storage_object_id, provider=provider)
@@ -157,8 +158,9 @@ def test_complete_rejects_head_size_that_is_not_exact(app, actual_size):
         )
         item = db.session.get(UploadBatchItem, result["items"][0]["upload_batch_item_id"])
         provider.register_object(item.storage_object.bucket, item.storage_object.object_key, actual_size, "image/jpeg")
-        with pytest.raises(StorageValidationError, match="Kích thước object không khớp"):
+        with pytest.raises(StorageUploadContractError, match="Không thể xác minh") as exc_info:
             complete_upload_item(user=user, upload_batch_item_id=item.id, provider=provider)
+        assert exc_info.value.code == "head_verification_failed"
         assert item.status == "failed"
         assert item.storage_object.upload_status == "pending"
 

@@ -162,7 +162,8 @@ def test_media_principal_picker_and_provider_error_are_bounded(client, app, monk
     response = client.post(f"/company-media/albums/{album_id}/files/presign-batch", json={"files": []})
     assert response.status_code == 502
     assert secret not in response.get_data(as_text=True)
-    assert "CM-PRESIGN-001" in response.get_data(as_text=True)
+    assert response.get_json()["error"]["code"] == "presign_unavailable"
+    assert response.get_json()["error"]["retryable"] is True
     assert all(secret not in value for value in response.headers.values())
 
 

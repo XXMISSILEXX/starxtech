@@ -20,6 +20,26 @@ test("Company Media uploader posts browser multipart with progress and bounded c
   assert.doesNotMatch(source, /xhr\.setRequestHeader\("Content-Type"/);
 });
 
+test("Company Media uploader reads server-resolved batch and concurrency limits with a safe fallback", () => {
+  assert.match(source, /dataset\.companyMediaUploadLimits/);
+  assert.match(source, /JSON\.parse\(root\.dataset\.companyMediaUploadLimits/);
+  assert.match(source, /Number\.isInteger\(value\) && value > 0/);
+  assert.match(source, /chunks\(items, uploadLimits\.max_files_per_batch\)/);
+  assert.match(source, /const concurrency = uploadLimits\.upload_concurrency/);
+  assert.doesNotMatch(source, /chunks\(items, 50\)/);
+});
+
+test("Company Media uploader accepts structured and legacy string application errors without exposing provider XML", () => {
+  assert.match(source, /const errorMessage = \(error/);
+  assert.match(source, /typeof error === "string"/);
+  assert.match(source, /typeof error\.message === "string"/);
+  assert.match(source, /payload\.ok === false/);
+  assert.match(source, /errorMessage\(item\.error \|\| item\.error_message/);
+  assert.match(source, /code: "s3_upload_failed"/);
+  assert.match(source, /nonRetryableS3Codes\.has\(error\.providerCode\)/);
+  assert.doesNotMatch(source, /xhr\.responseText[^\n]*textContent/);
+});
+
 test("Company Media uploader distinguishes blocked files and refreshes only after the user closes results", () => {
   assert.match(source, /entry\.status = "blocked"/);
   assert.match(source, /entry\.status = "failed"/);

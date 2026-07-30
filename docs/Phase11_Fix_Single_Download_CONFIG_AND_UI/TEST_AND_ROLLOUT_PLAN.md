@@ -1,4 +1,13 @@
-# Test and rollout plan (not executed)
+# Test and rollout plan
+
+## Phase 2 local result
+
+Phase 2 adds SQLite/FakeStorage and Node static-contract coverage for resolved
+limits, structured selection/batch/session errors, partial rejection, and the
+server-rendered JS limits payload. The full repository verification commands
+and their final results are recorded in `PHASE2_IMPLEMENTATION_REPORT.md`.
+No real provider request, migration, deployment, or production smoke test is
+part of Phase 2.
 
 ## Test matrix
 
