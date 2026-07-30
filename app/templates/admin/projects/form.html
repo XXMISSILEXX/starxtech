@@ -4,13 +4,24 @@
 {% block page_title %}{{ 'Sửa dự án' if project else 'Tạo dự án' }}{% endblock %}
 
 {% block content %}
-{% set can_write = current_user.role_code == 'SUPER_ADMIN' %}
+{% set can_write = current_user.can('projects.manage') %}
 <nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="{{ url_for('reports.configuration_hub') }}">Cấu hình</a></li><li class="breadcrumb-item"><a href="{{ url_for('admin.projects_index') }}">Dự án</a></li><li class="breadcrumb-item active" aria-current="page">{{ 'Sửa' if project else 'Tạo' }}</li></ol></nav>
 <form method="post" class="form-card row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-4">
     <label class="form-label" for="code">Mã dự án</label>
     <input class="form-control" id="code" name="code" required value="{{ request.form.get('code', project.code if project else '') }}" {% if not can_write %}disabled{% endif %}>
+  </div>
+  <div class="col-md-8">
+    <label class="form-label" for="customer_id">Khách hàng</label>
+    {% set selected_customer_id = request.form.get('customer_id', project.customer_id|string if project and project.customer_id else '') %}
+    <select class="form-select {% if form_errors.get('customer_id') %}is-invalid{% endif %}" id="customer_id" name="customer_id" {% if not can_write %}disabled{% endif %}>
+      <option value="">-- Chưa phân loại --</option>
+      {% for customer in customer_choices %}
+        <option value="{{ customer.id }}" {% if selected_customer_id == customer.id|string %}selected{% endif %}>{{ customer.name }}{% if not customer.is_active or customer.archived_at %} (đã lưu trữ){% endif %}</option>
+      {% endfor %}
+    </select>
+    {% if form_errors.get('customer_id') %}<div class="invalid-feedback">{{ form_errors['customer_id'] }}</div>{% endif %}
   </div>
   <div class="col-md-8">
     <label class="form-label" for="name">Tên dự án</label>

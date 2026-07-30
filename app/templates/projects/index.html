@@ -10,6 +10,7 @@
       <tr>
         <th>Mã</th>
         <th>Tên dự án</th>
+        <th>Khách hàng</th>
         <th>Trạng thái</th>
         <th class="text-end">{{ 'Tạo báo cáo' if create_report_mode else 'Báo cáo' }}</th>
       </tr>
@@ -19,6 +20,7 @@
         <tr>
           <td class="fw-semibold">{{ project.code }}</td>
           <td>{{ project.name }}</td>
+          <td>{{ project.customer.name if project.customer else 'Khách hàng chưa phân loại' }}</td>
           <td><span class="badge status-badge status-muted">{{ project.status }}</span></td>
           <td class="text-end">
             <div class="mobile-card-actions justify-content-end">
@@ -32,7 +34,7 @@
         </tr>
       {% else %}
         <tr>
-          <td colspan="4"><div class="empty-state"><i class="bi bi-building"></i>Chưa có dự án phù hợp.</div></td>
+          <td colspan="5"><div class="empty-state"><i class="bi bi-building"></i>Chưa có dự án phù hợp.</div></td>
         </tr>
       {% endfor %}
     </tbody>
