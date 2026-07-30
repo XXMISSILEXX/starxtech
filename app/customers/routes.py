@@ -7,10 +7,11 @@ from app.audit import log_audit
 from app.customers import bp
 from app.customers.services import (
     accessible_customers_query,
-    active_customer_choices,
+    active_manageable_customer_choices,
     can_access_customer,
     can_manage_customer,
     customer_name_is_available,
+    manageable_unclassified_projects,
     normalize_customer_name,
 )
 from app.extensions import db
@@ -103,12 +104,17 @@ def detail(customer_id):
     if not can_access_customer(current_user, customer):
         abort(403)
     projects = _visible_projects(customer)
+    can_edit = current_user.can("customers.edit") and can_manage_customer(current_user, customer)
+    can_move_projects = bool(can_edit and customer.is_active and customer.archived_at is None)
     return render_template(
         "customers/detail.html",
         customer=customer,
         projects=projects,
-        customer_choices=active_customer_choices(current_user),
-        can_edit=current_user.can("customers.edit") and can_manage_customer(current_user, customer),
+        customer_choices=active_manageable_customer_choices(current_user),
+        unclassified_projects=manageable_unclassified_projects(current_user) if can_move_projects else [],
+        can_edit=can_edit,
+        can_move_projects=can_move_projects,
+        can_attach_projects=can_move_projects,
         can_archive=current_user.can("customers.archive") and can_manage_customer(current_user, customer),
     )
 
@@ -174,21 +180,29 @@ def restore(customer_id):
 @bp.post("/<int:customer_id>/projects/<int:project_id>/move")
 def move_project(customer_id, project_id):
     _permission_required("customers.edit")
-    customer = _customer_or_404(customer_id)
+    customer = Customer.query.filter(
+        Customer.id == customer_id,
+        Customer.is_active.is_(True),
+        Customer.archived_at.is_(None),
+    ).first_or_404()
     project = Project.query.filter(Project.id == project_id, Project.deleted_at.is_(None)).first_or_404()
     # The URL customer ID is the client-supplied source.  Never move a project
     # unless it still belongs to that persisted source customer.
     if project.customer_id != customer.id:
         abort(403)
-    if not can_manage_project_scope(current_user, project):
+    if not can_access_customer(current_user, customer) or not can_manage_project_scope(current_user, project):
         abort(403)
     if not can_manage_customer(current_user, customer):
         abort(403)
     target_id = request.form.get("target_customer_id", type=int)
     if target_id is None:
         abort(400)
-    target = Customer.query.filter_by(id=target_id, is_active=True).first_or_404()
-    if not can_manage_customer(current_user, target):
+    target = Customer.query.filter(
+        Customer.id == target_id,
+        Customer.is_active.is_(True),
+        Customer.archived_at.is_(None),
+    ).first_or_404()
+    if not can_access_customer(current_user, target) or not can_manage_customer(current_user, target):
         abort(403)
     if target.id == customer.id:
         abort(400, description="Dự án đã thuộc khách hàng này.")
@@ -198,3 +212,51 @@ def move_project(customer_id, project_id):
     db.session.commit()
     flash("Đã chuyển dự án sang khách hàng mới.", "success")
     return redirect(url_for("customers.detail", customer_id=target.id))
+
+
+def _attach_project(customer_id, project_id):
+    """Attach an unclassified project to the customer shown in the URL."""
+    _permission_required("customers.edit")
+    customer = Customer.query.filter(
+        Customer.id == customer_id,
+        Customer.is_active.is_(True),
+        Customer.archived_at.is_(None),
+    ).first_or_404()
+    project = Project.query.filter(
+        Project.id == project_id,
+        Project.deleted_at.is_(None),
+    ).first_or_404()
+    if project.customer_id is not None:
+        abort(403)
+    if (
+        not can_access_customer(current_user, customer)
+        or not can_manage_customer(current_user, customer)
+        or not can_manage_project_scope(current_user, project)
+    ):
+        abort(403)
+
+    project.customer_id = customer.id
+    log_audit(
+        "project.customer.attach",
+        "Project",
+        project.id,
+        old_values={"customer_id": None},
+        new_values={"customer_id": customer.id},
+    )
+    db.session.commit()
+    flash("Đã gắn dự án vào khách hàng.", "success")
+    return redirect(url_for("customers.detail", customer_id=customer.id))
+
+
+@bp.post("/<int:customer_id>/projects/attach")
+def attach_project_from_form(customer_id):
+    project_id = request.form.get("project_id", type=int)
+    if project_id is None:
+        abort(400)
+    return _attach_project(customer_id, project_id)
+
+
+@bp.post("/<int:customer_id>/projects/<int:project_id>/attach")
+def attach_project(customer_id, project_id):
+    """Compatibility endpoint for attaching a known unclassified project."""
+    return _attach_project(customer_id, project_id)

@@ -22,9 +22,14 @@ from app.admin.services import (
 from app.auth.permissions import (
     can_manage_categories_for_project, can_view_categories_for_project,
 )
+from app.customers.services import (
+    active_manageable_customer_choices,
+    can_access_customer,
+    can_manage_customer,
+)
 from app.permissions.services import permission_required
 from app.extensions import db
-from app.models import Permission, Project, ProjectDocumentFolder, ProjectStatus, ProjectUser, ReportCategory, Role, RolePermission, User, UserRole
+from app.models import Customer, Permission, Project, ProjectDocumentFolder, ProjectStatus, ProjectUser, ReportCategory, Role, RolePermission, User, UserRole
 from app.project_memberships import (CAPABILITY_FIELDS, CAPABILITY_LABELS, PROJECT_ROLE_LABELS,
     PROJECT_ROLE_LEVELS, PROJECT_ROLE_PRESETS, can_manage_project_memberships,
     is_owner_equivalent_membership, is_super_admin, manageable_project_capabilities,
@@ -230,11 +235,7 @@ def projects_new():
     if request.method == "POST":
         return _save_project()
 
-    return render_template(
-        "admin/projects/form.html",
-        project=None,
-        statuses=[status.value for status in ProjectStatus],
-    )
+    return _render_project_form()
 
 
 @bp.route("/projects/<int:project_id>/edit", methods=["GET", "POST"])
@@ -244,11 +245,7 @@ def projects_edit(project_id):
     if request.method == "POST":
         return _save_project(project)
 
-    return render_template(
-        "admin/projects/form.html",
-        project=project,
-        statuses=[status.value for status in ProjectStatus],
-    )
+    return _render_project_form(project)
 
 
 @bp.post("/projects/<int:project_id>/archive")
@@ -594,8 +591,10 @@ def _save_project(project=None):
     code = request.form.get("code", "").strip()
     name = request.form.get("name", "").strip()
     status = request.form.get("status", "").strip()
+    raw_customer_id = request.form.get("customer_id", "").strip()
 
     errors = []
+    form_errors = {}
     if not code:
         errors.append("Mã dự án là bắt buộc.")
     if not name:
@@ -613,14 +612,45 @@ def _save_project(project=None):
         start_date = None
         expected_end_date = None
 
-    if errors:
+    current_customer_id = project.customer_id if project else None
+    requested_customer_id = None
+    if raw_customer_id:
+        try:
+            requested_customer_id = int(raw_customer_id)
+        except ValueError:
+            form_errors["customer_id"] = "Khách hàng không hợp lệ."
+        else:
+            if requested_customer_id < 1:
+                form_errors["customer_id"] = "Khách hàng không hợp lệ."
+
+    if not form_errors and requested_customer_id != current_customer_id:
+        # Project management is already gated by the route.  Changing the
+        # customer additionally requires customer mutation authority.
+        if not current_user.can("customers.edit"):
+            abort(403)
+        if current_customer_id is not None:
+            current_customer = db.session.get(Customer, current_customer_id)
+            if (
+                current_customer is None
+                or not can_access_customer(current_user, current_customer)
+                or not can_manage_customer(current_user, current_customer)
+            ):
+                abort(403)
+        if requested_customer_id is not None:
+            customer = db.session.get(Customer, requested_customer_id)
+            if (
+                customer is None
+                or not customer.is_active
+                or customer.archived_at is not None
+                or not can_access_customer(current_user, customer)
+                or not can_manage_customer(current_user, customer)
+            ):
+                form_errors["customer_id"] = "Khách hàng không tồn tại, đã lưu trữ hoặc ngoài phạm vi quản lý."
+
+    if errors or form_errors:
         for error in errors:
             flash(error, "danger")
-        return render_template(
-            "admin/projects/form.html",
-            project=project,
-            statuses=[status.value for status in ProjectStatus],
-        ), 400
+        return _render_project_form(project, form_errors=form_errors), 400
 
     old_values = _project_snapshot(project) if project else None
     if is_new:
@@ -632,6 +662,7 @@ def _save_project(project=None):
     project.status = status
     project.start_date = start_date
     project.expected_end_date = expected_end_date
+    project.customer_id = requested_customer_id
 
     db.session.flush()
     if is_new:
@@ -649,6 +680,23 @@ def _save_project(project=None):
     db.session.commit()
     flash("Đã lưu dự án.", "success")
     return redirect(url_for("admin.projects_index"))
+
+
+def _render_project_form(project=None, *, form_errors=None):
+    """Render a project form without ever exposing arbitrary customer IDs."""
+    customer_choices = active_manageable_customer_choices(current_user)
+    current_customer = project.customer if project else None
+    if current_customer and all(choice.id != current_customer.id for choice in customer_choices):
+        # An archived historical customer may be retained while other fields
+        # are edited, but it is not an eligible new choice.
+        customer_choices.append(current_customer)
+    return render_template(
+        "admin/projects/form.html",
+        project=project,
+        statuses=[status.value for status in ProjectStatus],
+        customer_choices=customer_choices,
+        form_errors=form_errors or {},
+    )
 
 
 def _save_category(project, category=None):
@@ -802,6 +850,7 @@ def _project_snapshot(project):
         "expected_end_date": project.expected_end_date.isoformat()
         if project.expected_end_date
         else None,
+        "customer_id": project.customer_id,
     }
 
 

@@ -7,7 +7,7 @@
 <nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="{{ url_for('reports.configuration_hub') }}">Cấu hình</a></li><li class="breadcrumb-item active" aria-current="page">Dự án</li></ol></nav>
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div><div class="text-muted">Quản lý dự án và phân quyền người báo cáo/quản lý dự án.</div><a class="btn btn-sm btn-outline-secondary mt-2" href="{{ url_for('reports.configuration_hub') }}"><i class="bi bi-arrow-left me-1"></i>Quay lại Cấu hình</a></div>
-  {% if current_user.role_code == 'SUPER_ADMIN' %}
+  {% if current_user.can('projects.manage') %}
     <a class="btn btn-primary" href="{{ url_for('admin.projects_new') }}"><i class="bi bi-plus-lg me-1"></i>Tạo dự án</a>
   {% endif %}
 </div>
@@ -18,6 +18,7 @@
       <tr>
         <th>Mã</th>
         <th>Tên dự án</th>
+        <th>Khách hàng</th>
         <th>Trạng thái</th>
         <th>Ngày</th>
         <th class="text-end">Quản lý</th>
@@ -28,13 +29,14 @@
         <tr>
           <td class="fw-semibold">{{ project.code }}</td>
           <td>{{ project.name }}</td>
+          <td>{{ project.customer.name if project.customer else 'Khách hàng chưa phân loại' }}</td>
           <td><span class="badge status-badge status-muted">{{ project.status }}</span></td>
           <td>{{ project.start_date or '-' }} / {{ project.expected_end_date or '-' }}</td>
           <td class="text-end">
             <div class="mobile-card-actions">
               <a class="btn btn-sm btn-outline-secondary btn-action-mobile" href="{{ url_for('admin.projects_reporters', project_id=project.id) }}" aria-label="Phân quyền" title="Phân quyền"><i class="bi bi-people"></i><span class="action-label">Phân quyền</span></a>
               <a class="btn btn-sm btn-outline-secondary btn-action-mobile" href="{{ url_for('admin.categories_index', project_id=project.id) }}" aria-label="Hạng mục" title="Hạng mục"><i class="bi bi-tags"></i><span class="action-label">Hạng mục</span></a>
-              {% if current_user.role_code == 'SUPER_ADMIN' %}
+              {% if current_user.can('projects.manage') %}
                 <a class="btn btn-sm btn-outline-primary btn-action-mobile" href="{{ url_for('admin.projects_edit', project_id=project.id) }}" aria-label="Sửa" title="Sửa"><i class="bi bi-pencil"></i><span class="action-label">Sửa</span></a>
                 {% if project.status != 'archived' %}
                   <form method="post" action="{{ url_for('admin.projects_archive', project_id=project.id) }}">
@@ -47,7 +49,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="5"><div class="empty-state"><i class="bi bi-building"></i>Chưa có dự án.</div></td></tr>
+        <tr><td colspan="6"><div class="empty-state"><i class="bi bi-building"></i>Chưa có dự án.</div></td></tr>
       {% endfor %}
     </tbody>
   </table>

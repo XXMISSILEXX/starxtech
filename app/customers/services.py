@@ -65,6 +65,34 @@ def active_customer_choices(user):
     return accessible_customers_query(user).order_by(Customer.name.asc()).all()
 
 
+def active_manageable_customer_choices(user):
+    """Return active, non-archived customers the actor can administer.
+
+    Customer mutations affect project grouping, so read access alone is not
+    sufficient for a choice in a mutation form.
+    """
+    customers = (
+        accessible_customers_query(user)
+        .filter(Customer.archived_at.is_(None))
+        .order_by(Customer.name.asc())
+        .all()
+    )
+    return [customer for customer in customers if can_manage_customer(user, customer)]
+
+
+def manageable_unclassified_projects(user):
+    """Return active projects in the actor's management scope without a customer."""
+    projects = (
+        Project.query.filter(
+            Project.customer_id.is_(None),
+            Project.deleted_at.is_(None),
+        )
+        .order_by(Project.code.asc())
+        .all()
+    )
+    return [project for project in projects if can_manage_project_scope(user, project)]
+
+
 def customer_name_is_available(name, customer_id=None):
     normalized_name = normalize_customer_name(name)
     query = Customer.query.filter(
