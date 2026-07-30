@@ -11,7 +11,20 @@ document.addEventListener("DOMContentLoaded", () => {
   const queue = root.querySelector("[data-company-media-upload-queue]");
   const overlay = document.querySelector("[data-company-media-upload-overlay]");
   const entries = [];
-  const concurrency = 3;
+  const fallbackLimits = {max_files_per_batch: 50, upload_concurrency: 3};
+  const readUploadLimits = () => {
+    try {
+      const parsed = JSON.parse(root.dataset.companyMediaUploadLimits || "");
+      if (!parsed || typeof parsed !== "object") return fallbackLimits;
+      const valid = (value) => Number.isInteger(value) && value > 0;
+      return {
+        max_files_per_batch: valid(parsed.max_files_per_batch) ? parsed.max_files_per_batch : fallbackLimits.max_files_per_batch,
+        upload_concurrency: valid(parsed.upload_concurrency) ? parsed.upload_concurrency : fallbackLimits.upload_concurrency,
+      };
+    } catch (_) { return fallbackLimits; }
+  };
+  const uploadLimits = readUploadLimits();
+  const concurrency = uploadLimits.upload_concurrency;
   const maxAttempts = 3;
   const modal = window.bootstrap?.Modal ? new window.bootstrap.Modal(overlay, {backdrop: "static", keyboard: false}) : null;
 
@@ -36,6 +49,12 @@ document.addEventListener("DOMContentLoaded", () => {
     RequestExpired: "Phiên tải đã hết hạn. Vui lòng thử lại.",
     ExpiredToken: "Phiên tải đã hết hạn. Vui lòng thử lại.",
   }[code] || fallback);
+
+  const errorMessage = (error, fallback = "Không thể xử lý yêu cầu tải lên.") => {
+    if (typeof error === "string" && error) return error;
+    if (error && typeof error === "object" && typeof error.message === "string" && error.message) return error.message;
+    return fallback;
+  };
 
   const parseS3Error = (body) => {
     try {
@@ -110,7 +129,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const api = async (url, body) => {
     const response = await fetch(url, {method: "POST", credentials: "same-origin", headers: csrfHeaders, body: JSON.stringify(body)});
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Không thể xử lý yêu cầu tải lên.");
+    if (!response.ok || payload.ok === false) {
+      const error = payload.error;
+      throw Object.assign(new Error(errorMessage(error)), {
+        code: error && typeof error === "object" ? error.code : "",
+        retryable: error && typeof error === "object" ? error.retryable : false,
+      });
+    }
     return payload;
   };
 
@@ -133,10 +158,10 @@ document.addEventListener("DOMContentLoaded", () => {
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) { entry.loaded = entry.file.size; resolve(); return; }
       const error = parseS3Error(xhr.responseText);
-      reject(Object.assign(new Error(safeReason(error.code, "Kho lưu trữ từ chối tệp.")), {status: xhr.status, code: error.code, requestId: error.requestId}));
+      reject(Object.assign(new Error(safeReason(error.code, "Kho lưu trữ từ chối tệp.")), {status: xhr.status, code: "s3_upload_failed", providerCode: error.code}));
     };
-    xhr.onerror = () => reject(Object.assign(new Error("Mất kết nối khi tải tệp."), {status: 0, code: "NetworkError"}));
-    xhr.onabort = () => reject(Object.assign(new Error("Tải tệp đã bị hủy."), {status: 0, code: "AbortError"}));
+    xhr.onerror = () => reject(Object.assign(new Error("Mất kết nối khi tải tệp."), {status: 0, code: "s3_upload_failed", providerCode: "NetworkError"}));
+    xhr.onabort = () => reject(Object.assign(new Error("Tải tệp đã bị hủy."), {status: 0, code: "s3_upload_failed", providerCode: "AbortError"}));
     xhr.send(form);
   });
 
@@ -147,7 +172,7 @@ document.addEventListener("DOMContentLoaded", () => {
       try { await directPost(entry); lastError = null; break; }
       catch (error) {
         lastError = error;
-        if (nonRetryableS3Codes.has(error.code) || !retryableStatus.has(error.status) || attempt === maxAttempts - 1) break;
+        if (nonRetryableS3Codes.has(error.providerCode) || !retryableStatus.has(error.status) || attempt === maxAttempts - 1) break;
         await delay(attempt);
       }
     }
@@ -174,13 +199,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const session = await api(sessionUrl(), {file_count: items.length, total_size_bytes: items.reduce((sum, entry) => sum + entry.file.size, 0)});
     const sessionId = session.selection_session_id;
     items.forEach((entry) => { entry.sessionId = sessionId; entry.status = "pending"; });
-    for (const group of chunks(items, 50)) {
+    for (const group of chunks(items, uploadLimits.max_files_per_batch)) {
       const result = await api(root.dataset.presignUrl, {selection_session_id: sessionId, files: group.map((entry) => ({client_file_id: entry.clientFileId, filename: entry.file.name, mime_type: entry.file.type, size: entry.file.size}))});
       const byClientId = new Map(result.items.map((item) => [item.client_file_id, item]));
       group.forEach((entry) => {
         const item = byClientId.get(entry.clientFileId);
         if (!item) { entry.status = "failed"; entry.error = "Server không trả thông tin cho tệp này."; return; }
-        if (!item.accepted) { entry.status = "blocked"; entry.error = item.error || "Tệp không được chấp nhận."; return; }
+        if (!item.accepted) { entry.status = "blocked"; entry.error = errorMessage(item.error || item.error_message, "Tệp không được chấp nhận."); return; }
         entry.itemId = item.upload_batch_item_id; entry.presign = item; entry.status = "ready";
       });
       renderQueue(); renderOverlay("preparing", "Đang kiểm tra tệp đã chọn.");

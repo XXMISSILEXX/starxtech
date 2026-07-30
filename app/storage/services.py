@@ -5,8 +5,11 @@ from sqlalchemy import func
 
 from app.extensions import db
 from app.models import StorageObject, UploadBatch, UploadBatchItem, UploadSelectionSession, UserRole
-from app.storage.exceptions import StorageAuthorizationError, StorageNotFoundError, StorageValidationError
+from app.storage.company_media_errors import file_size_error, item_error, upload_error
+from app.storage.exceptions import (StorageAuthorizationError, StorageNotFoundError, StorageUploadContractError,
+                                    StorageValidationError)
 from app.storage.keys import build_original_key, normalize_storage_module
+from app.storage.limits import get_company_media_upload_limits
 from app.storage.providers import get_storage_provider
 from app.storage.validation import max_file_size_for_category, validate_file_metadata
 
@@ -17,11 +20,30 @@ VALID_SCOPES = {("project_documents", "folder"), ("company_media", "album")}
 def create_upload_selection_session(*, user, module_type, target_type, target_id, declared_files, declared_size_bytes):
     _require_active_user(user)
     if (module_type, target_type) not in VALID_SCOPES: raise StorageValidationError("Scope upload không hợp lệ.")
-    try: declared_files, declared_size_bytes = int(declared_files), int(declared_size_bytes)
-    except (TypeError, ValueError): raise StorageValidationError("Thông tin lựa chọn không hợp lệ.")
-    if declared_files < 1 or declared_files > int(_config("UPLOAD_SELECTION_MAX_FILES")) or declared_size_bytes < 1 or declared_size_bytes > int(_config("UPLOAD_SELECTION_MAX_BYTES")):
-        raise StorageValidationError("Lựa chọn vượt quá giới hạn 500 tệp hoặc 2 GB.")
-    session = UploadSelectionSession(module_type=module_type, target_type=target_type, target_id=int(target_id), created_by_id=user.id, declared_files=declared_files, declared_size_bytes=declared_size_bytes, expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=int(_config("UPLOAD_SELECTION_TTL_SECONDS"))))
+    if module_type == "company_media":
+        limits = get_company_media_upload_limits()
+        declared_files = _declared_positive_integer(declared_files, "files")
+        declared_size_bytes = _declared_positive_integer(declared_size_bytes, "bytes")
+        if declared_files > limits["max_selection_files"]:
+            raise upload_error(
+                "selection_file_count_exceeded",
+                f"Bạn đã chọn {declared_files} tệp, tối đa {limits['max_selection_files']} tệp mỗi lần tải.",
+                details={"actual_files": declared_files, "max_files": limits["max_selection_files"]},
+            )
+        if declared_size_bytes > limits["max_selection_bytes"]:
+            raise upload_error(
+                "selection_total_bytes_exceeded",
+                "Tổng dung lượng đã chọn vượt quá giới hạn.",
+                details={"actual_bytes": declared_size_bytes, "max_bytes": limits["max_selection_bytes"]},
+            )
+        session_ttl_seconds = limits["session_ttl_seconds"]
+    else:
+        try: declared_files, declared_size_bytes = int(declared_files), int(declared_size_bytes)
+        except (TypeError, ValueError): raise StorageValidationError("Thông tin lựa chọn không hợp lệ.")
+        if declared_files < 1 or declared_files > int(_config("UPLOAD_SELECTION_MAX_FILES")) or declared_size_bytes < 1 or declared_size_bytes > int(_config("UPLOAD_SELECTION_MAX_BYTES")):
+            raise StorageValidationError("Lựa chọn vượt quá giới hạn 500 tệp hoặc 2 GB.")
+        session_ttl_seconds = int(_config("UPLOAD_SELECTION_TTL_SECONDS"))
+    session = UploadSelectionSession(module_type=module_type, target_type=target_type, target_id=int(target_id), created_by_id=user.id, declared_files=declared_files, declared_size_bytes=declared_size_bytes, expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=session_ttl_seconds))
     _add(session); db.session.commit(); return {"selection_session_id": session.id, "expires_at": session.expires_at.isoformat()}
 
 def finalize_upload_selection_session(*, user, selection_session_id, module_type, target_type, target_id,
@@ -57,23 +79,87 @@ def create_upload_batch_presign(*, user, module_type, target_type, target_id, fi
         raise StorageValidationError("Scope upload không hợp lệ.")
     _check_phase_one_scope(user)
     files = list(files or [])
-    max_files = int(_config("STORAGE_MAX_FILES_PER_BATCH"))
-    if not files or len(files) > max_files:
+    company_media = module_type == "company_media"
+    limits = get_company_media_upload_limits() if company_media else None
+    max_files = limits["max_files_per_batch"] if company_media else int(_config("STORAGE_MAX_FILES_PER_BATCH"))
+    if not files:
+        if company_media:
+            raise upload_error("empty_presign_batch", "Batch tải lên không có tệp.")
+        raise StorageValidationError("Số lượng file trong batch không hợp lệ.")
+    if len(files) > max_files:
+        if company_media:
+            raise upload_error(
+                "presign_batch_file_count_exceeded",
+                f"Batch có {len(files)} tệp, tối đa {max_files} tệp.",
+                details={"actual_files": len(files), "max_files": max_files},
+            )
         raise StorageValidationError("Số lượng file trong batch không hợp lệ.")
     declared_total = sum(_safe_size(item.get("size")) for item in files if isinstance(item, dict))
-    if declared_total > int(_config("STORAGE_MAX_BATCH_SIZE_MB")) * 1024 * 1024:
+    max_batch_bytes = limits["max_batch_bytes"] if company_media else int(_config("STORAGE_MAX_BATCH_SIZE_MB")) * 1024 * 1024
+    if declared_total > max_batch_bytes:
+        if company_media:
+            raise upload_error(
+                "presign_batch_bytes_exceeded",
+                "Dung lượng batch vượt quá giới hạn.",
+                details={"actual_bytes": declared_total, "max_bytes": max_batch_bytes},
+            )
         raise StorageValidationError("Tổng dung lượng batch vượt quá giới hạn.")
-    if any(_safe_size(item.get("size")) > int(_config("UPLOAD_SINGLE_FILE_MAX_BYTES")) for item in files if isinstance(item, dict)):
+    max_file_bytes = limits["max_file_bytes"] if company_media else int(_config("UPLOAD_SINGLE_FILE_MAX_BYTES"))
+    oversize_item = next((item for item in files if isinstance(item, dict) and _safe_size(item.get("size")) > max_file_bytes), None)
+    if oversize_item is not None:
+        if company_media:
+            raise file_size_error(
+                client_file_id=str(oversize_item.get("client_file_id", "")),
+                filename=str(oversize_item.get("filename", "")),
+                actual_bytes=_safe_size(oversize_item.get("size")),
+                max_bytes=max_file_bytes,
+            )
         raise StorageValidationError("Một tệp vượt quá giới hạn 300 MB.")
     selection = _selection_session(user, selection_session_id, module_type, target_type, target_id) if selection_session_id else None
-    if selection and (selection.presigned_files + len(files) > selection.declared_files or selection.presigned_size_bytes + declared_total > selection.declared_size_bytes):
-        raise StorageValidationError("Batch vượt số lượng hoặc dung lượng đã khai báo.")
     from app.storage.quota import ensure_storage_capacity
-    try: ensure_storage_capacity(declared_total)
-    except ValueError as exc: raise StorageValidationError(str(exc))
-    client_ids = [str(item.get("client_file_id", "")) for item in files if isinstance(item, dict)]
-    if len(set(client_ids)) != len(client_ids) or any(not value for value in client_ids):
-        raise StorageValidationError("client_file_id phải duy nhất và không được để trống.")
+    if company_media:
+        client_ids = [str(item.get("client_file_id", "")) for item in files if isinstance(item, dict)]
+        if len(client_ids) != len(files) or len(set(client_ids)) != len(client_ids) or any(not value for value in client_ids):
+            raise StorageValidationError("client_file_id phải duy nhất và không được để trống.")
+        prepared = []
+        for item in files:
+            try:
+                meta = validate_file_metadata(
+                    item.get("filename"), item.get("mime_type"), item.get("size"), item.get("checksum_sha256"),
+                    module_type=module_type, limits=limits, client_file_id=str(item["client_file_id"]),
+                )
+                prepared.append((item, meta, None))
+            except StorageValidationError as exc:
+                prepared.append((item, None, exc))
+        accepted_total = sum(meta["file_size"] for _, meta, error in prepared if meta is not None and error is None)
+        accepted_count = sum(meta is not None and error is None for _, meta, error in prepared)
+        if selection and selection.presigned_files + accepted_count > selection.declared_files:
+            raise upload_error(
+                "selection_declared_file_quota_exceeded",
+                "Số tệp trong batch vượt số lượng đã khai báo cho phiên tải.",
+                details={"declared_files": selection.declared_files, "used_files": selection.presigned_files,
+                         "incoming_files": accepted_count, "resulting_files": selection.presigned_files + accepted_count},
+                status_code=409,
+            )
+        if selection and selection.presigned_size_bytes + accepted_total > selection.declared_size_bytes:
+            raise upload_error(
+                "selection_declared_byte_quota_exceeded",
+                "Dung lượng batch vượt dung lượng đã khai báo cho phiên tải.",
+                details={"declared_bytes": selection.declared_size_bytes, "used_bytes": selection.presigned_size_bytes,
+                         "incoming_bytes": accepted_total, "resulting_bytes": selection.presigned_size_bytes + accepted_total},
+                status_code=409,
+            )
+        try: ensure_storage_capacity(accepted_total)
+        except ValueError as exc: raise StorageValidationError(str(exc))
+    else:
+        if selection and (selection.presigned_files + len(files) > selection.declared_files or selection.presigned_size_bytes + declared_total > selection.declared_size_bytes):
+            raise StorageValidationError("Batch vượt số lượng hoặc dung lượng đã khai báo.")
+        try: ensure_storage_capacity(declared_total)
+        except ValueError as exc: raise StorageValidationError(str(exc))
+        client_ids = [str(item.get("client_file_id", "")) for item in files if isinstance(item, dict)]
+        if len(set(client_ids)) != len(client_ids) or any(not value for value in client_ids):
+            raise StorageValidationError("client_file_id phải duy nhất và không được để trống.")
+        prepared = [(item, None, None) for item in files]
 
     provider = provider or get_storage_provider()
     storage_module = normalize_storage_module(module_type)
@@ -81,10 +167,13 @@ def create_upload_batch_presign(*, user, module_type, target_type, target_id, fi
     _add(batch)
     db.session.flush()
     response_items = []
-    for item in files:
+    for item, meta, validation_error in prepared:
         client_file_id = str(item["client_file_id"])
         try:
-            meta = validate_file_metadata(item.get("filename"), item.get("mime_type"), item.get("size"), item.get("checksum_sha256"), module_type=module_type)
+            if validation_error is not None:
+                raise validation_error
+            if meta is None:
+                meta = validate_file_metadata(item.get("filename"), item.get("mime_type"), item.get("size"), item.get("checksum_sha256"), module_type=module_type)
             object_key = build_original_key(storage_module, uuid4().hex, meta["filename"], _config("STORAGE_PREFIX"))
             storage_object = StorageObject(bucket=_config("STORAGE_BUCKET"), object_key=object_key, storage_module=storage_module, original_filename=meta["filename"], mime_type=meta["mime_type"], file_ext=meta["file_ext"], file_size=meta["file_size"], checksum_sha256=meta["checksum_sha256"], uploaded_by_id=user.id)
             _add(storage_object)
@@ -109,7 +198,10 @@ def create_upload_batch_presign(*, user, module_type, target_type, target_id, fi
             rejected = UploadBatchItem(upload_batch_id=batch.id, client_file_id=client_file_id, original_filename=str(item.get("filename", ""))[:255], mime_type=str(item.get("mime_type", ""))[:255], file_size=_safe_size(item.get("size")), status="rejected", error_message=str(exc))
             _add(rejected)
             batch.failed_files += 1
-            response_items.append({"client_file_id": client_file_id, "accepted": False, "error": str(exc)})
+            if company_media and isinstance(exc, StorageUploadContractError):
+                response_items.append(item_error(client_file_id, exc))
+            else:
+                response_items.append({"client_file_id": client_file_id, "accepted": False, "error": str(exc)})
     batch.status = "uploading" if batch.accepted_files else "failed"
     if selection:
         selection.presigned_files += batch.accepted_files; selection.presigned_size_bytes += sum(item.storage_object.file_size for item in batch.items if item.storage_object_id)
@@ -120,9 +212,14 @@ def _selection_session(user, selection_session_id, module_type, target_type, tar
     if not selection_session_id: raise StorageValidationError("selection_session_id là bắt buộc.")
     session = db.session.get(UploadSelectionSession, selection_session_id)
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    if not session or session.created_by_id != user.id or session.module_type != module_type or session.target_type != target_type or session.target_id != int(target_id): raise StorageAuthorizationError("Upload selection không hợp lệ.")
+    if not session or session.created_by_id != user.id or session.module_type != module_type or session.target_type != target_type or session.target_id != int(target_id):
+        if module_type == "company_media":
+            raise upload_error("selection_session_target_mismatch", "Phiên tải không hợp lệ.", status_code=403)
+        raise StorageAuthorizationError("Upload selection không hợp lệ.")
     if session.status != "pending" or session.expires_at <= now:
         if session.status == "pending": session.status = "expired"; db.session.commit()
+        if module_type == "company_media":
+            raise upload_error("selection_session_expired", "Phiên tải đã hết hạn hoặc đã hoàn tất.", status_code=410)
         raise StorageValidationError("Upload selection đã hết hạn hoặc hoàn tất.")
     return session
 
@@ -142,9 +239,15 @@ def complete_upload_item(*, user, upload_batch_item_id, reported_etag=None, chec
     try:
         head = provider.head_object(storage_object.bucket, storage_object.object_key)
         _validate_head(storage_object, head, checksum_sha256)
-    except (StorageNotFoundError, StorageValidationError):
+    except (StorageNotFoundError, StorageValidationError) as exc:
         _mark_item_failed(item, terminal=True)
         db.session.commit()
+        if item.upload_batch.module_type == "company_media":
+            raise upload_error(
+                "head_verification_failed",
+                "Không thể xác minh tệp đã tải lên. Bạn có thể tải lại tệp.",
+                retryable=True,
+            ) from None
         raise
     storage_object.upload_status = "active"
     storage_object.completed_at = datetime.now(timezone.utc)
@@ -237,6 +340,19 @@ def _safe_size(value):
         return max(0, int(value))
     except (TypeError, ValueError):
         return 0
+
+
+def _declared_positive_integer(value, kind):
+    """Validate JSON selection declarations without coercing malformed values."""
+    field = "actual_files" if kind == "files" else "actual_bytes"
+    code = "invalid_selection_file_count" if kind == "files" else "invalid_selection_total_bytes"
+    details = {field: value if isinstance(value, (int, float, str, bool)) or value is None else None}
+    if kind == "files":
+        details["min_files"] = 1
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        message = "Số lượng tệp đã chọn không hợp lệ." if kind == "files" else "Tổng dung lượng đã chọn không hợp lệ."
+        raise upload_error(code, message, details=details)
+    return value
 
 
 def _normalize_failed_item_ids(value):

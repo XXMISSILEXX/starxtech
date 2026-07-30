@@ -9,10 +9,20 @@ from app.models import BulkDownloadJob
 from app.bulk_downloads.services import (BulkDownloadError, parse_file_ids, preflight_media_download,
     request_media_download, stream_zip_download, serialize_job)
 from app.storage.services import create_upload_selection_session, finalize_upload_selection_session
-from app.storage.exceptions import StorageAuthorizationError, StorageNotFoundError, StorageValidationError
+from app.storage.company_media_errors import error_envelope, upload_error
+from app.storage.exceptions import (StorageAuthorizationError, StorageNotFoundError, StorageUploadContractError,
+                                    StorageValidationError)
+from app.storage.limits import get_company_media_upload_limits
 from app.storage.downloads import SignedDownloadError, error_payload
 
 def _one(model, ident): return db.get_or_404(model, ident)
+
+
+def _upload_error_response(error, *, fallback_code="upload_validation_failed", status_code=422):
+    if isinstance(error, StorageUploadContractError):
+        return jsonify(error_envelope(error)), error.status_code
+    normalized = upload_error(fallback_code, str(error), status_code=status_code)
+    return jsonify(error_envelope(normalized)), status_code
 
 def _ctx():
     status=request.values.get("media_status","active").lower(); return {"q":request.values.get("q","").strip(),"media_status":status if status in {"active","archived","all"} else "active"}
@@ -39,7 +49,7 @@ def album(album_id):
     a=_one(CompanyMediaAlbum, album_id)
     if not p.view_album(current_user,a,True): abort(403)
     c=_ctx(); items=s.files(current_user,a,c["media_status"],c["q"]);active=a.is_active and not a.deleted_at
-    return render_template("company_media/album.html",album=a,files=items,active=active,thumbnail_version_by_file=_thumbnail_versions(items),**c,can_upload=p.upload_album(current_user,a),can_edit=p.edit_album(current_user,a),can_delete=p.delete_album(current_user,a),can_restore=p.restore_album(current_user,a),can_share=p.share_album(current_user,a,not active),can_download={x.id:p.download_file(current_user,x) for x in items},can_edit_file={x.id:p.edit_file(current_user,x) for x in items},can_delete_file={x.id:p.delete_file(current_user,x) for x in items},can_restore_file={x.id:p.restore_file(current_user,x) for x in items})
+    return render_template("company_media/album.html",album=a,files=items,active=active,thumbnail_version_by_file=_thumbnail_versions(items),company_media_upload_limits=get_company_media_upload_limits(),**c,can_upload=p.upload_album(current_user,a),can_edit=p.edit_album(current_user,a),can_delete=p.delete_album(current_user,a),can_restore=p.restore_album(current_user,a),can_share=p.share_album(current_user,a,not active),can_download={x.id:p.download_file(current_user,x) for x in items},can_edit_file={x.id:p.edit_file(current_user,x) for x in items},can_delete_file={x.id:p.delete_file(current_user,x) for x in items},can_restore_file={x.id:p.restore_file(current_user,x) for x in items})
 @bp.post("/albums/<int:album_id>/rename")
 def rename(album_id):
     a=_one(CompanyMediaAlbum, album_id)
@@ -77,20 +87,20 @@ def presign(album_id):
         data=request.get_json() or {}; return jsonify(s.presign(current_user,a,data.get("files",[]),data.get("selection_session_id")))
     except StorageAuthorizationError: abort(403)
     except (StorageValidationError, s.CompanyMediaError) as exc:
-        return jsonify(error=str(exc)),400
+        return _upload_error_response(exc)
     except Exception as exc:
         # Provider exceptions may contain bucket names, object keys, bearer
         # URLs, or provider response text.  Log only a stable event/context.
         current_app.logger.error("company_media_presign_failed event=CM-PRESIGN-001 album_id=%s actor_id=%s exception_type=%s",
                                  a.id, current_user.id, type(exc).__name__)
-        return jsonify(error="Không thể chuẩn bị tải tệp. Vui lòng thử lại sau.", code="CM-PRESIGN-001"), 502
+        return _upload_error_response(upload_error("presign_unavailable", "Không thể chuẩn bị tải tệp. Vui lòng thử lại sau.", retryable=True, status_code=502))
 @bp.post("/albums/<int:album_id>/files/upload-selection-sessions")
 def selection(album_id):
     a=_one(CompanyMediaAlbum, album_id)
     if not p.upload_album(current_user,a): abort(403)
     data=request.get_json() or {}
     try:return jsonify(create_upload_selection_session(user=current_user,module_type="company_media",target_type="album",target_id=a.id,declared_files=data.get("file_count"),declared_size_bytes=data.get("total_size_bytes")))
-    except StorageValidationError as e:return jsonify(error=str(e)),400
+    except StorageValidationError as e:return _upload_error_response(e)
 @bp.post("/albums/<int:album_id>/files/upload-selection-sessions/<int:session_id>/finalize")
 def selection_finalize(album_id,session_id):
     a=_one(CompanyMediaAlbum, album_id)
@@ -98,7 +108,7 @@ def selection_finalize(album_id,session_id):
     data = request.get_json(silent=True) or {}
     try:return jsonify(finalize_upload_selection_session(user=current_user,selection_session_id=session_id,module_type="company_media",target_type="album",target_id=a.id,failed_upload_batch_item_ids=data.get("failed_upload_batch_item_ids")))
     except StorageAuthorizationError: abort(403)
-    except StorageValidationError as e:return jsonify(error=str(e)),400
+    except StorageValidationError as e:return _upload_error_response(e)
 @bp.post("/albums/<int:album_id>/files/complete-upload")
 def complete(album_id):
     a=_one(CompanyMediaAlbum, album_id)
@@ -107,13 +117,13 @@ def complete(album_id):
     try:
         item_id = int(data.get("upload_batch_item_id"))
     except (TypeError, ValueError):
-        return jsonify(error="upload_batch_item_id không hợp lệ."),400
+        return _upload_error_response(upload_error("invalid_upload_batch_item_id", "upload_batch_item_id không hợp lệ."))
     try:
         return jsonify(s.complete(current_user,a,item_id,data))
     except StorageAuthorizationError:
         abort(403)
     except (StorageValidationError, StorageNotFoundError, s.CompanyMediaError) as exc:
-        return jsonify(error=str(exc)),400
+        return _upload_error_response(exc, fallback_code="upload_item_not_found" if isinstance(exc, StorageNotFoundError) else "upload_completion_failed", status_code=404 if isinstance(exc, StorageNotFoundError) else 422)
 @bp.post("/files/<int:file_id>/signed-preview")
 def preview(file_id):
     f=_one(CompanyMediaFile, file_id)

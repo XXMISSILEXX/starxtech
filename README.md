@@ -163,6 +163,16 @@ the browser does not send StarX application cookies to object storage.
 PostgreSQL, authenticated Redis for rate limiting/Celery, and S3-compatible
 storage; unknown or empty environments fail during application startup.
 
+### Company Media upload limits
+
+Company Media has independent `COMPANY_MEDIA_*` limits in `.env.example` and
+`docker-compose.yml`. Their defaults preserve the established behavior: 500
+selected files, 2 GiB selection size, 50 files/512 MiB per presign batch, a
+300 MiB absolute cap, 50 MiB images, 300 MiB videos, concurrency 3, and a
+7,200-second session TTL. Existing deployments can leave these variables unset:
+the app falls back to the existing shared upload/storage settings. Every
+explicit Company Media value must be a positive integer.
+
 ### Private media cache
 
 Logo, user avatar, and generated thumbnails can use an authorised local
