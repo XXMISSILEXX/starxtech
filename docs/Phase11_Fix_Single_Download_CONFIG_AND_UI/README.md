@@ -30,8 +30,11 @@ Independently verify the earlier Company Media audit before any repair work is a
 - Phase 2: completed — dedicated Company Media resolved limits, structured
   upload errors, server-rendered public limits payload, and compatible JS
   consumption are implemented. See [Phase 2 implementation report](PHASE2_IMPLEMENTATION_REPORT.md).
-- Phase 3 remains intentionally out of scope: selected/max UI and the approved
-  session/retry idempotency lifecycle decision.
+- Phase 3A: completed — Company Media selected/max, client-side pre-validation,
+  batch preview, accessible/mobile queue states, and structured error rendering
+  are implemented. See [Phase 3A implementation report](PHASE3A_IMPLEMENTATION_REPORT.md).
+- Phase 3B remains intentionally out of scope: the approved session/retry
+  idempotency lifecycle decision and any migration it requires.
 
 ## Original verification outcome
 

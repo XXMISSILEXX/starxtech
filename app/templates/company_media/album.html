@@ -7,13 +7,25 @@
 {% if can_upload and active %}
 <section class="card mb-4" data-company-media-upload data-company-media-upload-limits='{{ company_media_upload_limits|tojson }}' data-presign-url="{{ url_for('company_media.presign', album_id=album.id) }}" data-complete-url="{{ url_for('company_media.complete', album_id=album.id) }}" data-csrf-token="{{ csrf_token() }}">
   <div class="card-body"><h3 class="h6">Tải ảnh/video lên</h3>
+    <div class="company-media-upload-limits mb-3" data-company-media-upload-summary aria-live="polite" aria-atomic="true">
+      <div class="d-flex flex-wrap justify-content-between gap-2"><span><strong>Đã chọn:</strong> <span data-selected-count>0</span> / <span data-selected-max>{{ company_media_upload_limits.max_selection_files }}</span> tệp</span><span><strong>Dung lượng:</strong> <span data-selected-bytes>0 B</span> / <span data-selected-bytes-max>{{ company_media_upload_limit_labels.max_selection_bytes }}</span></span></div>
+      <div class="small mt-1"><span data-valid-count>0</span> hợp lệ <span aria-hidden="true">·</span> <span data-blocked-count>0</span> bị chặn <span data-batch-estimate hidden></span></div>
+      <p class="small mb-0 mt-1" data-upload-selection-status>Chưa chọn tệp.</p>
+      <ul class="small mb-0 mt-2 ps-3 company-media-upload-limit-list" aria-label="Giới hạn tải lên">
+        <li>Ảnh tối đa <span data-limit-image>{{ company_media_upload_limit_labels.max_image_bytes }}</span>/tệp.</li>
+        <li>Video tối đa <span data-limit-video>{{ company_media_upload_limit_labels.max_video_bytes }}</span>/tệp.</li>
+        <li>Tối đa <span data-limit-batch-files>{{ company_media_upload_limits.max_files_per_batch }}</span> tệp hoặc <span data-limit-batch-bytes>{{ company_media_upload_limit_labels.max_batch_bytes }}</span> mỗi batch.</li>
+        <li>Tải đồng thời <span data-limit-concurrency>{{ company_media_upload_limits.upload_concurrency }}</span> tệp.</li>
+      </ul>
+    </div>
+    <div class="alert alert-danger py-2" data-upload-validation-message role="alert" hidden></div>
     <input data-company-media-file-input type="file" accept="image/*,video/*,.heic,.heif" multiple class="visually-hidden">
-    <div data-company-media-dropzone class="upload-dropzone p-4 text-center" role="button" tabindex="0"><span data-company-media-dropzone-message>Kéo thả ảnh/video hoặc bấm để chọn</span></div>
-    <div class="mt-2"><button data-company-media-choose-files type="button" class="btn btn-outline-secondary">Chọn tệp</button><button data-company-media-start-upload type="button" class="btn btn-primary" disabled>Tải lên</button></div>
-    <ul data-company-media-upload-queue class="list-group list-group-flush mt-2" aria-live="polite"></ul>
+    <div data-company-media-dropzone class="upload-dropzone p-4 text-center" role="button" tabindex="0" aria-label="Kéo thả ảnh hoặc video, hoặc bấm để chọn tệp"><span data-company-media-dropzone-message>Kéo thả ảnh/video hoặc bấm để chọn</span></div>
+    <div class="mt-2 d-flex flex-wrap gap-2"><button data-company-media-choose-files type="button" class="btn btn-outline-secondary">Chọn tệp</button><button data-company-media-clear-files type="button" class="btn btn-outline-secondary">Xóa tất cả</button><button data-company-media-start-upload type="button" class="btn btn-primary" disabled aria-disabled="true">Tải lên</button></div>
+    <ul data-company-media-upload-queue class="list-group list-group-flush mt-2" aria-label="Danh sách tệp đã chọn"></ul>
   </div>
 </section>
-<div class="modal fade" tabindex="-1" data-company-media-upload-overlay data-bs-backdrop="static" data-bs-keyboard="false" aria-labelledby="companyMediaUploadTitle">
+<div class="modal fade" tabindex="-1" data-company-media-upload-overlay data-bs-backdrop="static" data-bs-keyboard="false" aria-labelledby="companyMediaUploadTitle" aria-modal="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h2 class="h5 mb-0" id="companyMediaUploadTitle" data-upload-overlay-title>Chuẩn bị tải lên</h2></div>
     <div class="modal-body"><p class="mb-2" data-upload-overlay-message>Đang kiểm tra tệp.</p><div class="progress mb-3" role="progressbar"><div class="progress-bar" data-upload-overall-progress style="width:0%"></div></div>
       <div class="row row-cols-2 row-cols-md-4 g-2 small mb-3"><div>Tổng: <strong data-upload-total>0</strong></div><div>Chấp nhận: <strong data-upload-ready>0</strong></div><div>Bị chặn: <strong data-upload-blocked>0</strong></div><div>Chờ: <strong data-upload-pending>0</strong></div><div>Đang tải: <strong data-upload-uploading>0</strong></div><div>Thành công: <strong data-upload-succeeded>0</strong></div><div>Lỗi: <strong data-upload-failed>0</strong></div></div>

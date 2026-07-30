@@ -18,6 +18,17 @@ from app.storage.downloads import SignedDownloadError, error_payload
 def _one(model, ident): return db.get_or_404(model, ident)
 
 
+def _format_upload_bytes(value):
+    """Render the public Company Media limits before its JS has initialized."""
+    value = int(value)
+    for unit in ("GiB", "MiB", "KiB"):
+        divisor = {"GiB": 1024 ** 3, "MiB": 1024 ** 2, "KiB": 1024}[unit]
+        if value >= divisor:
+            amount = value / divisor
+            return f"{amount:.2f}".rstrip("0").rstrip(".") + f" {unit}"
+    return f"{value} B"
+
+
 def _upload_error_response(error, *, fallback_code="upload_validation_failed", status_code=422):
     if isinstance(error, StorageUploadContractError):
         return jsonify(error_envelope(error)), error.status_code
@@ -49,7 +60,11 @@ def album(album_id):
     a=_one(CompanyMediaAlbum, album_id)
     if not p.view_album(current_user,a,True): abort(403)
     c=_ctx(); items=s.files(current_user,a,c["media_status"],c["q"]);active=a.is_active and not a.deleted_at
-    return render_template("company_media/album.html",album=a,files=items,active=active,thumbnail_version_by_file=_thumbnail_versions(items),company_media_upload_limits=get_company_media_upload_limits(),**c,can_upload=p.upload_album(current_user,a),can_edit=p.edit_album(current_user,a),can_delete=p.delete_album(current_user,a),can_restore=p.restore_album(current_user,a),can_share=p.share_album(current_user,a,not active),can_download={x.id:p.download_file(current_user,x) for x in items},can_edit_file={x.id:p.edit_file(current_user,x) for x in items},can_delete_file={x.id:p.delete_file(current_user,x) for x in items},can_restore_file={x.id:p.restore_file(current_user,x) for x in items})
+    limits = get_company_media_upload_limits()
+    limit_labels = {key: _format_upload_bytes(limits[key]) for key in (
+        "max_selection_bytes", "max_image_bytes", "max_video_bytes", "max_batch_bytes",
+    )}
+    return render_template("company_media/album.html",album=a,files=items,active=active,thumbnail_version_by_file=_thumbnail_versions(items),company_media_upload_limits=limits,company_media_upload_limit_labels=limit_labels,**c,can_upload=p.upload_album(current_user,a),can_edit=p.edit_album(current_user,a),can_delete=p.delete_album(current_user,a),can_restore=p.restore_album(current_user,a),can_share=p.share_album(current_user,a,not active),can_download={x.id:p.download_file(current_user,x) for x in items},can_edit_file={x.id:p.edit_file(current_user,x) for x in items},can_delete_file={x.id:p.delete_file(current_user,x) for x in items},can_restore_file={x.id:p.restore_file(current_user,x) for x in items})
 @bp.post("/albums/<int:album_id>/rename")
 def rename(album_id):
     a=_one(CompanyMediaAlbum, album_id)

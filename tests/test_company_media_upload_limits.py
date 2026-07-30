@@ -232,6 +232,23 @@ def test_company_media_upload_routes_return_structured_errors_and_template_limit
     assert b'data-company-media-upload-limits=' in page.data
     assert b'"max_files_per_batch": 7' in page.data
     assert b'"upload_concurrency": 2' in page.data
+    assert b"2 GiB" in page.data
+    assert b"50 MiB" in page.data
+    assert b"300 MiB" in page.data
+    for marker in (
+        b"data-company-media-upload-summary", b"data-selected-count", b"data-selected-max",
+        b"data-selected-bytes", b"data-selected-bytes-max", b"data-valid-count",
+        b"data-blocked-count", b"data-batch-estimate", b"data-upload-validation-message",
+        b"data-upload-selection-status",
+        b"data-company-media-upload-queue", b"data-company-media-start-upload",
+        b"data-company-media-upload-overlay",
+    ):
+        assert marker in page.data
+    assert b'aria-live="polite"' in page.data
+    assert b'role="alert"' in page.data
+    assert b"STORAGE_ACCESS_KEY" not in page.data
+    assert b"STORAGE_SECRET" not in page.data
+    assert b"company-media-upload.js?v=20260730-8303" in page.data
 
     selection = client.post(f"/company-media/albums/{album_id}/files/upload-selection-sessions", json={"file_count": 501, "total_size_bytes": 1})
     assert selection.status_code == 422
