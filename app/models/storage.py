@@ -80,6 +80,9 @@ class UploadSelectionSession(TimestampMixin, db.Model):
     presigned_size_bytes = db.Column(db.BigInteger, nullable=False, default=0, server_default="0")
     status = db.Column(db.String(20), nullable=False, default="pending", server_default="pending")
     expires_at = db.Column(db.DateTime, nullable=False); completed_at = db.Column(db.DateTime)
+    # Phase 5 records that the database-only cleanup has already removed every
+    # disposable unfinished item. Completed items intentionally remain.
+    cleaned_at = db.Column(db.DateTime, nullable=True)
     created_by = db.relationship("User", foreign_keys=[created_by_id])
     batches = db.relationship("UploadBatch", foreign_keys=[UploadBatch.selection_session_id])
 

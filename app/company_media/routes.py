@@ -9,6 +9,7 @@ from app.models import BulkDownloadJob
 from app.bulk_downloads.services import (BulkDownloadError, parse_file_ids, preflight_media_download,
     request_media_download, stream_zip_download, serialize_job)
 from app.storage.services import create_upload_selection_session, finalize_upload_selection_session
+from app.company_media.upload_cleanup import cancel_company_media_upload_session
 from app.storage.company_media_errors import error_envelope, upload_error
 from app.storage.exceptions import (StorageAuthorizationError, StorageNotFoundError, StorageUploadContractError,
                                     StorageValidationError)
@@ -124,6 +125,23 @@ def selection_finalize(album_id,session_id):
     try:return jsonify(finalize_upload_selection_session(user=current_user,selection_session_id=session_id,module_type="company_media",target_type="album",target_id=a.id,failed_upload_batch_item_ids=data.get("failed_upload_batch_item_ids")))
     except StorageAuthorizationError: abort(403)
     except StorageValidationError as e:return _upload_error_response(e)
+@bp.post("/albums/<int:album_id>/upload-sessions/<int:session_id>/cancel")
+def selection_cancel(album_id, session_id):
+    a = _one(CompanyMediaAlbum, album_id)
+    if not p.upload_album(current_user, a):
+        abort(403)
+    try:
+        summary = cancel_company_media_upload_session(
+            actor=current_user, album_id=a.id, session_id=session_id,
+        )
+        db.session.commit()
+        return jsonify(ok=True, **summary.as_dict())
+    except StorageAuthorizationError:
+        db.session.rollback()
+        abort(403)
+    except StorageValidationError as exc:
+        db.session.rollback()
+        return _upload_error_response(exc, fallback_code="upload_session_not_cancellable", status_code=409)
 @bp.post("/albums/<int:album_id>/files/complete-upload")
 def complete(album_id):
     a=_one(CompanyMediaAlbum, album_id)

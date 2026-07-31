@@ -106,6 +106,8 @@ test("uploader retains direct POST progress, bounded concurrency, stable client 
   assert.match(source, /const retainedSessionIds = new Set\(items\.map\(\(entry\) => entry\.sessionId\)/);
   assert.match(source, /if \(item\.status === "completed"\) \{ entry\.status = "succeeded"/);
   assert.match(source, /error\.code !== "selection_session_expired"/);
+  assert.match(source, /cancelUrl/);
+  assert.match(source, /Hủy phần tải lên còn lại\. Các tệp đã tải thành công vẫn được giữ\./);
   assert.doesNotMatch(source, /localStorage|sessionStorage/);
   assert.doesNotMatch(source, /entry\.sessionId = null/);
 });
@@ -116,4 +118,5 @@ test("template exposes accessible summary, validation, queue, and modal contract
   assert.match(template, /role="alert"/);
   assert.match(template, /aria-label="Kéo thả ảnh hoặc video/);
   assert.match(template, /data-company-media-clear-files/);
+  assert.match(template, /data-upload-cancel/);
 });

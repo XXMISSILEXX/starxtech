@@ -8,6 +8,7 @@ from app.extensions import db
 from app.models import (CompanyMediaAlbum, CompanyMediaAlbumPermission, CompanyMediaFile, Role,
     StorageDerivative, UploadBatchItem, User, UserRole)
 from app.storage.services import create_upload_batch_presign, complete_upload_item
+from app.storage.company_media_errors import upload_error
 
 class CompanyMediaError(ValueError): pass
 ALBUM_PERMISSION_FLAGS = ("can_view", "can_upload", "can_edit", "can_delete", "can_download", "can_share")
@@ -166,7 +167,9 @@ def restore_album(user,a): a.is_active=True;a.deleted_at=None;a.updated_by_id=us
 def presign(user,a,items,selection_session_id=None): return create_upload_batch_presign(user=user,module_type="company_media",target_type="album",target_id=a.id,files=items,selection_session_id=selection_session_id)
 def complete(user,a,item_id,payload):
     item=db.session.get(UploadBatchItem,item_id)
-    if not item or item.upload_batch.module_type!="company_media" or item.upload_batch.target_type!="album" or item.upload_batch.target_id!=a.id: raise CompanyMediaError("Upload item không thuộc album.")
+    if not item:
+        raise upload_error("upload_item_not_available", "Tệp tải lên không còn khả dụng.", status_code=409)
+    if item.upload_batch.module_type!="company_media" or item.upload_batch.target_type!="album" or item.upload_batch.target_id!=a.id: raise CompanyMediaError("Upload item không thuộc album.")
     def ensure_media(locked_item, was_replay):
         obj = locked_item.storage_object
         if not obj.mime_type.startswith(("image/", "video/")):

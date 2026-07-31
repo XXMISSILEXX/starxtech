@@ -7,7 +7,7 @@
   ];
   const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "heif"]);
   const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "mov", "m4v"]);
-  const terminal = new Set(["succeeded", "failed", "blocked"]);
+  const terminal = new Set(["succeeded", "failed", "blocked", "cancelled"]);
   const retryableStatus = new Set([0, 408, 429, 500, 502, 503, 504]);
   const nonRetryableS3Codes = new Set(["EntityTooSmall", "EntityTooLarge", "SignatureDoesNotMatch", "AccessDenied", "InvalidPolicyDocument", "RequestExpired", "ExpiredToken"]);
 
@@ -117,6 +117,8 @@
       idempotency_conflict: "Mã tệp đã được sử dụng cho một tệp khác.",
       upload_item_not_retryable: "Tệp này không thể thử lại. Vui lòng chọn lại tệp.",
       selection_session_expired: "Phiên tải đã hết hạn. Vui lòng chọn lại tệp để bắt đầu lại.",
+      upload_session_cancelled: "Phiên tải đã được hủy.",
+      upload_item_not_available: "Tệp tải lên không còn khả dụng.",
       head_verification_failed: "Không thể xác minh tệp đã tải lên. Bạn có thể tải lại tệp.",
       s3_upload_failed: "Tải lên kho lưu trữ thất bại. Vui lòng thử lại.",
     };
@@ -143,6 +145,8 @@
     const overlay = document.querySelector("[data-company-media-upload-overlay]");
     const entries = [];
     let uploading = false;
+    let activeSessionId = null;
+    let cancelRequested = false;
     let focusBeforeModal = null;
     const uploadLimits = readUploadLimits(root.dataset.companyMediaUploadLimits, (message) => console.warn(message));
     const concurrency = uploadLimits.upload_concurrency;
@@ -197,7 +201,7 @@
         const item = document.createElement("li");
         item.className = "list-group-item d-flex justify-content-between gap-2";
         const content = document.createElement("div"); content.className = "company-media-upload-name";
-        const status = {pending: "Chờ tải", ready: "Chờ tải", uploading: "Đang tải", completing: "Đang xác minh", succeeded: "Hoàn tất", failed: "Thất bại", blocked: "Bị chặn"}[entry.status] || entry.status;
+        const status = {pending: "Chờ tải", ready: "Chờ tải", uploading: "Đang tải", completing: "Đang xác minh", succeeded: "Hoàn tất", failed: "Thất bại", blocked: "Bị chặn", cancelled: "Đã hủy"}[entry.status] || entry.status;
         const category = fileCategory(entry.file) === "image" ? "Ảnh" : fileCategory(entry.file) === "video" ? "Video" : "Không hỗ trợ";
         const name = document.createElement("div"); name.className = "fw-semibold"; name.textContent = entry.file.name;
         const meta = document.createElement("div"); meta.className = "small text-muted"; meta.textContent = `${formatBytes(entry.file.size)} · ${category} · ${status}${["uploading", "completing"].includes(entry.status) ? ` ${Math.round((entry.loaded || 0) * 100 / entry.file.size)}%` : ""}`;
@@ -237,8 +241,9 @@
       const title = overlay.querySelector("[data-upload-overlay-title]"); if (title) title.textContent = phase === "done" ? "Kết quả tải lên" : phase === "preparing" ? "Chuẩn bị tải lên" : "Đang tải lên";
       const results = overlayResults();
       if (results) { results.replaceChildren(); files.filter((entry) => ["blocked", "failed"].includes(entry.status)).forEach((entry) => { const row = document.createElement("li"); row.className = `list-group-item ${entry.status === "blocked" ? "list-group-item-warning" : "list-group-item-danger"}`; row.textContent = `${entry.file.name} — ${entry.status === "blocked" ? "Bị chặn" : "Lỗi"}: ${entry.error || entry.clientError?.message || "Không thể tải tệp."}`; results.append(row); }); }
-      const retry = overlay.querySelector("[data-upload-retry-failed]"); const close = overlay.querySelector("[data-upload-close]");
+      const retry = overlay.querySelector("[data-upload-retry-failed]"); const close = overlay.querySelector("[data-upload-close]"); const cancel = overlay.querySelector("[data-upload-cancel]");
       if (retry) retry.hidden = phase !== "done" || !files.some((entry) => entry.status === "failed"); if (close) close.hidden = phase !== "done";
+      if (cancel) { cancel.hidden = phase === "done" || !Number.isInteger(activeSessionId); setDisabled(cancel, cancelRequested); }
     };
     const api = async (url, body) => {
       const response = await fetch(url, {method: "POST", credentials: "same-origin", headers: csrfHeaders, body: JSON.stringify(body)});
@@ -248,6 +253,7 @@
     };
     const sessionUrl = () => root.dataset.presignUrl.replace("/presign-batch", "/upload-selection-sessions");
     const finalizeUrl = (sessionId) => `${sessionUrl()}/${sessionId}/finalize`;
+    const cancelUrl = (sessionId) => root.dataset.presignUrl.replace("/files/presign-batch", `/upload-sessions/${sessionId}/cancel`);
     const delay = (attempt) => new Promise((resolve) => window.setTimeout(resolve, Math.round((250 * 2 ** attempt) + Math.random() * 250)));
     const directPost = (entry) => new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest(); const form = new FormData(); Object.entries(entry.presign.fields || {}).forEach(([key, value]) => form.append(key, value)); form.append("file", entry.file);
@@ -284,10 +290,10 @@
     const finalize = async (sessionId, sessionEntries) => api(finalizeUrl(sessionId), {failed_upload_batch_item_ids: sessionEntries.filter((entry) => entry.status === "failed" && Number.isInteger(entry.itemId)).map((entry) => entry.itemId)});
     const upload = async (items) => {
       if (uploading || !items.length || selectionState().errors.length) return;
-      uploading = true; focusBeforeModal = document.activeElement; setDisabled(choose, true); setDisabled(clear, true); dropzone.classList.add("disabled"); dropzone.setAttribute("aria-disabled", "true"); modal?.show(); renderQueue(); renderOverlay("preparing", "Đang kiểm tra tệp đã chọn."); let sessionId;
-      try { sessionId = await prepare(items); await runWithConcurrency(items.filter((entry) => entry.status === "ready")); await finalize(sessionId, items); }
-      catch (error) { const message = formatUploadError(error, "Không thể chuẩn bị tải tệp."); items.filter((entry) => !terminal.has(entry.status)).forEach((entry) => { entry.status = "failed"; entry.error = message; }); if (sessionId && error.code !== "selection_session_expired") { try { await finalize(sessionId, items); } catch (_) { /* The result remains visible. */ } } }
-      uploading = false; setDisabled(choose, false); dropzone.classList.remove("disabled"); dropzone.setAttribute("aria-disabled", "false"); renderQueue(); renderOverlay("done", "Đã hoàn tất tải lên. Kiểm tra kết quả trước khi đóng.");
+      cancelRequested = false; uploading = true; focusBeforeModal = document.activeElement; setDisabled(choose, true); setDisabled(clear, true); dropzone.classList.add("disabled"); dropzone.setAttribute("aria-disabled", "true"); modal?.show(); renderQueue(); renderOverlay("preparing", "Đang kiểm tra tệp đã chọn."); let sessionId;
+      try { sessionId = await prepare(items); activeSessionId = sessionId; renderOverlay("preparing", "Đang kiểm tra tệp đã chọn."); await runWithConcurrency(items.filter((entry) => entry.status === "ready")); if (!cancelRequested) await finalize(sessionId, items); }
+      catch (error) { const message = formatUploadError(error, "Không thể chuẩn bị tải tệp."); items.filter((entry) => !terminal.has(entry.status)).forEach((entry) => { entry.status = "failed"; entry.error = message; }); if (sessionId && !cancelRequested && error.code !== "selection_session_expired") { try { await finalize(sessionId, items); } catch (_) { /* The result remains visible. */ } } }
+      uploading = false; activeSessionId = null; setDisabled(choose, false); dropzone.classList.remove("disabled"); dropzone.setAttribute("aria-disabled", "false"); renderQueue(); renderOverlay("done", cancelRequested ? "Đã hủy phần tải lên còn lại. Các tệp đã tải thành công vẫn được giữ." : "Đã hoàn tất tải lên. Kiểm tra kết quả trước khi đóng.");
     };
     const addFiles = (files) => { if (uploading) return; [...files].forEach((file) => { const clientError = uploadLimits.valid ? clientFileError(file, uploadLimits) : null; entries.push({clientFileId: newId(), file, status: clientError ? "blocked" : "pending", clientError, loaded: 0, error: clientError?.message || ""}); }); renderQueue(); };
     const openPicker = () => { if (!uploading) input.click(); };
@@ -297,6 +303,18 @@
     ["dragleave", "drop"].forEach((type) => dropzone.addEventListener(type, (event) => { event.preventDefault(); dropzone.classList.remove("dragover"); dropzoneMessage.textContent = "Kéo thả ảnh/video hoặc bấm để chọn"; }));
     dropzone.addEventListener("drop", (event) => { if (!uploading) addFiles(event.dataTransfer.files); }); start.addEventListener("click", () => upload(pending()));
     overlay?.querySelector("[data-upload-retry-failed]")?.addEventListener("click", () => { const failed = selected().filter((entry) => entry.status === "failed"); failed.forEach((entry) => { entry.presign = null; entry.status = "pending"; entry.loaded = 0; entry.error = ""; }); upload(failed); });
+    overlay?.querySelector("[data-upload-cancel]")?.addEventListener("click", async () => {
+      if (!Number.isInteger(activeSessionId) || cancelRequested) return;
+      if (!window.confirm("Hủy phần tải lên còn lại. Các tệp đã tải thành công vẫn được giữ.")) return;
+      cancelRequested = true; renderOverlay("uploading", "Đang hủy phần tải lên còn lại.");
+      try {
+        const result = await api(cancelUrl(activeSessionId), {});
+        selected().filter((entry) => !terminal.has(entry.status)).forEach((entry) => { entry.status = "cancelled"; entry.error = ""; });
+        renderQueue(); renderOverlay("done", result.idempotent_replay ? "Phiên tải đã được hủy trước đó." : "Đã hủy phần tải lên còn lại. Các tệp đã tải thành công vẫn được giữ.");
+      } catch (error) {
+        cancelRequested = false; renderOverlay("uploading", formatUploadError(error, "Không thể hủy phiên tải. Vui lòng thử lại."));
+      }
+    });
     overlay?.querySelector("[data-upload-close]")?.addEventListener("click", () => { modal?.hide(); if (selected().some((entry) => entry.status === "succeeded")) window.location.reload(); });
     overlay?.addEventListener("hidden.bs.modal", () => focusBeforeModal?.focus());
     renderQueue();

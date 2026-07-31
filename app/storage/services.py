@@ -235,6 +235,8 @@ def _selection_session(user, selection_session_id, module_type, target_type, tar
         if module_type == "company_media":
             raise upload_error("selection_session_target_mismatch", "Phiên tải không hợp lệ.", status_code=403)
         raise StorageAuthorizationError("Upload selection không hợp lệ.")
+    if module_type == "company_media" and session.status == "cancelled":
+        raise upload_error("upload_session_cancelled", "Phiên tải đã được hủy.", status_code=409)
     if session.status != "pending" or session.expires_at <= now:
         if session.status == "pending": session.status = "expired"; db.session.commit()
         if module_type == "company_media":
@@ -556,7 +558,9 @@ def _finalize_company_media_selection_session(*, user, selection_session_id, tar
             "CM-FINALIZE-IDEMPOTENCY", user=user, selection_session_id=session.id, outcome="finalized-replay",
         )
         return _selection_finalize_response(session, items, idempotent_replay=True)
-    if session.status in {"finalized", "cancelled"}:
+    if session.status == "cancelled":
+        raise upload_error("upload_session_cancelled", "Phiên tải đã được hủy.", status_code=409)
+    if session.status == "finalized":
         raise upload_error("selection_session_expired", "Phiên tải đã hết hạn hoặc đã hoàn tất.", status_code=410)
 
     failed_ids = _normalize_failed_item_ids(failed_upload_batch_item_ids)

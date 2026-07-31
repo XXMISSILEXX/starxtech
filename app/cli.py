@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from importlib import metadata
 from pathlib import Path
@@ -12,7 +12,7 @@ from alembic.config import Config as AlembicConfig
 from alembic.script import ScriptDirectory
 from flask import current_app
 from flask_migrate import upgrade as migrate_upgrade
-from sqlalchemy import func, inspect, text
+from sqlalchemy import func, inspect, or_, text
 from werkzeug.security import generate_password_hash
 
 from app.audit import log_audit
@@ -210,6 +210,63 @@ def register_cli(app):
         summary = cleanup_expired_sessions(dry_run=dry_run)
         click.echo("mode={mode} matched={matched} cleaned={cleaned} partial={partial} failed={failed}".format(
             mode="dry-run" if dry_run else "apply", **summary))
+
+    @app.cli.command("cleanup-company-media-uploads")
+    @click.option("--older-than-hours", default=48, type=click.IntRange(min=1), show_default=True,
+                  help="Only consider abandoned sessions older than this many hours.")
+    @click.option("--dry-run/--apply", "dry_run", default=True,
+                  help="Preview by default; --apply performs database-only cleanup.")
+    @click.option("--limit", "limit", default=100, type=click.IntRange(min=1, max=1000), show_default=True)
+    @click.option("--session-id", type=int, default=None, help="Restrict processing to one Company Media session.")
+    def cleanup_company_media_uploads(older_than_hours, dry_run, limit, session_id):
+        """Clean unfinished Company Media upload rows without touching S3."""
+        from app.company_media.upload_cleanup import (
+            SCOPE,
+            TERMINAL_SESSION_STATUSES,
+            cleanup_company_media_upload_session,
+        )
+        from app.models import UploadSelectionSession
+
+        threshold = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=older_than_hours)
+        query = UploadSelectionSession.query.filter(
+            UploadSelectionSession.module_type == SCOPE[0],
+            UploadSelectionSession.target_type == SCOPE[1],
+            UploadSelectionSession.cleaned_at.is_(None),
+            UploadSelectionSession.status.not_in(TERMINAL_SESSION_STATUSES),
+            or_(
+                UploadSelectionSession.expires_at <= threshold,
+                UploadSelectionSession.updated_at <= threshold,
+            ),
+        )
+        if session_id is not None:
+            query = query.filter(UploadSelectionSession.id == session_id)
+        sessions = query.order_by(UploadSelectionSession.id.asc()).limit(limit).all()
+        summary = {
+            "matched": len(sessions), "processed": 0, "cleaned": 0, "replayed": 0,
+            "items_removed": 0, "storage_objects_removed": 0, "protected_storage_objects": 0,
+            "skipped": 0, "dry_run": dry_run,
+        }
+        if not dry_run:
+            for row in sessions:
+                try:
+                    result = cleanup_company_media_upload_session(session_id=row.id)
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+                    raise
+                summary["processed"] += 1
+                summary["cleaned"] += int(not result.idempotent_replay)
+                summary["replayed"] += int(result.idempotent_replay)
+                summary["items_removed"] += result.pending_items_removed
+                summary["storage_objects_removed"] += result.pending_storage_objects_removed
+                summary["protected_storage_objects"] += result.protected_storage_objects_preserved
+        click.echo(
+            "mode={mode} matched={matched} processed={processed} cleaned={cleaned} replayed={replayed} "
+            "items_removed={items_removed} storage_objects_removed={storage_objects_removed} "
+            "protected_storage_objects={protected_storage_objects} skipped={skipped}".format(
+                mode="dry-run" if dry_run else "apply", **summary
+            )
+        )
 
     @app.cli.command("provision-project-document-roots")
     @click.option("--dry-run/--apply", "dry_run", default=True,
