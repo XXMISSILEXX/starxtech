@@ -46,6 +46,11 @@ Keep top-level `url` and `expires_at`; do not switch to a nested `download` obje
 
 ## Phase 2 — Company Media limits and error contract
 
+**Implemented.** The implementation retains the fallback model and current
+effective defaults, adds the two explicit category caps, and records the
+resulting API/JS/test contract in `PHASE2_IMPLEMENTATION_REPORT.md`. Phase 2
+does not change retry idempotency, schema, migration state, or selected/max UI.
+
 ### Goal
 
 Give Company Media its own resolved limit configuration and distinguish user-correctable errors.

@@ -84,6 +84,11 @@ STORAGE_MAX_VIDEO_SIZE_MB=500
 STORAGE_MAX_AUDIO_SIZE_MB=200
 ```
 
+Company Media can now override its own selection, presign, per-file, category,
+concurrency, and session-TTL values with the documented `COMPANY_MEDIA_*`
+environment variables in `.env.example`. Omit an override to retain the shared
+setting fallback; explicit values must be positive integers.
+
 Production secrets should be Docker secrets or equivalent.
 
 ## Monitoring

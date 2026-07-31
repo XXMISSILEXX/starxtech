@@ -1,11 +1,14 @@
 from datetime import datetime
 from pathlib import Path
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
+from flask import current_app
 from app.audit import audit
 from app.extensions import db
 from app.models import (CompanyMediaAlbum, CompanyMediaAlbumPermission, CompanyMediaFile, Role,
     StorageDerivative, UploadBatchItem, User, UserRole)
 from app.storage.services import create_upload_batch_presign, complete_upload_item
+from app.storage.company_media_errors import upload_error
 
 class CompanyMediaError(ValueError): pass
 ALBUM_PERMISSION_FLAGS = ("can_view", "can_upload", "can_edit", "can_delete", "can_download", "can_share")
@@ -164,18 +167,46 @@ def restore_album(user,a): a.is_active=True;a.deleted_at=None;a.updated_by_id=us
 def presign(user,a,items,selection_session_id=None): return create_upload_batch_presign(user=user,module_type="company_media",target_type="album",target_id=a.id,files=items,selection_session_id=selection_session_id)
 def complete(user,a,item_id,payload):
     item=db.session.get(UploadBatchItem,item_id)
-    if not item or item.upload_batch.module_type!="company_media" or item.upload_batch.target_type!="album" or item.upload_batch.target_id!=a.id: raise CompanyMediaError("Upload item không thuộc album.")
-    result=complete_upload_item(user=user,upload_batch_item_id=item_id,checksum_sha256=payload.get("checksum_sha256"));obj=item.storage_object
-    if not obj.mime_type.startswith(("image/","video/")): raise CompanyMediaError("Album chỉ nhận ảnh hoặc video.")
-    media=CompanyMediaFile.query.filter_by(storage_object_id=obj.id).first()
-    created = media is None
-    if created:
-        media = CompanyMediaFile(album_id=a.id,storage_object_id=obj.id,display_name=obj.original_filename,media_type="image" if obj.mime_type.startswith("image/") else "video",created_by_id=user.id)
-        db.session.add(media);db.session.flush();audit("company_media.file.create","CompanyMediaFile",media.id);db.session.commit()
-    if created:
+    if not item:
+        raise upload_error("upload_item_not_available", "Tệp tải lên không còn khả dụng.", status_code=409)
+    if item.upload_batch.module_type!="company_media" or item.upload_batch.target_type!="album" or item.upload_batch.target_id!=a.id: raise CompanyMediaError("Upload item không thuộc album.")
+    def ensure_media(locked_item, was_replay):
+        obj = locked_item.storage_object
+        if not obj.mime_type.startswith(("image/", "video/")):
+            raise CompanyMediaError("Album chỉ nhận ảnh hoặc video.")
+        media = CompanyMediaFile.query.filter_by(storage_object_id=obj.id).first()
+        if media is not None:
+            return {"media_id": media.id, "display_name": media.display_name, "created": False}
+        try:
+            with db.session.begin_nested():
+                media = CompanyMediaFile(
+                    album_id=a.id, storage_object_id=obj.id, display_name=obj.original_filename,
+                    media_type="image" if obj.mime_type.startswith("image/") else "video", created_by_id=user.id,
+                )
+                db.session.add(media)
+                db.session.flush()
+                audit("company_media.file.create", "CompanyMediaFile", media.id)
+        except IntegrityError:
+            media = CompanyMediaFile.query.filter_by(storage_object_id=obj.id).first()
+            if media is None:
+                raise
+            return {"media_id": media.id, "display_name": media.display_name, "created": False}
+        return {"media_id": media.id, "display_name": media.display_name, "created": True}
+
+    result=complete_upload_item(
+        user=user, upload_batch_item_id=item_id, checksum_sha256=payload.get("checksum_sha256"),
+        completion_handler=ensure_media,
+    )
+    completion = result.pop("completion")
+    if completion["created"]:
         from app.media_processing.services import enqueue_media_processing_for_storage_object
-        enqueue_media_processing_for_storage_object(obj.id)
-    return {**result,"file":{"id":media.id,"display_name":media.display_name}}
+        enqueue_media_processing_for_storage_object(result["storage_object_id"])
+    result["idempotent_replay"] = bool(result["idempotent"] and not completion["created"])
+    current_app.logger.info(
+        "company_media_upload event=CM-COMPLETE-IDEMPOTENCY actor_id=%s upload_item_id=%s outcome=%s",
+        user.id, item_id, "completed-replay" if result["idempotent_replay"] else "completed",
+    )
+    return {**result,"file":{"id":completion["media_id"],"display_name":completion["display_name"]}}
 def signed_preview(f,variant=None,user=None):
     if not f or not f.is_active or f.deleted_at:
         raise CompanyMediaError("Tệp chưa sẵn sàng.")
@@ -203,13 +234,24 @@ def signed_preview(f,variant=None,user=None):
 def signed_download(f, user=None):
     from app.storage.providers import get_storage_provider
     from flask import current_app
+    from app.storage.downloads import create_attachment_download, signing_unavailable_error, unavailable_source_error
     user=user or db.session.get(User, f.created_by_id)
-    if f.storage_object.file_size > int(current_app.config["DOWNLOAD_SINGLE_FILE_MAX_BYTES"]): raise CompanyMediaError("Dung lượng tải xuống tối đa là 300 MB mỗi lần.")
+    obj = f.storage_object if f and f.storage_object_id else None
+    # CompanyMediaFile points only to an original StorageObject. Derivatives
+    # live in StorageDerivative and are intentionally never signed here.
+    if not obj or obj.id != f.storage_object_id or obj.upload_status != "active" or obj.deleted_at is not None:
+        raise unavailable_source_error()
+    if obj.file_size > int(current_app.config["DOWNLOAD_SINGLE_FILE_MAX_BYTES"]): raise CompanyMediaError("Dung lượng tải xuống tối đa là 300 MB mỗi lần.")
     from app.storage.quota import ensure_bandwidth, record_download
-    try: ensure_bandwidth(user,f.storage_object.file_size)
+    try: ensure_bandwidth(user,obj.file_size)
     except ValueError as exc: raise CompanyMediaError(str(exc))
-    record_download(user,kind="original",source_type="original",module="company-media",estimated_bytes=f.storage_object.file_size,storage_object_id=f.storage_object_id,estimated_storage_egress_bytes=f.storage_object.file_size,estimated_client_egress_bytes=f.storage_object.file_size);db.session.commit()
-    return get_storage_provider().create_presigned_download(f.storage_object.bucket,f.storage_object.object_key,300,"attachment",f.display_name)
+    try:
+        provider = get_storage_provider()
+    except Exception as exc:
+        raise signing_unavailable_error("provider_configuration") from exc
+    result = create_attachment_download(provider, obj, f.display_name)
+    record_download(user,kind="original",source_type="original",module="company-media",estimated_bytes=obj.file_size,storage_object_id=obj.id,estimated_storage_egress_bytes=obj.file_size,estimated_client_egress_bytes=obj.file_size);db.session.commit()
+    return result
 def set_cover(user,a,media_id):
     f=db.session.get(CompanyMediaFile,media_id)
     if not f or f.album_id!=a.id or not f.is_active or f.deleted_at: raise CompanyMediaError("Ảnh bìa phải là media đang hoạt động trong album.")

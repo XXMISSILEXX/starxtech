@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from importlib import metadata
 from pathlib import Path
@@ -12,7 +12,7 @@ from alembic.config import Config as AlembicConfig
 from alembic.script import ScriptDirectory
 from flask import current_app
 from flask_migrate import upgrade as migrate_upgrade
-from sqlalchemy import inspect, text
+from sqlalchemy import func, inspect, or_, text
 from werkzeug.security import generate_password_hash
 
 from app.audit import log_audit
@@ -163,6 +163,45 @@ def register_cli(app):
         if invalid:
             raise click.ClickException("Có ReportAttachment active không tham chiếu StorageObject S3 active.")
 
+    @app.cli.command("company-media-upload-preflight")
+    def company_media_upload_preflight():
+        """Read-only duplicate/integrity gate required before Phase 4 migration."""
+        from app.models import StorageObject, UploadBatchItem
+        duplicate_keys = db.session.execute(text("""
+            SELECT b.selection_session_id, i.client_file_id, COUNT(*) AS row_count
+            FROM upload_batch_items AS i
+            JOIN upload_batches AS b ON b.id = i.upload_batch_id
+            WHERE b.selection_session_id IS NOT NULL
+            GROUP BY b.selection_session_id, i.client_file_id
+            HAVING COUNT(*) > 1
+        """)).all()
+        invalid_ids = UploadBatchItem.query.filter(
+            (UploadBatchItem.client_file_id == None)  # noqa: E711
+            | (func.trim(UploadBatchItem.client_file_id) == "")
+            | (func.length(UploadBatchItem.client_file_id) > 255)
+        ).all()
+        reused_objects = db.session.execute(text("""
+            SELECT storage_object_id, COUNT(*) AS row_count
+            FROM company_media_files
+            GROUP BY storage_object_id
+            HAVING COUNT(*) > 1
+        """)).all()
+        missing_pending_objects = UploadBatchItem.query.outerjoin(
+            StorageObject, UploadBatchItem.storage_object_id == StorageObject.id
+        ).filter(
+            UploadBatchItem.status.in_(["accepted", "uploading"]),
+            (UploadBatchItem.storage_object_id == None) | (StorageObject.id == None),  # noqa: E711
+        ).all()
+        click.echo(
+            "duplicate_keys={keys} invalid_client_ids={invalid} reused_media_objects={reused} "
+            "pending_missing_objects={missing}".format(
+                keys=len(duplicate_keys), invalid=len(invalid_ids), reused=len(reused_objects),
+                missing=len(missing_pending_objects),
+            )
+        )
+        if duplicate_keys or invalid_ids or reused_objects or missing_pending_objects:
+            raise click.ClickException("Company Media upload preflight failed; review rows manually before migration.")
+
     @app.cli.command("cleanup-expired-report-upload-sessions")
     @click.option("--dry-run/--apply", "dry_run", default=True,
                   help="Preview cleanup or delete expired, non-finalized Daily Report uploads.")
@@ -171,6 +210,63 @@ def register_cli(app):
         summary = cleanup_expired_sessions(dry_run=dry_run)
         click.echo("mode={mode} matched={matched} cleaned={cleaned} partial={partial} failed={failed}".format(
             mode="dry-run" if dry_run else "apply", **summary))
+
+    @app.cli.command("cleanup-company-media-uploads")
+    @click.option("--older-than-hours", default=48, type=click.IntRange(min=1), show_default=True,
+                  help="Only consider abandoned sessions older than this many hours.")
+    @click.option("--dry-run/--apply", "dry_run", default=True,
+                  help="Preview by default; --apply performs database-only cleanup.")
+    @click.option("--limit", "limit", default=100, type=click.IntRange(min=1, max=1000), show_default=True)
+    @click.option("--session-id", type=int, default=None, help="Restrict processing to one Company Media session.")
+    def cleanup_company_media_uploads(older_than_hours, dry_run, limit, session_id):
+        """Clean unfinished Company Media upload rows without touching S3."""
+        from app.company_media.upload_cleanup import (
+            SCOPE,
+            TERMINAL_SESSION_STATUSES,
+            cleanup_company_media_upload_session,
+        )
+        from app.models import UploadSelectionSession
+
+        threshold = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=older_than_hours)
+        query = UploadSelectionSession.query.filter(
+            UploadSelectionSession.module_type == SCOPE[0],
+            UploadSelectionSession.target_type == SCOPE[1],
+            UploadSelectionSession.cleaned_at.is_(None),
+            UploadSelectionSession.status.not_in(TERMINAL_SESSION_STATUSES),
+            or_(
+                UploadSelectionSession.expires_at <= threshold,
+                UploadSelectionSession.updated_at <= threshold,
+            ),
+        )
+        if session_id is not None:
+            query = query.filter(UploadSelectionSession.id == session_id)
+        sessions = query.order_by(UploadSelectionSession.id.asc()).limit(limit).all()
+        summary = {
+            "matched": len(sessions), "processed": 0, "cleaned": 0, "replayed": 0,
+            "items_removed": 0, "storage_objects_removed": 0, "protected_storage_objects": 0,
+            "skipped": 0, "dry_run": dry_run,
+        }
+        if not dry_run:
+            for row in sessions:
+                try:
+                    result = cleanup_company_media_upload_session(session_id=row.id)
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+                    raise
+                summary["processed"] += 1
+                summary["cleaned"] += int(not result.idempotent_replay)
+                summary["replayed"] += int(result.idempotent_replay)
+                summary["items_removed"] += result.pending_items_removed
+                summary["storage_objects_removed"] += result.pending_storage_objects_removed
+                summary["protected_storage_objects"] += result.protected_storage_objects_preserved
+        click.echo(
+            "mode={mode} matched={matched} processed={processed} cleaned={cleaned} replayed={replayed} "
+            "items_removed={items_removed} storage_objects_removed={storage_objects_removed} "
+            "protected_storage_objects={protected_storage_objects} skipped={skipped}".format(
+                mode="dry-run" if dry_run else "apply", **summary
+            )
+        )
 
     @app.cli.command("provision-project-document-roots")
     @click.option("--dry-run/--apply", "dry_run", default=True,

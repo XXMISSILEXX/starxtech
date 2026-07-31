@@ -80,6 +80,9 @@ class UploadSelectionSession(TimestampMixin, db.Model):
     presigned_size_bytes = db.Column(db.BigInteger, nullable=False, default=0, server_default="0")
     status = db.Column(db.String(20), nullable=False, default="pending", server_default="pending")
     expires_at = db.Column(db.DateTime, nullable=False); completed_at = db.Column(db.DateTime)
+    # Phase 5 records that the database-only cleanup has already removed every
+    # disposable unfinished item. Completed items intentionally remain.
+    cleaned_at = db.Column(db.DateTime, nullable=True)
     created_by = db.relationship("User", foreign_keys=[created_by_id])
     batches = db.relationship("UploadBatch", foreign_keys=[UploadBatch.selection_session_id])
 
@@ -100,6 +103,7 @@ class UploadBatchItem(TimestampMixin, db.Model):
     __tablename__ = "upload_batch_items"
     __table_args__ = (
         db.UniqueConstraint("upload_batch_id", "client_file_id", name="uq_upload_batch_items_client_file"),
+        db.UniqueConstraint("selection_session_id", "client_file_id", name="uq_upload_batch_items_selection_client_file"),
         db.CheckConstraint("status IN ('accepted', 'rejected', 'uploading', 'completed', 'failed', 'cancelled')", name="ck_upload_batch_items_status"),
         db.Index("idx_upload_batch_items_batch_status", "upload_batch_id", "status"),
         db.Index("idx_upload_batch_items_storage_object", "storage_object_id"),
@@ -108,6 +112,9 @@ class UploadBatchItem(TimestampMixin, db.Model):
 
     id = db.Column(STORAGE_ID, primary_key=True)
     upload_batch_id = db.Column(STORAGE_ID, db.ForeignKey("upload_batches.id", ondelete="CASCADE"), nullable=False)
+    # This is deliberately direct.  The parent batch is only a request grouping
+    # and therefore cannot be the durable idempotency scope for a selection.
+    selection_session_id = db.Column(STORAGE_ID, db.ForeignKey("upload_selection_sessions.id"), nullable=True, index=True)
     storage_object_id = db.Column(STORAGE_ID, db.ForeignKey("storage_objects.id"), nullable=True)
     client_file_id = db.Column(db.String(255), nullable=False)
     client_section_id = db.Column(db.String(80), nullable=True)
@@ -121,4 +128,5 @@ class UploadBatchItem(TimestampMixin, db.Model):
     finalized_at = db.Column(db.DateTime, nullable=True)
 
     upload_batch = db.relationship("UploadBatch", back_populates="items")
+    selection_session = db.relationship("UploadSelectionSession", foreign_keys=[selection_session_id])
     storage_object = db.relationship("StorageObject", back_populates="batch_items")

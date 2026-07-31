@@ -30,8 +30,22 @@ def read_csv_setting(name: str) -> tuple[str, ...]:
     return tuple(value.strip().lower() for value in os.getenv(name, "").split(",") if value.strip())
 
 
+def read_optional_positive_int(name: str) -> int | None:
+    """Read an optional positive integer without treating invalid input as unset."""
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return None
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be a positive integer") from exc
+    if value <= 0:
+        raise RuntimeError(f"{name} must be a positive integer")
+    return value
+
+
 class Config:
-    STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", "20260729-8202")
+    STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", "20260730-8404")
     # Do not supply an implicit environment.  A typo here used to silently
     # retain the development signing key while skipping production checks.
     APP_ENV = os.getenv("APP_ENV")
@@ -93,6 +107,18 @@ class Config:
     UPLOAD_SELECTION_MAX_FILES = int(os.getenv("UPLOAD_SELECTION_MAX_FILES", "500"))
     UPLOAD_SELECTION_MAX_BYTES = int(os.getenv("UPLOAD_SELECTION_MAX_BYTES", str(2 * 1024 * 1024 * 1024)))
     UPLOAD_SINGLE_FILE_MAX_BYTES = int(os.getenv("UPLOAD_SINGLE_FILE_MAX_BYTES", str(300 * 1024 * 1024)))
+    # Company Media values intentionally remain optional here.  The resolver
+    # applies the shared-setting fallback so existing deployments retain their
+    # current effective capacity until they explicitly opt into an override.
+    COMPANY_MEDIA_MAX_SELECTION_FILES = read_optional_positive_int("COMPANY_MEDIA_MAX_SELECTION_FILES")
+    COMPANY_MEDIA_MAX_SELECTION_BYTES = read_optional_positive_int("COMPANY_MEDIA_MAX_SELECTION_BYTES")
+    COMPANY_MEDIA_MAX_FILES_PER_BATCH = read_optional_positive_int("COMPANY_MEDIA_MAX_FILES_PER_BATCH")
+    COMPANY_MEDIA_MAX_PRESIGN_BATCH_BYTES = read_optional_positive_int("COMPANY_MEDIA_MAX_PRESIGN_BATCH_BYTES")
+    COMPANY_MEDIA_MAX_FILE_BYTES = read_optional_positive_int("COMPANY_MEDIA_MAX_FILE_BYTES")
+    COMPANY_MEDIA_MAX_IMAGE_BYTES = read_optional_positive_int("COMPANY_MEDIA_MAX_IMAGE_BYTES")
+    COMPANY_MEDIA_MAX_VIDEO_BYTES = read_optional_positive_int("COMPANY_MEDIA_MAX_VIDEO_BYTES")
+    COMPANY_MEDIA_UPLOAD_CONCURRENCY = read_optional_positive_int("COMPANY_MEDIA_UPLOAD_CONCURRENCY")
+    COMPANY_MEDIA_UPLOAD_SESSION_TTL_SECONDS = read_optional_positive_int("COMPANY_MEDIA_UPLOAD_SESSION_TTL_SECONDS")
     DOWNLOAD_SINGLE_FILE_MAX_BYTES = int(os.getenv("DOWNLOAD_SINGLE_FILE_MAX_BYTES", str(300 * 1024 * 1024)))
     STORAGE_QUOTA_BYTES = int(os.getenv("STORAGE_QUOTA_BYTES", str(500 * 1024 * 1024 * 1024)))
     DOWNLOAD_MONTHLY_QUOTA_BYTES = int(os.getenv("DOWNLOAD_MONTHLY_QUOTA_BYTES", str(1024 * 1024 * 1024 * 1024)))

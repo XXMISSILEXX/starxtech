@@ -18,6 +18,7 @@ from app.project_documents.services import (DocumentValidationError, archive_fol
     complete_folder_upload_item, create_file_download_url, create_file_preview_url, rename_file, archive_file, restore_file, file_payload,
     bulk_archive_files, bulk_restore_files, bulk_file_download_urls, create_custom_root_folder)
 from app.storage.exceptions import StorageNotFoundError, StorageValidationError, StorageAuthorizationError
+from app.storage.downloads import SignedDownloadError, error_payload
 from app.storage.services import create_upload_selection_session, finalize_upload_selection_session
 from app.bulk_downloads.services import (BulkDownloadError, parse_file_ids, preflight_document_download,
     request_document_download, stream_zip_download, serialize_job)
@@ -175,6 +176,9 @@ def signed_download(file_id):
     document_file = _document_file_or_404(file_id)
     if not can_download_project_document_file(current_user, document_file): abort(403)
     try: return jsonify(create_file_download_url(current_user, document_file))
+    except SignedDownloadError as exc:
+        current_app.logger.warning("signed_download_failed event=PD-SIGNED-DOWNLOAD module=project_documents file_id=%s actor_id=%s status=%s category=%s", document_file.id, current_user.id, exc.status_code, exc.category)
+        return jsonify(error_payload(exc)), exc.status_code
     except DocumentValidationError as exc: return jsonify(error=str(exc)), 400
 
 

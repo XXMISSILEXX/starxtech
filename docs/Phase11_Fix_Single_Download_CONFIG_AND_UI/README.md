@@ -24,6 +24,18 @@ Independently verify the earlier Company Media audit before any repair work is a
 - [Proposed fix plan](PROPOSED_FIX_PLAN.md) — phased repair plan only; no patch.
 - [Test and rollout plan](TEST_AND_ROLLOUT_PLAN.md) — future verification and rollout sequence only.
 
-## Outcome
+## Implementation status
+
+- Phase 1: completed in the repository before this implementation.
+- Phase 2: completed — dedicated Company Media resolved limits, structured
+  upload errors, server-rendered public limits payload, and compatible JS
+  consumption are implemented. See [Phase 2 implementation report](PHASE2_IMPLEMENTATION_REPORT.md).
+- Phase 3A: completed — Company Media selected/max, client-side pre-validation,
+  batch preview, accessible/mobile queue states, and structured error rendering
+  are implemented. See [Phase 3A implementation report](PHASE3A_IMPLEMENTATION_REPORT.md).
+- Phase 3B remains intentionally out of scope: the approved session/retry
+  idempotency lifecycle decision and any migration it requires.
+
+## Original verification outcome
 
 The Company Media single-download contract mismatch is confirmed. The Project Documents menu single-download route has the same mismatch. The retry/session accounting issue is also confirmed by an isolated runtime check. HEIC is not on the original-download code path but can independently affect derivative-based preview.

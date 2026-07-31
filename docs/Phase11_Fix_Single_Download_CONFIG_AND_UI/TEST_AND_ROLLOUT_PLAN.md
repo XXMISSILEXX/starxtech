@@ -1,4 +1,22 @@
-# Test and rollout plan (not executed)
+# Test and rollout plan
+
+## Phase 2 local result
+
+Phase 2 adds SQLite/FakeStorage and Node static-contract coverage for resolved
+limits, structured selection/batch/session errors, partial rejection, and the
+server-rendered JS limits payload. The full repository verification commands
+and their final results are recorded in `PHASE2_IMPLEMENTATION_REPORT.md`.
+No real provider request, migration, deployment, or production smoke test is
+part of Phase 2.
+
+## Phase 3A local result
+
+Phase 3A adds Node coverage for resolved-limit parsing, binary byte formatting,
+selection summaries, client file validation, count/byte boundaries, batch
+splitting by count and bytes, error sanitization, and accessible template
+markers. The album template test verifies the public payload and versioned
+asset without exposing storage secrets. Full-suite results are recorded in
+`PHASE3A_IMPLEMENTATION_REPORT.md`; no real provider request is made.
 
 ## Test matrix
 
@@ -12,7 +30,7 @@
 | Cache/CSP | Cache disabled redirect, cache hit/miss, X-Accel relative-path header, storage-origin CSP sources |
 | Limits | 499/500/501 selection files; just below/equal/above 2 GiB; 49/50/51 batch files; just below/equal/above 512 MiB; 50 MiB image and 300 MiB effective video boundaries |
 | Sessions | Same-ID repeated presign, same-ID concurrent requests, failed HEAD retry, selected change, session expiry, album mismatch, partial success, finalization, cancel if added |
-| UI/accessibility | Add/remove/drop count/byte updates, invalid disabled state, actual/max text, B/KiB/MiB/GiB formatting, aria-live, keyboard dropzone, mobile layout, retryable/non-retryable errors |
+| UI/accessibility | Add/remove/drop/clear count-byte updates, invalid disabled state, actual/max text, B/KiB/MiB/GiB formatting, aria-live, keyboard dropzone, mobile layout, retryable/non-retryable errors |
 
 ## Local verification after implementation
 
