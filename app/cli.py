@@ -12,7 +12,7 @@ from alembic.config import Config as AlembicConfig
 from alembic.script import ScriptDirectory
 from flask import current_app
 from flask_migrate import upgrade as migrate_upgrade
-from sqlalchemy import inspect, text
+from sqlalchemy import func, inspect, text
 from werkzeug.security import generate_password_hash
 
 from app.audit import log_audit
@@ -162,6 +162,45 @@ def register_cli(app):
         click.echo(f"active={len(rows)} invalid={len(invalid)} ids={','.join(map(str, invalid)) or '-'}")
         if invalid:
             raise click.ClickException("Có ReportAttachment active không tham chiếu StorageObject S3 active.")
+
+    @app.cli.command("company-media-upload-preflight")
+    def company_media_upload_preflight():
+        """Read-only duplicate/integrity gate required before Phase 4 migration."""
+        from app.models import StorageObject, UploadBatchItem
+        duplicate_keys = db.session.execute(text("""
+            SELECT b.selection_session_id, i.client_file_id, COUNT(*) AS row_count
+            FROM upload_batch_items AS i
+            JOIN upload_batches AS b ON b.id = i.upload_batch_id
+            WHERE b.selection_session_id IS NOT NULL
+            GROUP BY b.selection_session_id, i.client_file_id
+            HAVING COUNT(*) > 1
+        """)).all()
+        invalid_ids = UploadBatchItem.query.filter(
+            (UploadBatchItem.client_file_id == None)  # noqa: E711
+            | (func.trim(UploadBatchItem.client_file_id) == "")
+            | (func.length(UploadBatchItem.client_file_id) > 255)
+        ).all()
+        reused_objects = db.session.execute(text("""
+            SELECT storage_object_id, COUNT(*) AS row_count
+            FROM company_media_files
+            GROUP BY storage_object_id
+            HAVING COUNT(*) > 1
+        """)).all()
+        missing_pending_objects = UploadBatchItem.query.outerjoin(
+            StorageObject, UploadBatchItem.storage_object_id == StorageObject.id
+        ).filter(
+            UploadBatchItem.status.in_(["accepted", "uploading"]),
+            (UploadBatchItem.storage_object_id == None) | (StorageObject.id == None),  # noqa: E711
+        ).all()
+        click.echo(
+            "duplicate_keys={keys} invalid_client_ids={invalid} reused_media_objects={reused} "
+            "pending_missing_objects={missing}".format(
+                keys=len(duplicate_keys), invalid=len(invalid_ids), reused=len(reused_objects),
+                missing=len(missing_pending_objects),
+            )
+        )
+        if duplicate_keys or invalid_ids or reused_objects or missing_pending_objects:
+            raise click.ClickException("Company Media upload preflight failed; review rows manually before migration.")
 
     @app.cli.command("cleanup-expired-report-upload-sessions")
     @click.option("--dry-run/--apply", "dry_run", default=True,

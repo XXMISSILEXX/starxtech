@@ -91,9 +91,11 @@ test("structured error formatter supports compatibility fields and never exposes
   assert.match(uploader.formatUploadError("Lỗi cũ an toàn"), /Lỗi cũ/);
   assert.equal(uploader.formatUploadError("<Error><Code>AccessDenied</Code></Error>"), "Không thể xử lý yêu cầu tải lên.");
   assert.equal(uploader.formatUploadError({code: "s3_upload_failed", message: "<Error>secret</Error>"}), "Tải lên kho lưu trữ thất bại. Vui lòng thử lại.");
+  assert.equal(uploader.formatUploadError({code: "idempotency_conflict"}), "Mã tệp đã được sử dụng cho một tệp khác.");
+  assert.match(uploader.formatUploadError({code: "selection_session_expired"}), /hết hạn/);
 });
 
-test("uploader retains direct POST progress, bounded concurrency, stable client ids, and double-submit guard", () => {
+test("uploader retains direct POST progress, bounded concurrency, stable client ids, and idempotent retry guards", () => {
   assert.match(source, /clientFileId: newId\(\)/);
   assert.match(source, /new Map\(result\.items\.map\(\(item\) => \[item\.client_file_id, item\]\)\)/);
   assert.match(source, /new XMLHttpRequest\(\)/);
@@ -101,6 +103,11 @@ test("uploader retains direct POST progress, bounded concurrency, stable client 
   assert.match(source, /Math\.min\(concurrency, items\.length\)/);
   assert.match(source, /if \(uploading \|\| !items\.length \|\| selectionState\(\)\.errors\.length\) return/);
   assert.match(source, /nonRetryableS3Codes\.has\(error\.providerCode\)/);
+  assert.match(source, /const retainedSessionIds = new Set\(items\.map\(\(entry\) => entry\.sessionId\)/);
+  assert.match(source, /if \(item\.status === "completed"\) \{ entry\.status = "succeeded"/);
+  assert.match(source, /error\.code !== "selection_session_expired"/);
+  assert.doesNotMatch(source, /localStorage|sessionStorage/);
+  assert.doesNotMatch(source, /entry\.sessionId = null/);
 });
 
 test("template exposes accessible summary, validation, queue, and modal contracts", () => {

@@ -1,6 +1,8 @@
 from datetime import datetime
 from pathlib import Path
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
+from flask import current_app
 from app.audit import audit
 from app.extensions import db
 from app.models import (CompanyMediaAlbum, CompanyMediaAlbumPermission, CompanyMediaFile, Role,
@@ -165,17 +167,43 @@ def presign(user,a,items,selection_session_id=None): return create_upload_batch_
 def complete(user,a,item_id,payload):
     item=db.session.get(UploadBatchItem,item_id)
     if not item or item.upload_batch.module_type!="company_media" or item.upload_batch.target_type!="album" or item.upload_batch.target_id!=a.id: raise CompanyMediaError("Upload item không thuộc album.")
-    result=complete_upload_item(user=user,upload_batch_item_id=item_id,checksum_sha256=payload.get("checksum_sha256"));obj=item.storage_object
-    if not obj.mime_type.startswith(("image/","video/")): raise CompanyMediaError("Album chỉ nhận ảnh hoặc video.")
-    media=CompanyMediaFile.query.filter_by(storage_object_id=obj.id).first()
-    created = media is None
-    if created:
-        media = CompanyMediaFile(album_id=a.id,storage_object_id=obj.id,display_name=obj.original_filename,media_type="image" if obj.mime_type.startswith("image/") else "video",created_by_id=user.id)
-        db.session.add(media);db.session.flush();audit("company_media.file.create","CompanyMediaFile",media.id);db.session.commit()
-    if created:
+    def ensure_media(locked_item, was_replay):
+        obj = locked_item.storage_object
+        if not obj.mime_type.startswith(("image/", "video/")):
+            raise CompanyMediaError("Album chỉ nhận ảnh hoặc video.")
+        media = CompanyMediaFile.query.filter_by(storage_object_id=obj.id).first()
+        if media is not None:
+            return {"media_id": media.id, "display_name": media.display_name, "created": False}
+        try:
+            with db.session.begin_nested():
+                media = CompanyMediaFile(
+                    album_id=a.id, storage_object_id=obj.id, display_name=obj.original_filename,
+                    media_type="image" if obj.mime_type.startswith("image/") else "video", created_by_id=user.id,
+                )
+                db.session.add(media)
+                db.session.flush()
+                audit("company_media.file.create", "CompanyMediaFile", media.id)
+        except IntegrityError:
+            media = CompanyMediaFile.query.filter_by(storage_object_id=obj.id).first()
+            if media is None:
+                raise
+            return {"media_id": media.id, "display_name": media.display_name, "created": False}
+        return {"media_id": media.id, "display_name": media.display_name, "created": True}
+
+    result=complete_upload_item(
+        user=user, upload_batch_item_id=item_id, checksum_sha256=payload.get("checksum_sha256"),
+        completion_handler=ensure_media,
+    )
+    completion = result.pop("completion")
+    if completion["created"]:
         from app.media_processing.services import enqueue_media_processing_for_storage_object
-        enqueue_media_processing_for_storage_object(obj.id)
-    return {**result,"file":{"id":media.id,"display_name":media.display_name}}
+        enqueue_media_processing_for_storage_object(result["storage_object_id"])
+    result["idempotent_replay"] = bool(result["idempotent"] and not completion["created"])
+    current_app.logger.info(
+        "company_media_upload event=CM-COMPLETE-IDEMPOTENCY actor_id=%s upload_item_id=%s outcome=%s",
+        user.id, item_id, "completed-replay" if result["idempotent_replay"] else "completed",
+    )
+    return {**result,"file":{"id":completion["media_id"],"display_name":completion["display_name"]}}
 def signed_preview(f,variant=None,user=None):
     if not f or not f.is_active or f.deleted_at:
         raise CompanyMediaError("Tệp chưa sẵn sàng.")

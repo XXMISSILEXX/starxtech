@@ -231,4 +231,4 @@ def test_company_media_uses_the_versioned_shared_preview_asset(client, app):
     _login(client, "admin")
     response = client.get("/company-media/albums/1")
     assert response.status_code == 200
-    assert b"project-document-preview.js?v=20260730-8303" in response.data
+    assert b"project-document-preview.js?v=20260730-8404" in response.data

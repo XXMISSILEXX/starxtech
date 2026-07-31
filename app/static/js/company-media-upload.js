@@ -114,6 +114,9 @@
       selection_declared_byte_quota_exceeded: `Dung lượng khai báo ${byteActualMax || "vượt giới hạn phiên tải"}.`,
       selection_session_expired: "Phiên tải đã hết hạn hoặc đã hoàn tất. Hãy chọn tải lại.",
       selection_session_target_mismatch: "Phiên tải không hợp lệ cho album này.",
+      idempotency_conflict: "Mã tệp đã được sử dụng cho một tệp khác.",
+      upload_item_not_retryable: "Tệp này không thể thử lại. Vui lòng chọn lại tệp.",
+      selection_session_expired: "Phiên tải đã hết hạn. Vui lòng chọn lại tệp để bắt đầu lại.",
       head_verification_failed: "Không thể xác minh tệp đã tải lên. Bạn có thể tải lại tệp.",
       s3_upload_failed: "Tải lên kho lưu trữ thất bại. Vui lòng thử lại.",
     };
@@ -260,14 +263,20 @@
     };
     const runWithConcurrency = async (items) => { let cursor = 0; const worker = async () => { while (cursor < items.length) { const entry = items[cursor++]; try { await uploadOne(entry); } catch (error) { entry.status = "failed"; entry.error = formatUploadError(error, safeReason(error.code, error.message)); } renderQueue(); renderOverlay("uploading", "Đang tải tệp lên kho lưu trữ."); } }; await Promise.all(Array.from({length: Math.min(concurrency, items.length)}, worker)); };
     const prepare = async (items) => {
-      const session = await api(sessionUrl(), {file_count: items.length, total_size_bytes: items.reduce((sum, entry) => sum + entry.file.size, 0)}); const sessionId = session.selection_session_id;
+      const retainedSessionIds = new Set(items.map((entry) => entry.sessionId).filter(Number.isInteger));
+      let sessionId;
+      if (retainedSessionIds.size === 1) sessionId = [...retainedSessionIds][0];
+      else {
+        const session = await api(sessionUrl(), {file_count: items.length, total_size_bytes: items.reduce((sum, entry) => sum + entry.file.size, 0)});
+        sessionId = session.selection_session_id;
+      }
       items.forEach((entry) => { entry.sessionId = sessionId; entry.status = "pending"; });
       const {batches, oversized} = buildBatches(items, uploadLimits);
       oversized.forEach((entry) => { entry.status = "blocked"; entry.error = `Tệp vượt giới hạn batch ${formatBytes(uploadLimits.max_batch_bytes)}.`; });
       for (const group of batches) {
         const result = await api(root.dataset.presignUrl, {selection_session_id: sessionId, files: group.map((entry) => ({client_file_id: entry.clientFileId, filename: entry.file.name, mime_type: entry.file.type, size: entry.file.size}))});
         const byClientId = new Map(result.items.map((item) => [item.client_file_id, item]));
-        group.forEach((entry) => { const item = byClientId.get(entry.clientFileId); if (!item) { entry.status = "failed"; entry.error = "Server không trả thông tin cho tệp này."; return; } if (!item.accepted) { entry.status = "blocked"; entry.error = formatUploadError(item.error || item.error_message, "Tệp không được chấp nhận."); return; } entry.itemId = item.upload_batch_item_id; entry.presign = item; entry.status = "ready"; });
+        group.forEach((entry) => { const item = byClientId.get(entry.clientFileId); if (!item) { entry.status = "failed"; entry.error = "Server không trả thông tin cho tệp này."; return; } if (!item.accepted) { entry.status = "blocked"; entry.error = formatUploadError(item.error || item.error_message, "Tệp không được chấp nhận."); return; } entry.itemId = item.upload_batch_item_id; entry.presign = item; if (item.status === "completed") { entry.status = "succeeded"; entry.loaded = entry.file.size; entry.error = ""; return; } entry.status = "ready"; });
         renderQueue(); renderOverlay("preparing", "Đang kiểm tra tệp đã chọn.");
       }
       return sessionId;
@@ -277,7 +286,7 @@
       if (uploading || !items.length || selectionState().errors.length) return;
       uploading = true; focusBeforeModal = document.activeElement; setDisabled(choose, true); setDisabled(clear, true); dropzone.classList.add("disabled"); dropzone.setAttribute("aria-disabled", "true"); modal?.show(); renderQueue(); renderOverlay("preparing", "Đang kiểm tra tệp đã chọn."); let sessionId;
       try { sessionId = await prepare(items); await runWithConcurrency(items.filter((entry) => entry.status === "ready")); await finalize(sessionId, items); }
-      catch (error) { items.filter((entry) => !terminal.has(entry.status)).forEach((entry) => { entry.status = "failed"; entry.error = formatUploadError(error, "Không thể chuẩn bị tải tệp."); }); if (sessionId) { try { await finalize(sessionId, items); } catch (_) { /* The result remains visible; pending objects expire safely. */ } } }
+      catch (error) { const message = formatUploadError(error, "Không thể chuẩn bị tải tệp."); items.filter((entry) => !terminal.has(entry.status)).forEach((entry) => { entry.status = "failed"; entry.error = message; }); if (sessionId && error.code !== "selection_session_expired") { try { await finalize(sessionId, items); } catch (_) { /* The result remains visible. */ } } }
       uploading = false; setDisabled(choose, false); dropzone.classList.remove("disabled"); dropzone.setAttribute("aria-disabled", "false"); renderQueue(); renderOverlay("done", "Đã hoàn tất tải lên. Kiểm tra kết quả trước khi đóng.");
     };
     const addFiles = (files) => { if (uploading) return; [...files].forEach((file) => { const clientError = uploadLimits.valid ? clientFileError(file, uploadLimits) : null; entries.push({clientFileId: newId(), file, status: clientError ? "blocked" : "pending", clientError, loaded: 0, error: clientError?.message || ""}); }); renderQueue(); };
@@ -287,7 +296,7 @@
     ["dragenter", "dragover"].forEach((type) => dropzone.addEventListener(type, (event) => { if (uploading) return; event.preventDefault(); dropzone.classList.add("dragover"); dropzoneMessage.textContent = "Thả tệp để tải lên"; }));
     ["dragleave", "drop"].forEach((type) => dropzone.addEventListener(type, (event) => { event.preventDefault(); dropzone.classList.remove("dragover"); dropzoneMessage.textContent = "Kéo thả ảnh/video hoặc bấm để chọn"; }));
     dropzone.addEventListener("drop", (event) => { if (!uploading) addFiles(event.dataTransfer.files); }); start.addEventListener("click", () => upload(pending()));
-    overlay?.querySelector("[data-upload-retry-failed]")?.addEventListener("click", () => { const failed = selected().filter((entry) => entry.status === "failed"); failed.forEach((entry) => { entry.itemId = null; entry.presign = null; entry.sessionId = null; entry.status = "pending"; entry.loaded = 0; entry.error = ""; }); upload(failed); });
+    overlay?.querySelector("[data-upload-retry-failed]")?.addEventListener("click", () => { const failed = selected().filter((entry) => entry.status === "failed"); failed.forEach((entry) => { entry.presign = null; entry.status = "pending"; entry.loaded = 0; entry.error = ""; }); upload(failed); });
     overlay?.querySelector("[data-upload-close]")?.addEventListener("click", () => { modal?.hide(); if (selected().some((entry) => entry.status === "succeeded")) window.location.reload(); });
     overlay?.addEventListener("hidden.bs.modal", () => focusBeforeModal?.focus());
     renderQueue();

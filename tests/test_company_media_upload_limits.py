@@ -248,7 +248,7 @@ def test_company_media_upload_routes_return_structured_errors_and_template_limit
     assert b'role="alert"' in page.data
     assert b"STORAGE_ACCESS_KEY" not in page.data
     assert b"STORAGE_SECRET" not in page.data
-    assert b"company-media-upload.js?v=20260730-8303" in page.data
+    assert b"company-media-upload.js?v=20260730-8404" in page.data
 
     selection = client.post(f"/company-media/albums/{album_id}/files/upload-selection-sessions", json={"file_count": 501, "total_size_bytes": 1})
     assert selection.status_code == 422
