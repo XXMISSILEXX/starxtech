@@ -1,10 +1,11 @@
-import inspect
 from datetime import date
 
-from app import register_auth_guard
+import pytest
+from werkzeug.security import generate_password_hash
+
 from app.auth.permissions import can_edit_progress_entry, can_view_project_progress
 from app.extensions import db
-from app.models import ProgressEntry, ProgressGroup, ProgressItem, ProgressType, User
+from app.models import ProgressEntry, ProgressGroup, ProgressItem, ProgressType, ProjectUser, Role, User
 from app.permissions.registry import DEFAULTS, PERMISSIONS
 from app.project_memberships import CAPABILITY_FIELDS, PROJECT_ROLE_PRESETS, READ_CAPABILITIES
 
@@ -50,8 +51,16 @@ def test_progress_capabilities_and_presets_match_the_specification():
     assert progress_capabilities <= PROJECT_ROLE_PRESETS["PROJECT_OWNER"]
 
 
-def test_construction_progress_endpoint_prefix_is_in_reports_module_gate():
-    assert '"construction_progress."' in inspect.getsource(register_auth_guard)
+def test_construction_progress_module_gate_rejects_user_without_reports_access(client, app):
+    with app.app_context():
+        role = Role.query.filter_by(code="REPORTER").one()
+        user = User(id=99, username="no-progress-module", email="no-progress-module@example.com", full_name="No Module", password_hash=generate_password_hash("password123"), role=role, legacy_role="REPORTER")
+        db.session.add(user)
+        db.session.commit()
+
+    _login(client, "no-progress-module")
+    assert client.get("/projects/1/progress").status_code == 403
+    assert client.post("/projects/1/progress/types", data={"name": "Không được tạo"}).status_code == 403
 
 
 def test_progress_entry_owner_or_editor_may_edit(app):
@@ -112,3 +121,76 @@ def test_progress_entry_creator_cannot_edit_another_users_entry(client, app):
 
     _login(client, "reporter")
     assert client.post(f"/projects/1/progress/entries/{entry_id}/edit", data={"report_date": "2026-01-01", "quantity": "2"}).status_code == 403
+    with app.app_context():
+        assert db.session.get(ProgressEntry, entry_id).quantity == 1
+
+
+def _progress_objects():
+    first = _type_for_project(1)
+    second = _type_for_project(2)
+    group = ProgressGroup(project_id=1, progress_type_id=first.id, name="Khu vực A bí mật", created_by_id=1)
+    other_group = ProgressGroup(project_id=2, progress_type_id=second.id, name="Khu vực B bí mật", created_by_id=1)
+    db.session.add_all((group, other_group)); db.session.flush()
+    item = ProgressItem(project_id=1, progress_group_id=group.id, name="Hạng mục A bí mật", unit="m", planned_quantity=10, created_by_id=1)
+    other_item = ProgressItem(project_id=2, progress_group_id=other_group.id, name="Hạng mục B bí mật", unit="m", planned_quantity=10, created_by_id=1)
+    db.session.add_all((item, other_item)); db.session.flush()
+    entry = ProgressEntry(project_id=2, progress_item_id=other_item.id, report_date=date(2026, 1, 1), quantity=1, created_by_id=1)
+    db.session.add(entry); db.session.commit()
+    return first.id, second.id, group.id, other_group.id, item.id, other_item.id, entry.id
+
+
+def test_progress_cross_project_ids_are_not_disclosed(client, app):
+    with app.app_context():
+        _, other_type, _, other_group, _, other_item, other_entry = _progress_objects()
+    _login(client, "pm")
+    responses = [
+        client.get(f"/projects/1/progress/types/{other_type}"),
+        client.post(f"/projects/1/progress/groups/{other_group}/edit", data={"name": "x"}),
+        client.get(f"/projects/1/progress/items/{other_item}"),
+        client.post(f"/projects/1/progress/entries/{other_entry}/delete"),
+    ]
+    for response in responses:
+        assert response.status_code == 404
+        assert b"b\xc3\xad m\xe1\xba\adt" not in response.data
+    chart = client.get("/projects/1/progress/types/1/chart-data")
+    assert chart.status_code == 200
+    assert b"Lo\xe1\xba\a1i 2" not in chart.data
+
+
+@pytest.mark.parametrize("username, expected", [
+    (None, (302, 302, 302, 302)),
+    ("no-progress-module", (403, 403, 403, 403)),
+    ("outsider-progress", (403, 403, 403, 403)),
+    ("limited-progress", (403, 403, 403, 403)),
+    ("reporter", (200, 403, 201, 200)),
+    ("viewer", (200, 403, 403, 200)),
+    ("admin", (200, 201, 201, 200)),
+    ("super", (200, 201, 201, 200)),
+])
+def test_progress_route_matrix(client, app, username, expected):
+    with app.app_context():
+        type_id, _, _, _, item_id, _, _ = _progress_objects()
+        if username in {"no-progress-module", "outsider-progress", "limited-progress"}:
+            role = Role.query.filter_by(code="REPORTER").one()
+            user_id = {"no-progress-module": 99, "outsider-progress": 100, "limited-progress": 101}[username]
+            user = User(id=user_id, username=username, email=f"{username}@example.com", full_name=username, password_hash=generate_password_hash("password123"), role=role, legacy_role="REPORTER")
+            db.session.add(user); db.session.flush()
+            if username != "no-progress-module":
+                db.session.add(ProjectUser(id=100 if username.startswith("out") else 101, project_id=2 if username.startswith("out") else 1, user_id=user.id, can_view_reports=True, is_active=True))
+            db.session.commit()
+    if username:
+        _login(client, username)
+    with app.app_context():
+        before_types = ProgressType.query.count()
+        before_entries = ProgressEntry.query.count()
+    results = (
+        client.get("/projects/1/progress").status_code,
+        client.post("/projects/1/progress/types", data={"name": f"Cấu trúc {username}"}).status_code,
+        client.post(f"/projects/1/progress/items/{item_id}/entries", data={"report_date": "2026-01-01", "quantity": "1"}).status_code,
+        client.get(f"/projects/1/progress/types/{type_id}/chart-data").status_code,
+    )
+    assert results == expected
+    if 201 not in expected:
+        with app.app_context():
+            assert ProgressType.query.count() == before_types
+            assert ProgressEntry.query.count() == before_entries
