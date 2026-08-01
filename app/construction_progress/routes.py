@@ -64,7 +64,7 @@ def archive_type(project_id, type_id):
 def type_detail(project_id, type_id):
     project = _project(project_id)
     value = _type(project_id, type_id)
-    return render_template("construction_progress/type_detail.html", project=project, progress_type=value, tree=services.progress_tree(project, value), can_manage=can_manage_progress_structure(project.id))
+    return render_template("construction_progress/type_detail.html", project=project, progress_type=value, tree=services.progress_tree(project, value), types=ProgressType.query.filter_by(project_id=project.id, is_active=True).all(), type_percent=services.type_percent(value), can_manage=can_manage_progress_structure(project.id))
 
 
 @bp.post("/projects/<int:project_id>/progress/types/<int:type_id>/groups")
@@ -110,7 +110,7 @@ def change_item(project_id, item_id, action):
 def item_detail(project_id, item_id):
     project = _project(project_id)
     item = _item(project_id, item_id)
-    return render_template("construction_progress/item_detail.html", project=project, item=item, entries=sorted(item.entries, key=lambda entry: entry.report_date, reverse=True), can_create=can_create_progress_entry(project.id), today=services.local_today())
+    return render_template("construction_progress/item_detail.html", project=project, item=item, entries=sorted(item.entries, key=lambda entry: entry.report_date, reverse=True), item_percent=services.item_percent(item), can_create=can_create_progress_entry(project.id), today=services.local_today())
 
 
 @bp.post("/projects/<int:project_id>/progress/items/<int:item_id>/entries")
