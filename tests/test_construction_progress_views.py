@@ -41,13 +41,14 @@ def test_progress_tree_and_workspace_card_render_expected_content(client, app):
 
     _login(client, "admin")
     tree = client.get(f"/projects/1/progress/types/{type_id}")
-    assert b"T\xc3\xb2a C1" in tree.data
-    assert b"\xc4\x90i \xe1\xbb\x91ng" in tree.data
-    assert b"m\xc3\xa9t" in tree.data
-    assert b"50.0%" in tree.data
-    assert b"Qu\xe1\xba\xa3n l\xc3\xbd ti\xe1\xba\xbfn \xc4\x91\xe1\xbb\x99 thi c\xc3\xb4ng" in client.get("/projects/1/workspace").data
-    assert b"\xe2\x80\x94" in client.get(f"/projects/1/progress/items/{unplanned_id}").data
+    tree_text = tree.get_data(as_text=True)
+    assert "Tòa C1" in tree_text
+    assert "Đi ống" in tree_text
+    assert "mét" in tree_text
+    assert "50.0%" in tree_text
+    assert "Quản lý tiến độ thi công" in client.get("/projects/1/workspace").get_data(as_text=True)
+    assert "—" in client.get(f"/projects/1/progress/items/{unplanned_id}").get_data(as_text=True)
 
     client.post("/logout")
     _login(client, "reporter")
-    assert b"Qu\xe1\xba\xa3n l\xc3\xbd ti\xe1\xba\xbfn \xc4\x91\xe1\bb\x99 thi c\xc3\xb4ng" not in client.get("/projects/1/workspace").data
+    assert "Quản lý tiến độ thi công" not in client.get("/projects/1/workspace").get_data(as_text=True)
