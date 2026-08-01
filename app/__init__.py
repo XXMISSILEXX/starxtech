@@ -193,7 +193,7 @@ def register_auth_guard(app):
         if not current_user.is_authenticated:
             return None
         endpoint = request.endpoint or ""
-        report_endpoints = ("dashboard.", "dashboard_api.", "projects.", "reports.", "issues.", "attachments.", "customers.", "project_operations.")
+        report_endpoints = ("dashboard.", "dashboard_api.", "projects.", "reports.", "issues.", "attachments.", "customers.", "project_operations.", "construction_progress.")
         is_report_admin = endpoint in {
             "admin.projects_index", "admin.projects_new", "admin.projects_edit",
             "admin.projects_archive", "admin.projects_reporters", "admin.projects_memberships", "admin.categories_index",

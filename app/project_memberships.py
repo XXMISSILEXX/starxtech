@@ -12,6 +12,8 @@ CAPABILITY_FIELDS = (
     "can_close_reopen_issues", "can_manage_report_categories",
     "can_view_documents", "can_upload_documents", "can_edit_documents",
     "can_share_documents", "can_archive_documents", "can_restore_documents",
+    "can_view_progress", "can_create_progress_entries", "can_edit_all_progress_entries",
+    "can_manage_progress_structure",
 )
 
 CAPABILITY_LABELS = {
@@ -24,6 +26,10 @@ CAPABILITY_LABELS = {
     "can_view_documents": "Xem hồ sơ", "can_upload_documents": "Tải lên hồ sơ",
     "can_edit_documents": "Sửa hồ sơ", "can_share_documents": "Chia sẻ hồ sơ",
     "can_archive_documents": "Lưu trữ hồ sơ", "can_restore_documents": "Khôi phục hồ sơ",
+    "can_view_progress": "Xem tiến độ thi công",
+    "can_create_progress_entries": "Tạo phiếu tiến độ",
+    "can_edit_all_progress_entries": "Sửa mọi phiếu tiến độ",
+    "can_manage_progress_structure": "Quản lý cấu trúc tiến độ",
 }
 
 PROJECT_ROLE_LABELS = {
@@ -34,11 +40,11 @@ PROJECT_ROLE_LABELS = {
 }
 
 PROJECT_ROLE_PRESETS = {
-    "PROJECT_VIEWER": {"can_view_project", "can_view_reports", "can_view_issues", "can_view_documents"},
-    "PROJECT_REPORTER": {"can_view_project", "can_view_reports", "can_create_reports", "can_edit_own_reports", "can_view_issues", "can_view_documents"},
-    "PROJECT_EDITOR": {"can_view_project", "can_view_reports", "can_create_reports", "can_edit_all_reports", "can_view_issues", "can_create_issues", "can_edit_issues", "can_view_documents"},
-    "PROJECT_DOCUMENT_CONTROLLER": {"can_view_project", "can_view_reports", "can_view_issues", "can_view_documents", "can_upload_documents", "can_edit_documents", "can_share_documents"},
-    "PROJECT_ISSUE_COORDINATOR": {"can_view_project", "can_view_reports", "can_view_issues", "can_create_issues", "can_edit_issues", "can_close_reopen_issues", "can_view_documents"},
+    "PROJECT_VIEWER": {"can_view_project", "can_view_reports", "can_view_issues", "can_view_documents", "can_view_progress"},
+    "PROJECT_REPORTER": {"can_view_project", "can_view_reports", "can_create_reports", "can_edit_own_reports", "can_view_issues", "can_view_documents", "can_view_progress", "can_create_progress_entries"},
+    "PROJECT_EDITOR": {"can_view_project", "can_view_reports", "can_create_reports", "can_edit_all_reports", "can_view_issues", "can_create_issues", "can_edit_issues", "can_view_documents", "can_view_progress", "can_create_progress_entries", "can_edit_all_progress_entries"},
+    "PROJECT_DOCUMENT_CONTROLLER": {"can_view_project", "can_view_reports", "can_view_issues", "can_view_documents", "can_upload_documents", "can_edit_documents", "can_share_documents", "can_view_progress"},
+    "PROJECT_ISSUE_COORDINATOR": {"can_view_project", "can_view_reports", "can_view_issues", "can_create_issues", "can_edit_issues", "can_close_reopen_issues", "can_view_documents", "can_view_progress"},
     "PROJECT_OWNER": set(CAPABILITY_FIELDS),
 }
 
@@ -57,7 +63,7 @@ MANAGE_MEMBERSHIPS_CAPABILITY = "can_manage_report_categories"
 
 ADMIN_ROLE_CODES = {UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value}
 VIEWER_ADMIN_CODE = UserRole.VIEWER_ADMIN.value
-READ_CAPABILITIES = {"can_view_project", "can_view_reports", "can_view_issues", "can_view_documents"}
+READ_CAPABILITIES = {"can_view_project", "can_view_reports", "can_view_issues", "can_view_documents", "can_view_progress"}
 
 
 def has_global_project_scope(user):

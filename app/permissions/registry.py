@@ -28,6 +28,7 @@ _RESOURCES = {
     "project_contractors": "Đối tác dự án",
     "contractor_assignments": "Liên kết đối tác",
     "project_updates": "Báo cáo xuyên suốt",
+    "construction_progress": "Tiến độ thi công",
     "dashboards": "Dashboard quản trị",
 }
 
@@ -93,6 +94,8 @@ PERMISSIONS = [
     _permission("contractor_assignments.end", "Gỡ liên kết đối tác khỏi dự án", dangerous=True),
     *[_permission(f"project_updates.{action}", f"{label} Báo cáo xuyên suốt", dangerous=action == "delete")
       for action, label in (("view", "Xem"), ("create", "Tạo"), ("edit", "Sửa"), ("edit_all", "Sửa tất cả"), ("delete", "Xóa"))],
+    *[_permission(f"construction_progress.{action}", f"{label} Tiến độ thi công", dangerous=action in {"delete", "structure"})
+      for action, label in (("view", "Xem"), ("create", "Tạo phiếu"), ("edit", "Sửa phiếu của mình"), ("edit_all", "Sửa mọi phiếu"), ("delete", "Xóa phiếu"), ("structure", "Quản lý cấu trúc"))],
 ]
 
 DEFAULTS = {
