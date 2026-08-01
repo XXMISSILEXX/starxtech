@@ -289,3 +289,85 @@ Revision Phase 12 cần có: `6c53d69bfb07`.
 - SQLite migration test không chứng minh kiểu `Numeric(18,3)`, thực thi `CheckConstraint`, unique constraint hay `SELECT FOR UPDATE` dưới tải đồng thời giống PostgreSQL. PostgreSQL tạm chưa chạy được vì không có quyền Docker daemon.
 - Không có import/export Excel, upload ảnh phiếu, biểu đồ đường lũy kế, approval workflow hoặc dashboard toàn hệ thống; đây là ngoài phạm vi §10.
 - Những khoảng trống test UI/browser và audit cấu trúc được nêu ở mục 3, không bị che bằng assertion trạng thái HTTP.
+
+## 9. Phụ lục — xác minh trên PostgreSQL thật (bổ sung sau Bước 8)
+
+Mục 8 ghi "PostgreSQL tạm chưa chạy được vì không có quyền Docker daemon". Giới
+hạn đó đã được khắc phục và các kiểm tra dưới đây **đã chạy thật**. Mục 8 giữ
+nguyên làm hồ sơ thời điểm; mục này là kết quả bổ sung.
+
+Môi trường: PostgreSQL **16.14** trong container dùng-một-lần
+`127.0.0.1:55433`, database và role `starx_phase4`. Không có database nào của
+môi trường dev bị chạm tới; container đã bị xoá sau khi xong.
+
+### 9.1 Toàn bộ chuỗi migration áp dụng được từ đầu
+
+`flask db upgrade` chạy trọn lịch sử migration trên database rỗng và kết thúc
+đúng ở revision Phase 12 `6c53d69bfb07`. Không phải chỉ migration Phase 12 —
+toàn bộ chuỗi từ đầu dự án đều áp dụng được trên PostgreSQL.
+
+### 9.2 Những thứ SQLite không chứng minh được
+
+Constraint Phase 12 tồn tại trên PostgreSQL với đúng tên đã đặc tả:
+
+```
+uq_progress_entries_item_date                  u
+ck_progress_entries_quantity_positive          c
+uq_progress_groups_type_name                   u
+uq_progress_items_group_name                   u
+uq_progress_types_project_name                 u
+ck_progress_types_value_mode                   c
+ck_progress_items_planned_quantity_nonnegative c
+ck_progress_items_opening_quantity_nonnegative c
+```
+
+Kiểu số đúng `numeric(18,3)` cho cả bốn cột khối lượng:
+`progress_entries.quantity`, `progress_items.planned_quantity`,
+`progress_items.opening_quantity`, `progress_items.completed_quantity`.
+
+Bốn cột capability trên `project_users` đều `column_default = false` và
+`is_nullable = NO`.
+
+### 9.3 Vòng lặp downgrade/upgrade
+
+`flask db downgrade` từ `6c53d69bfb07` về `20260731_0029` xoá sạch:
+
+```
+bảng progress_*  còn lại: 0
+cột %progress% trên project_users còn lại: 0
+```
+
+`flask db upgrade` sau đó áp dụng lại thành công. Không có lỗi thứ tự drop FK.
+
+### 9.4 Ba test PostgreSQL trước đây bị skip — nay đã chạy
+
+Ba test này bị skip trong mọi lần chạy của Phase 11 và Phase 12 vì thiếu
+`PHASE4_POSTGRES_URL` / `PHASE5_POSTGRES_URL`, và hồ sơ Phase 4/5 ghi là "not
+executed". Nay đã chạy trên PostgreSQL 16.14 thật:
+
+```
+tests/test_company_media_phase4_postgresql.py                    1 passed in 0.49s
+  test_postgresql_concurrent_presign_and_complete_create_one_canonical_row  PASSED
+
+tests/test_company_media_phase5_postgresql.py                    2 passed in 0.66s
+  test_postgresql_two_cleanup_workers_serialize_and_do_not_double_delete    PASSED
+  test_postgresql_complete_cancel_race_preserves_consistent_terminal_state  PASSED
+```
+
+### 9.5 Giới hạn còn lại
+
+Mô đun tiến độ thi công **vẫn chưa có** test đồng thời trên PostgreSQL riêng của
+nó. Hai điều sau đây vẫn chưa được chứng minh dưới tranh chấp thật:
+
+1. `uq_progress_entries_item_date` chặn hai phiếu cùng (hạng mục, ngày) khi hai
+   request đến đồng thời — hiện chỉ chứng minh được app tự kiểm tuần tự.
+2. `recalculate_item_completed()` với `SELECT ... FOR UPDATE` không bị lost
+   update khi hai người tạo phiếu cho cùng hạng mục ở hai ngày khác nhau.
+
+Khuôn để viết: `tests/test_company_media_phase4_postgresql.py` (fixture
+`pg_app`, gate bằng biến môi trường, `ThreadPoolExecutor(max_workers=2)`).
+Lệnh dựng lại môi trường:
+
+```bash
+docker run -d --name starx-phase4-pg -e POSTGRES_USER=starx_phase4 -e POSTGRES_PASSWORD=starx_phase4 -e POSTGRES_DB=starx_phase4 -p 127.0.0.1:55433:5432 postgres:16
+```
