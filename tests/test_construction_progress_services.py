@@ -72,4 +72,4 @@ def test_entries_validate_dates_duplicate_and_recalculate(app):
         db.session.commit()
         assert item.completed_quantity == Decimal("4.000")
         audit = AuditLog.query.filter_by(action="construction_progress.entry.delete").one()
-        assert audit.old_values_json["quantity"] == "3.500"
+        assert Decimal(audit.old_values_json["quantity"]) == Decimal("3.5")

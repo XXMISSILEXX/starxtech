@@ -1,4 +1,4 @@
-from flask import abort, jsonify, render_template, request
+from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from app.auth.permissions import can_create_progress_entry, can_edit_progress_entry, can_manage_progress_structure, progress_entry_required, progress_read_required, progress_structure_required
@@ -110,13 +110,19 @@ def change_item(project_id, item_id, action):
 def item_detail(project_id, item_id):
     project = _project(project_id)
     item = _item(project_id, item_id)
-    return render_template("construction_progress/item_detail.html", project=project, item=item, entries=sorted(item.entries, key=lambda entry: entry.report_date, reverse=True), item_percent=services.item_percent(item), can_create=can_create_progress_entry(project.id), today=services.local_today())
+    entries = sorted(item.entries, key=lambda entry: entry.report_date, reverse=True)
+    return render_template("construction_progress/item_detail.html", project=project, item=item, entries=entries, entry_dates={entry.report_date.isoformat() for entry in entries}, item_percent=services.item_percent(item), can_create=can_create_progress_entry(project.id), today=services.local_today())
 
 
 @bp.post("/projects/<int:project_id>/progress/items/<int:item_id>/entries")
 @progress_entry_required()
 def create_entry(project_id, item_id):
-    value = services.create_entry(item=_item(project_id, item_id), report_date=request.form.get("report_date"), quantity=request.form.get("quantity"), note=request.form.get("note"), actor_id=current_user.id)
+    item = _item(project_id, item_id)
+    try:
+        value = services.create_entry(item=item, report_date=request.form.get("report_date"), quantity=request.form.get("quantity"), note=request.form.get("note"), actor_id=current_user.id)
+    except ValueError as exc:
+        flash(str(exc), "warning")
+        return redirect(url_for("construction_progress.item_detail", project_id=project_id, item_id=item.id))
     db.session.commit()
     return jsonify({"id": value.id}), 201
 
@@ -126,7 +132,13 @@ def create_entry(project_id, item_id):
 def change_entry(project_id, entry_id, action):
     entry = _entry(project_id, entry_id)
     if not can_edit_progress_entry(entry): abort(403)
-    if action == "edit": services.update_entry(entry, report_date=request.form.get("report_date"), quantity=request.form.get("quantity"), note=request.form.get("note"), actor_id=current_user.id)
+    item_id = entry.progress_item_id
+    if action == "edit":
+        try:
+            services.update_entry(entry, report_date=request.form.get("report_date"), quantity=request.form.get("quantity"), note=request.form.get("note"), actor_id=current_user.id)
+        except ValueError as exc:
+            flash(str(exc), "warning")
+            return redirect(url_for("construction_progress.item_detail", project_id=project_id, item_id=item_id))
     elif action == "delete": services.delete_entry(entry, actor_id=current_user.id)
     else: abort(404)
     db.session.commit()
