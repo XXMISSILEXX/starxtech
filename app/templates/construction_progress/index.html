@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% block page_title %}Quản lý tiến độ thi công{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3"><div><h2 class="h4">{{ project.name }}</h2><p class="text-muted">Theo dõi khối lượng theo khu vực và hạng mục.</p></div>{% if can_manage %}<button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#typeModal">Tạo loại tiến độ</button>{% endif %}</div>
+<div class="row g-3">{% for node in tree %}<div class="col-md-6"><a class="card card-body text-decoration-none" href="{{ url_for('construction_progress.type_detail', project_id=project.id, type_id=node.type.id) }}"><strong>{{ node.type.name }}</strong><span class="text-muted">{{ node.percent|round(1) if node.percent is not none else '—' }}%</span></a></div>{% else %}<p class="text-muted">Chưa cấu hình tiến độ.</p>{% endfor %}</div>
+{% if can_manage %}<div class="modal fade" id="typeModal"><div class="modal-dialog"><form class="modal-content" method="post" action="{{ url_for('construction_progress.create_type', project_id=project.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="modal-body"><label class="form-label">Tên loại tiến độ</label><input class="form-control" name="name" required><select class="form-select mt-2" name="value_mode"><option value="quantity">Theo khối lượng</option><option value="money">Theo dự toán</option></select></div><div class="modal-footer"><button class="btn btn-primary">Lưu</button></div></form></div></div>{% endif %}
+{% endblock %}
