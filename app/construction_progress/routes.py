@@ -149,4 +149,13 @@ def change_entry(project_id, entry_id, action):
 @progress_read_required()
 def chart_data(project_id, type_id):
     value = _type(project_id, type_id)
-    return jsonify({"type": value.name, "percent": str(services.type_percent(value) or 0)})
+    groups = [group for group in value.groups if group.is_active]
+    payload = {
+        "labels": [group.name for group in groups],
+        "percentages": [round(float(services.group_percent(group, value.value_mode) or 0), 1) for group in groups],
+        "overall_percent": round(float(services.type_percent(value) or 0), 1),
+    }
+    if value.value_mode == "money":
+        payload["completed"] = [float(sum((item.completed_quantity for item in group.items if item.is_active), 0)) for group in groups]
+        payload["remaining"] = [float(max(sum((item.planned_quantity - item.completed_quantity for item in group.items if item.is_active), 0), 0)) for group in groups]
+    return jsonify(payload)
