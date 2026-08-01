@@ -341,6 +341,19 @@ Việc — viết `docs/Phase12_Progress_Construction_And_Beyond/PHASE12_RESULT.
 7. Chỗ nào phải tự quyết vì đặc tả chưa nói rõ, và đã quyết thế nào.
 8. Điều gì đã bỏ qua hoặc làm tạm.
 
+Chốt bắt buộc trước khi coi Bước 8 là xong:
+
+```bash
+grep -rn '\\x' tests/test_construction_progress_*.py    # phải rỗng
+```
+
+**Không assertion nào của Phase 12 được dùng byte literal `b"..."` cho chuỗi tiếng Việt.**
+Dùng `response.get_data(as_text=True)` với chuỗi Unicode bình thường. Byte escape viết tay
+đã tạo ra **ba** assertion rỗng nghĩa trong phase này (một ở views, hai ở authz): thiếu một
+chữ `x` biến `\xad` thành `\a` = BEL, chuỗi đó không bao giờ khớp HTML, nên
+`assert ... not in ...` luôn đúng và test chứng minh con số không. Kiểu lỗi này không lộ ra
+khi chạy test — chỉ lộ khi đọc từng dòng.
+
 ---
 
 ## Bốn cái bẫy đã biết
