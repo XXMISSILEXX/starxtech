@@ -53,20 +53,27 @@ Quyết định kỹ thuật đi kèm (không cần hỏi lại):
 
 ---
 
-## 2. Cái bẫy về thứ tự — đọc trước khi lập lịch
+## 2. Thứ tự xử lý dữ liệu đang bị ẩn — đọc trước khi lập lịch
 
-Hiện tại có bản ghi đang `is_active = false`. Nếu xoá cột `is_active` trước khi dọn
-chúng, **những thứ đang ẩn sẽ hiện trở lại** vì không còn cột nào để lọc.
+Hiện có bản ghi `is_active = false`, và chúng **không hiện trong giao diện** vì truy
+vấn đang lọc `is_active = True`. Nên chỉ thêm nút xoá là không đủ: người dùng không
+thấy chúng để mà bấm.
 
 Thứ tự bắt buộc:
 
-1. Có xoá cứng hoạt động (Bước 2).
-2. Dọn hết bản ghi đang ẩn bằng chính chức năng đó (Bước 3).
-3. Chỉ khi đó mới migration xoá cột `is_active`, và migration phải **tự chặn** nếu
-   còn bất kỳ hàng nào `is_active = false`.
+1. **Bước 2** làm ba việc cùng lúc: thêm xoá cứng, bỏ nút Ẩn, và **bỏ mọi điều kiện
+   `is_active` trong truy vấn**. Các bản ghi từng bị ẩn hiện trở lại một cách có chủ
+   ý, kèm nhãn "đang ẩn" để người dùng phân biệt được chúng với phần còn lại.
+2. **Cổng dừng.** Chủ dự án tự bấm xoá những bản ghi thực sự muốn bỏ, trên giao diện,
+   trên dữ liệu thật. Việc này đồng thời là lượt kiểm thử tính năng xoá mới.
+3. **Bước 3** mới migration xoá cột `is_active`.
 
-Migration không được tự ý xoá dữ liệu kinh doanh. Nó chỉ được phép fail và yêu cầu
-người vận hành dọn trước.
+Vì từ Bước 2 cột `is_active` đã không còn ảnh hưởng tới hành vi nào, việc xoá cột ở
+Bước 3 là thao tác vô hại và **không cần guard**. Bản ghi nào người dùng chọn giữ
+lại thì đơn giản là trở thành bản ghi bình thường.
+
+Điểm cốt yếu: dữ liệu đang ẩn vẫn hiện trở lại, nhưng hiện **trước mắt người dùng
+kèm nhãn** để họ quyết định, chứ không hiện âm thầm sau một migration.
 
 ---
 
@@ -155,19 +162,28 @@ lẻ giữ nguyên quy tắc hiện tại theo chủ sở hữu.
 
 ## 5. Dọn dữ liệu ẩn và bỏ cột `is_active` (mục 8)
 
-1. Sau khi Bước 2 xong, dùng UI xoá hết các loại tiến độ / khu vực / hạng mục đang
-   ẩn. Ghi lại đã xoá những gì vào báo cáo cuối.
-2. Bỏ mọi nút "Ẩn" và mọi route archive khỏi mô đun.
-3. Bỏ mọi điều kiện `is_active` trong truy vấn của mô đun, gồm cả phần đếm
+### Thuộc Bước 2
+
+1. Bỏ mọi nút "Ẩn" và mọi route archive khỏi mô đun.
+2. Bỏ mọi điều kiện `is_active` trong truy vấn của mô đun, gồm cả phần đếm
    `summaries["progress"]` ở `project_workspace()`.
+3. Bản ghi có `is_active = false` hiện bình thường, kèm nhãn "đang ẩn" ở cả ba cấp
+   để người dùng nhận ra đây là dữ liệu tồn từ trước. Nhãn này bị bỏ ở Bước 3 cùng
+   với cột.
+
+### Việc của người dùng, giữa Bước 2 và Bước 3
+
+Chủ dự án tự bấm xoá trên giao diện những bản ghi muốn bỏ. **Codex không được tự
+xoá bằng script.** Đây là dữ liệu thật của người dùng, và họ đã chọn tự làm để đồng
+thời kiểm thử tính năng xoá.
+
+### Thuộc Bước 3
+
 4. Migration xoá cột `is_active` khỏi `progress_types`, `progress_groups`,
-   `progress_items`, với guard ở đầu `upgrade()`:
-
-   ```
-   nếu tồn tại hàng nào is_active = false  ->  raise, nêu rõ bảng và số lượng
-   ```
-
+   `progress_items`. Không cần guard: từ Bước 2 cột này đã không còn ảnh hưởng tới
+   hành vi nào, nên xoá nó là thao tác vô hại.
    `downgrade()` thêm lại cột với `server_default` true.
+5. Bỏ nhãn "đang ẩn" khỏi template.
 
 ---
 
@@ -291,16 +307,21 @@ nhất 20 phút** — suite khoảng 6 phút, đừng cắt ở 60 giây.
 |---|---|---|
 | 0 | Mốc xanh: `pytest -q --durations=10`, `npm test`, ghi vào `BASELINE_12_1.md` | Không có mốc thì mọi test đỏ sau này không quy được trách nhiệm |
 | 1 | `decimal_places` + filter `vn_number` + validation nhập + áp dụng toàn bộ hiển thị | Lỗi đọc sai 1000 lần, ưu tiên cao nhất |
-| 2 | Xoá cứng ba cấp: service, route, audit, `confirm_name`, test | Mở đường cho Bước 3 |
-| 3 | Dọn bản ghi đang ẩn, bỏ nút/route Ẩn, migration xoá `is_active` có guard | Phải sau Bước 2, xem mục 2 |
+| 2 | Xoá cứng ba cấp (service, route, audit, `confirm_name`) **+ bỏ nút/route Ẩn + bỏ mọi filter `is_active` + nhãn "đang ẩn"** | Người dùng phải thấy được bản ghi ẩn mới bấm xoá được |
+| — | **CỔNG DỪNG 1: người dùng tự bấm xoá bản ghi ẩn.** Codex chờ, không tự xoá bằng script | Dữ liệu thật của người dùng; đồng thời là lượt kiểm thử tính năng xoá |
+| 3 | Migration xoá cột `is_active`, bỏ nhãn "đang ẩn" | Chỉ sau khi người dùng xác nhận đã dọn xong, xem mục 2 |
 | 4 | Overlay tạo khu vực kèm hạng mục + overlay sửa | Thay form inline, gốc của UI xấu |
 | 5 | Overlay phiếu ngày hàng loạt | Thay đổi lớn nhất về luồng người dùng |
 | 6 | Bỏ biểu đồ khỏi trang chi tiết | Nhỏ, độc lập |
 | 7 | Trau UI/UX toàn mô đun | Sau khi overlay đã dọn sạch bảng |
 | 8 | Chốt: cập nhật `PHASE12_RESULT.md` thêm mục 10, ghi việc phải làm khi deploy | |
 
-Cổng dừng: sau **Bước 3** báo cáo trước khi làm overlay — vì đó là chỗ có migration
-và xoá dữ liệu thật. Sau **Bước 5** báo cáo trước khi trau UI.
+Ba cổng dừng:
+
+1. Sau **Bước 2** — dừng hẳn và chờ người dùng tự bấm xoá bản ghi ẩn. Không được
+   tự chạy Bước 3.
+2. Sau **Bước 3** — báo cáo migration đã chạy, trước khi bắt đầu overlay.
+3. Sau **Bước 5** — báo cáo trước khi trau UI.
 
 ### File được phép sửa
 
