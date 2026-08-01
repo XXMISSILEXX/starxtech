@@ -123,6 +123,7 @@ def register_blueprints(app):
     from app.reports import bp as reports_bp
     from app.reports.create_v2 import bp as daily_report_create_v2_bp
     from app.users import bp as users_bp
+    from app.construction_progress import bp as construction_progress_bp
 
     app.register_blueprint(admin_bp)
     from app.branding import logo as branding_logo
@@ -150,6 +151,7 @@ def register_blueprints(app):
     app.register_blueprint(partner_fields_bp)
     app.register_blueprint(partner_field_collections_bp)
     app.register_blueprint(partner_relations_bp)
+    app.register_blueprint(construction_progress_bp)
 
 
 def register_health_route(app):
