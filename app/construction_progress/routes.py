@@ -40,7 +40,8 @@ def project_progress(project_id):
 def create_type(project_id):
     value = services.create_type(project=_project(project_id), name=request.form.get("name", ""), value_mode=request.form.get("value_mode", "quantity"), actor_id=current_user.id)
     db.session.commit()
-    return jsonify({"id": value.id}), 201
+    flash("Đã tạo loại tiến độ.", "success")
+    return redirect(url_for("construction_progress.project_progress", project_id=project_id))
 
 
 @bp.post("/projects/<int:project_id>/progress/types/<int:type_id>/edit")
@@ -48,7 +49,8 @@ def create_type(project_id):
 def edit_type(project_id, type_id):
     value = services.update_type(_type(project_id, type_id), name=request.form.get("name", ""), value_mode=request.form.get("value_mode", "quantity"), actor_id=current_user.id)
     db.session.commit()
-    return jsonify({"id": value.id})
+    flash("Đã cập nhật loại tiến độ.", "success")
+    return redirect(url_for("construction_progress.project_progress", project_id=project_id))
 
 
 @bp.post("/projects/<int:project_id>/progress/types/<int:type_id>/archive")
@@ -56,7 +58,8 @@ def edit_type(project_id, type_id):
 def archive_type(project_id, type_id):
     services.archive_type(_type(project_id, type_id), actor_id=current_user.id)
     db.session.commit()
-    return "", 204
+    flash("Đã ẩn loại tiến độ.", "success")
+    return redirect(url_for("construction_progress.project_progress", project_id=project_id))
 
 
 @bp.get("/projects/<int:project_id>/progress/types/<int:type_id>")
@@ -72,7 +75,8 @@ def type_detail(project_id, type_id):
 def create_group(project_id, type_id):
     value = services.create_group(progress_type=_type(project_id, type_id), name=request.form.get("name", ""), actor_id=current_user.id)
     db.session.commit()
-    return jsonify({"id": value.id}), 201
+    flash("Đã tạo khu vực.", "success")
+    return redirect(url_for("construction_progress.type_detail", project_id=project_id, type_id=type_id))
 
 
 @bp.post("/projects/<int:project_id>/progress/groups/<int:group_id>/<action>")
@@ -83,7 +87,8 @@ def change_group(project_id, group_id, action):
     elif action == "archive": services.archive_group(group, actor_id=current_user.id)
     else: abort(404)
     db.session.commit()
-    return "", 204
+    flash("Đã cập nhật khu vực." if action == "edit" else "Đã ẩn khu vực.", "success")
+    return redirect(url_for("construction_progress.type_detail", project_id=project_id, type_id=group.progress_type_id))
 
 
 @bp.post("/projects/<int:project_id>/progress/groups/<int:group_id>/items")
@@ -91,7 +96,8 @@ def change_group(project_id, group_id, action):
 def create_item(project_id, group_id):
     value = services.create_item(group=_group(project_id, group_id), name=request.form.get("name", ""), unit=request.form.get("unit", ""), planned_quantity=request.form.get("planned_quantity", 0), opening_quantity=request.form.get("opening_quantity", 0), actor_id=current_user.id)
     db.session.commit()
-    return jsonify({"id": value.id}), 201
+    flash("Đã tạo hạng mục.", "success")
+    return redirect(url_for("construction_progress.type_detail", project_id=project_id, type_id=_group(project_id, group_id).progress_type_id))
 
 
 @bp.post("/projects/<int:project_id>/progress/items/<int:item_id>/<action>")
@@ -102,7 +108,8 @@ def change_item(project_id, item_id, action):
     elif action == "archive": services.archive_item(item, actor_id=current_user.id)
     else: abort(404)
     db.session.commit()
-    return "", 204
+    flash("Đã cập nhật hạng mục." if action == "edit" else "Đã ẩn hạng mục.", "success")
+    return redirect(url_for("construction_progress.type_detail", project_id=project_id, type_id=item.progress_group.progress_type_id))
 
 
 @bp.get("/projects/<int:project_id>/progress/items/<int:item_id>")
@@ -124,7 +131,8 @@ def create_entry(project_id, item_id):
         flash(str(exc), "warning")
         return redirect(url_for("construction_progress.item_detail", project_id=project_id, item_id=item.id))
     db.session.commit()
-    return jsonify({"id": value.id}), 201
+    flash("Đã tạo phiếu cập nhật tiến độ.", "success")
+    return redirect(url_for("construction_progress.item_detail", project_id=project_id, item_id=item.id))
 
 
 @bp.post("/projects/<int:project_id>/progress/entries/<int:entry_id>/<action>")
@@ -142,7 +150,8 @@ def change_entry(project_id, entry_id, action):
     elif action == "delete": services.delete_entry(entry, actor_id=current_user.id)
     else: abort(404)
     db.session.commit()
-    return "", 204
+    flash("Đã cập nhật phiếu tiến độ." if action == "edit" else "Đã xóa phiếu tiến độ.", "success")
+    return redirect(url_for("construction_progress.item_detail", project_id=project_id, item_id=item_id))
 
 
 @bp.get("/projects/<int:project_id>/progress/types/<int:type_id>/chart-data")

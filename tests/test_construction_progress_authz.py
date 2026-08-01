@@ -100,8 +100,8 @@ def test_progress_routes_enforce_read_structure_and_project_scope(client, app):
     client.post("/logout")
     _login(client, "pm")
     response = client.post("/projects/1/progress/types", data={"name": "Được tạo"})
-    assert response.status_code == 201
-    assert client.post(f"/projects/1/progress/types/{first_id}/groups", data={"name": "Khu vực"}).status_code == 201
+    assert response.status_code == 302
+    assert client.post(f"/projects/1/progress/types/{first_id}/groups", data={"name": "Khu vực"}).status_code == 302
 
 
 def test_progress_entry_creator_cannot_edit_another_users_entry(client, app):
@@ -151,10 +151,10 @@ def test_progress_cross_project_ids_are_not_disclosed(client, app):
     ]
     for response in responses:
         assert response.status_code == 404
-        assert b"b\xc3\xad m\xe1\xba\adt" not in response.data
+        assert "bí mật" not in response.get_data(as_text=True)
     chart = client.get("/projects/1/progress/types/1/chart-data")
     assert chart.status_code == 200
-    assert b"Lo\xe1\xba\a1i 2" not in chart.data
+    assert "Loại 2" not in chart.get_data(as_text=True)
 
 
 @pytest.mark.parametrize("username, expected", [
@@ -162,10 +162,10 @@ def test_progress_cross_project_ids_are_not_disclosed(client, app):
     ("no-progress-module", (403, 403, 403, 403)),
     ("outsider-progress", (403, 403, 403, 403)),
     ("limited-progress", (403, 403, 403, 403)),
-    ("reporter", (200, 403, 201, 200)),
+    ("reporter", (200, 403, 302, 200)),
     ("viewer", (200, 403, 403, 200)),
-    ("admin", (200, 201, 201, 200)),
-    ("super", (200, 201, 201, 200)),
+    ("admin", (200, 302, 302, 200)),
+    ("super", (200, 302, 302, 200)),
 ])
 def test_progress_route_matrix(client, app, username, expected):
     with app.app_context():
@@ -190,7 +190,7 @@ def test_progress_route_matrix(client, app, username, expected):
         client.get(f"/projects/1/progress/types/{type_id}/chart-data").status_code,
     )
     assert results == expected
-    if 201 not in expected:
+    if 302 not in expected:
         with app.app_context():
             assert ProgressType.query.count() == before_types
             assert ProgressEntry.query.count() == before_entries

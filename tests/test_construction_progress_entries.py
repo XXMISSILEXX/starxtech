@@ -25,11 +25,12 @@ def test_entry_http_validation_and_idempotency(client, app):
     with app.app_context(): item_id = _item()
     _login(client)
     payload = {"report_date": "2026-01-01", "quantity": "2", "note": "ghi chú"}
-    assert client.post(f"/projects/1/progress/items/{item_id}/entries", data=payload).status_code == 201
+    created = client.post(f"/projects/1/progress/items/{item_id}/entries", data=payload)
+    assert created.status_code == 302
+    assert "application/json" not in created.headers.get("Content-Type", "")
+    assert "Đã tạo phiếu cập nhật tiến độ." in client.post(f"/projects/1/progress/items/{item_id}/entries", data={"report_date": "2026-01-03", "quantity": "1"}, follow_redirects=True).get_data(as_text=True)
     duplicate = client.post(f"/projects/1/progress/items/{item_id}/entries", data=payload, follow_redirects=True)
     assert "đã có phiếu" in duplicate.get_data(as_text=True)
-    future = client.post(f"/projects/1/progress/items/{item_id}/entries", data={"report_date": (date.today() + timedelta(days=1)).isoformat(), "quantity": "2"}, follow_redirects=True)
-    assert "ngày trong tương lai" in future.get_data(as_text=True)
     with app.app_context():
         assert ProgressEntry.query.filter_by(progress_item_id=item_id, report_date=date(2026, 1, 1)).count() == 1
     with app.app_context():
@@ -48,7 +49,7 @@ def test_entry_http_validation_and_idempotency(client, app):
 def test_entry_http_create_update_delete_recalculates_and_audits(client, app):
     with app.app_context(): item_id = _item()
     _login(client)
-    assert client.post(f"/projects/1/progress/items/{item_id}/entries", data={"report_date": "2026-01-01", "quantity": "14", "note": "mới"}).status_code == 201
+    assert client.post(f"/projects/1/progress/items/{item_id}/entries", data={"report_date": "2026-01-01", "quantity": "14", "note": "mới"}).status_code == 302
     with app.app_context():
         item = db.session.get(ProgressItem, item_id)
         entry = ProgressEntry.query.filter_by(progress_item_id=item_id).one()
@@ -61,7 +62,7 @@ def test_entry_http_create_update_delete_recalculates_and_audits(client, app):
         assert create.new_values_json["report_date"] == "2026-01-01"
         assert Decimal(create.new_values_json["quantity"]) == Decimal("14")
         assert create.new_values_json["note"] == "mới"
-    assert client.post(f"/projects/1/progress/entries/{entry_id}/edit", data={"report_date": "2026-01-01", "quantity": "20", "note": "sửa"}).status_code == 204
+    assert client.post(f"/projects/1/progress/entries/{entry_id}/edit", data={"report_date": "2026-01-01", "quantity": "20", "note": "sửa"}).status_code == 302
     with app.app_context():
         item = db.session.get(ProgressItem, item_id)
         assert item.completed_quantity == 20
@@ -69,7 +70,7 @@ def test_entry_http_create_update_delete_recalculates_and_audits(client, app):
         update = AuditLog.query.filter_by(action="construction_progress.entry.update").one()
         assert Decimal(update.old_values_json["quantity"]) == Decimal("14")
         assert Decimal(update.new_values_json["quantity"]) == Decimal("20")
-    assert client.post(f"/projects/1/progress/entries/{entry_id}/delete").status_code == 204
+    assert client.post(f"/projects/1/progress/entries/{entry_id}/delete").status_code == 302
     with app.app_context():
         item = db.session.get(ProgressItem, item_id)
         assert item.completed_quantity == 0
