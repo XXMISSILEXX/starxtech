@@ -118,7 +118,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.celery_worker:celery_app inspect ping --destination=celery@$$HOSTNAME --timeout=5 | grep -q pong"]
+      test: ["CMD-SHELL", "/app/docker-entrypoint.sh celery -A app.celery_worker:celery_app inspect ping --destination=celery@$$HOSTNAME --timeout=5 | grep -q pong"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -133,6 +133,14 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+    # Override the image's HTTP healthcheck: Beat has no HTTP listener.
+    # `init: true` owns PID 1, so inspect /proc instead of assuming Beat is PID 1.
+    healthcheck:
+      test: ["CMD-SHELL", "for cmdline in /proc/[0-9]*/cmdline; do tr '\\000' ' ' < \"$$cmdline\" 2>/dev/null | grep -q 'celery.*beat' && exit 0; done; exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
 
   redis:
     image: redis:7.4-alpine
