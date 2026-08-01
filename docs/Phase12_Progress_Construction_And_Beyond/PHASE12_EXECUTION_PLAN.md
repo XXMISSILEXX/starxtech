@@ -34,13 +34,25 @@ Việc phải làm:
    `docs/Phase12_Progress_Construction_And_Beyond/BASELINE.md`:
 
 ```bash
-pytest -p no:cacheprovider -q 2>&1 | tail -40
+pytest -p no:cacheprovider -q --durations=10 2>&1 | tail -40
 npm test 2>&1 | tail -20
 ```
 
-4. Nếu có test đỏ hoặc suite không chạy hết: **ghi lại chính xác test nào, lỗi
-   gì, và DỪNG. Báo trước khi tự sửa.** Không sửa test cũ, không sửa code cũ để
-   lấy màu xanh — đó là phạm vi khác.
+**Ngân sách thời gian: suite có 476 test và mất khoảng 10–12 phút trên máy dev.
+Cấp cho lệnh pytest ít nhất 20 phút.** Một lượt chạy bị cắt ở 60 giây KHÔNG phải
+là treo — nó chỉ mới đi được khoảng 9%. Đây là chẩn đoán sai đã xảy ra hai lần:
+một lần trong delta audit Phase 11, một lần ở Bước 0 lần đầu.
+
+Phân biệt "treo" với "chậm" trước khi kết luận: chạy riêng test bị nghi bằng
+`pytest -q "<nodeid>"`. Nếu nó pass trong vài giây thì nó không treo — với `-v`,
+pytest in tên test TRƯỚC khi chạy, nên test cuối cùng hiện trên màn hình lúc bị
+cắt luôn trông như đang treo. Chỉ kết luận treo khi test đó chạy riêng cũng
+không kết thúc.
+
+4. Nếu có test đỏ **thật** (có traceback hoặc assertion failure), hoặc một test
+   chạy riêng cũng không kết thúc: **ghi lại chính xác test nào, lỗi gì, và
+   DỪNG. Báo trước khi tự sửa.** Không sửa test cũ, không sửa code cũ để lấy màu
+   xanh — đó là phạm vi khác.
 5. Nếu xanh hết: ghi số test pass và thời gian chạy vào `BASELINE.md`, commit
    file đó, rồi mới sang Bước 1.
 
