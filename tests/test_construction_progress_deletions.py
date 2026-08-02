@@ -18,15 +18,15 @@ def _counts():
     )
 
 
-def _tree(*, inactive=False):
-    progress_type = ProgressType(project_id=1, name="Loại cần xoá", is_active=not inactive, created_by_id=1)
+def _tree():
+    progress_type = ProgressType(project_id=1, name="Loại cần xoá", created_by_id=1)
     db.session.add(progress_type)
     db.session.flush()
-    first_group = ProgressGroup(project_id=1, progress_type_id=progress_type.id, name="Tầng hầm", is_active=not inactive, created_by_id=1)
+    first_group = ProgressGroup(project_id=1, progress_type_id=progress_type.id, name="Tầng hầm", created_by_id=1)
     second_group = ProgressGroup(project_id=1, progress_type_id=progress_type.id, name="Tầng mái", created_by_id=1)
     db.session.add_all((first_group, second_group))
     db.session.flush()
-    first_item = ProgressItem(project_id=1, progress_group_id=first_group.id, name="Đi ống", unit="mét", is_active=not inactive, planned_quantity=100, created_by_id=1)
+    first_item = ProgressItem(project_id=1, progress_group_id=first_group.id, name="Đi ống", unit="mét", planned_quantity=100, created_by_id=1)
     second_item = ProgressItem(project_id=1, progress_group_id=first_group.id, name="Kéo dây", unit="mét", planned_quantity=100, created_by_id=1)
     third_item = ProgressItem(project_id=1, progress_group_id=second_group.id, name="Lắp tủ", unit="cái", planned_quantity=10, created_by_id=1)
     db.session.add_all((first_item, second_item, third_item))
@@ -137,9 +137,9 @@ def test_structure_delete_without_capability_is_forbidden_and_preserves_everythi
         assert AuditLog.query.filter_by(action="construction_progress.type.delete").count() == 0
 
 
-def test_inactive_progress_structure_is_visible_and_archive_actions_are_gone(client, app):
+def test_progress_structure_has_no_archive_state_or_actions(client, app):
     with app.app_context():
-        type_id, group_id, item_id = _tree(inactive=True)
+        type_id, group_id, item_id = _tree()
         tree = progress_tree(db.session.get(Project, 1))
         assert len(tree) == 1
         assert len(tree[0]["groups"]) == 2
@@ -149,7 +149,7 @@ def test_inactive_progress_structure_is_visible_and_archive_actions_are_gone(cli
     detail = client.get(f"/projects/1/progress/types/{type_id}")
     detail_text = detail.get_data(as_text=True)
     assert detail.status_code == 200
-    assert detail_text.count("đang ẩn") >= 3
+    assert "đang ẩn" not in detail_text
     assert "Ẩn loại" not in detail_text
     assert "/archive" not in detail_text
     assert client.post(f"/projects/1/progress/types/{type_id}/archive").status_code == 404

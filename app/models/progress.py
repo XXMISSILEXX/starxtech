@@ -23,7 +23,6 @@ class ProgressType(TimestampMixin, db.Model):
     value_mode = db.Column(db.String(20), nullable=False, default="quantity", server_default="quantity")
     description = db.Column(db.Text, nullable=True)
     display_order = db.Column(db.Integer, nullable=False, default=0, server_default="0")
-    is_active = db.Column(db.Boolean, nullable=False, default=True, server_default="true")
     created_by_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=False)
     updated_by_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=True)
 
@@ -55,7 +54,6 @@ class ProgressGroup(TimestampMixin, db.Model):
     name = db.Column(db.String(200), nullable=False)
     note = db.Column(db.Text, nullable=True)
     display_order = db.Column(db.Integer, nullable=False, default=0, server_default="0")
-    is_active = db.Column(db.Boolean, nullable=False, default=True, server_default="true")
     created_by_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=False)
     updated_by_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=True)
 
@@ -97,7 +95,6 @@ class ProgressItem(TimestampMixin, db.Model):
     assignee_user_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=True)
     note = db.Column(db.Text, nullable=True)
     display_order = db.Column(db.Integer, nullable=False, default=0, server_default="0")
-    is_active = db.Column(db.Boolean, nullable=False, default=True, server_default="true")
     created_by_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=False)
     updated_by_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=True)
 

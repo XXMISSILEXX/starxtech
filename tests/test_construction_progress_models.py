@@ -99,6 +99,12 @@ def test_progress_type_value_mode_only_accepts_quantity_or_money(app):
             db.session.commit()
 
 
+def test_progress_structure_models_have_no_archive_state():
+    assert "is_active" not in ProgressType.__table__.columns
+    assert "is_active" not in ProgressGroup.__table__.columns
+    assert "is_active" not in ProgressItem.__table__.columns
+
+
 @pytest.mark.parametrize("decimal_places", [-1, 4])
 def test_progress_item_decimal_places_must_be_between_zero_and_three(app, decimal_places):
     with app.app_context():
