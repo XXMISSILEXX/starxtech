@@ -72,6 +72,7 @@ class ProgressItem(TimestampMixin, db.Model):
         db.UniqueConstraint("progress_group_id", "name", name="uq_progress_items_group_name"),
         db.CheckConstraint("planned_quantity >= 0", name="ck_progress_items_planned_quantity_nonnegative"),
         db.CheckConstraint("opening_quantity >= 0", name="ck_progress_items_opening_quantity_nonnegative"),
+        db.CheckConstraint("decimal_places BETWEEN 0 AND 3", name="ck_progress_items_decimal_places_range"),
     )
 
     id = db.Column(db.BigInteger().with_variant(db.Integer(), "sqlite"), primary_key=True)
@@ -89,6 +90,7 @@ class ProgressItem(TimestampMixin, db.Model):
     )
     name = db.Column(db.String(300), nullable=False)
     unit = db.Column(db.String(30), nullable=False)
+    decimal_places = db.Column(db.SmallInteger, nullable=False, default=0, server_default="0")
     planned_quantity = db.Column(db.Numeric(18, 3), nullable=False, default=0, server_default="0")
     opening_quantity = db.Column(db.Numeric(18, 3), nullable=False, default=0, server_default="0")
     completed_quantity = db.Column(db.Numeric(18, 3), nullable=False, default=0, server_default="0")

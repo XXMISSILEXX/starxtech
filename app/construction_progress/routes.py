@@ -94,7 +94,12 @@ def change_group(project_id, group_id, action):
 @bp.post("/projects/<int:project_id>/progress/groups/<int:group_id>/items")
 @progress_structure_required()
 def create_item(project_id, group_id):
-    value = services.create_item(group=_group(project_id, group_id), name=request.form.get("name", ""), unit=request.form.get("unit", ""), planned_quantity=request.form.get("planned_quantity", 0), opening_quantity=request.form.get("opening_quantity", 0), actor_id=current_user.id)
+    group = _group(project_id, group_id)
+    try:
+        services.create_item(group=group, name=request.form.get("name", ""), unit=request.form.get("unit", ""), planned_quantity=request.form.get("planned_quantity", 0), opening_quantity=request.form.get("opening_quantity", 0), decimal_places=request.form.get("decimal_places", 0), actor_id=current_user.id)
+    except ValueError as exc:
+        flash(str(exc), "warning")
+        return redirect(url_for("construction_progress.type_detail", project_id=project_id, type_id=group.progress_type_id))
     db.session.commit()
     flash("Đã tạo hạng mục.", "success")
     return redirect(url_for("construction_progress.type_detail", project_id=project_id, type_id=_group(project_id, group_id).progress_type_id))
@@ -104,7 +109,12 @@ def create_item(project_id, group_id):
 @progress_structure_required()
 def change_item(project_id, item_id, action):
     item = _item(project_id, item_id)
-    if action == "edit": services.update_item(item, name=request.form.get("name", ""), unit=request.form.get("unit", ""), planned_quantity=request.form.get("planned_quantity", 0), opening_quantity=request.form.get("opening_quantity", 0), actor_id=current_user.id)
+    if action == "edit":
+        try:
+            services.update_item(item, name=request.form.get("name", ""), unit=request.form.get("unit", ""), planned_quantity=request.form.get("planned_quantity", 0), opening_quantity=request.form.get("opening_quantity", 0), decimal_places=request.form.get("decimal_places", 0), actor_id=current_user.id)
+        except ValueError as exc:
+            flash(str(exc), "warning")
+            return redirect(url_for("construction_progress.type_detail", project_id=project_id, type_id=item.progress_group.progress_type_id))
     elif action == "archive": services.archive_item(item, actor_id=current_user.id)
     else: abort(404)
     db.session.commit()

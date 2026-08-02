@@ -6,11 +6,11 @@ from decimal import Decimal
 import pytest
 
 from app.extensions import db
-from app.models import AuditLog, Project
+from app.models import AuditLog, ProgressEntry, ProgressItem, Project
 from app.construction_progress.services import (
     DuplicateEntryError, FutureDateError, InvalidQuantityError, create_entry,
     create_group, create_item, create_type, delete_entry, group_percent,
-    item_percent, type_percent, update_entry,
+    item_percent, type_percent, update_entry, update_item, InvalidDecimalPlacesError,
 )
 
 
@@ -18,7 +18,7 @@ def _tree(money=False, planned="100", opening="0"):
     project = db.session.get(Project, 1)
     progress_type = create_type(project=project, name="Dự toán" if money else "Khối lượng", value_mode="money" if money else "quantity", actor_id=1)
     group = create_group(progress_type=progress_type, name="Tòa C1", actor_id=1)
-    item = create_item(group=group, name="Đi ống", unit="VNĐ" if money else "m", planned_quantity=planned, opening_quantity=opening, actor_id=1)
+    item = create_item(group=group, name="Đi ống", unit="VNĐ" if money else "m", planned_quantity=planned, opening_quantity=opening, decimal_places=0 if money else 1, actor_id=1)
     db.session.commit()
     return progress_type, group, item
 
@@ -73,3 +73,52 @@ def test_entries_validate_dates_duplicate_and_recalculate(app):
         assert item.completed_quantity == Decimal("4.000")
         audit = AuditLog.query.filter_by(action="construction_progress.entry.delete").one()
         assert Decimal(audit.old_values_json["quantity"]) == Decimal("3.5")
+
+
+def test_decimal_precision_validation_and_lowering_protection(app):
+    with app.app_context():
+        _, _, item = _tree()
+        report_date = date.today() - timedelta(days=1)
+
+        with pytest.raises(InvalidDecimalPlacesError, match="tối đa 1 chữ số thập phân"):
+            create_entry(item=item, report_date=report_date, quantity="1.25", actor_id=3)
+        assert ProgressEntry.query.filter_by(progress_item_id=item.id).count() == 0
+
+        create_entry(item=item, report_date=report_date, quantity="151.5", actor_id=3)
+        db.session.commit()
+
+        with pytest.raises(InvalidDecimalPlacesError, match=r"phiếu ngày .*151,5"):
+            update_item(item, name=item.name, unit=item.unit, planned_quantity=item.planned_quantity,
+                        opening_quantity=item.opening_quantity, decimal_places=0, actor_id=1)
+        assert item.decimal_places == 1
+        assert ProgressEntry.query.filter_by(progress_item_id=item.id).one().quantity == Decimal("151.500")
+
+        update_item(item, name=item.name, unit=item.unit, planned_quantity=item.planned_quantity,
+                    opening_quantity=item.opening_quantity, decimal_places=2, actor_id=1)
+        assert item.decimal_places == 2
+
+
+@pytest.mark.parametrize(
+    ("planned_quantity", "opening_quantity", "message"),
+    [
+        ("1.25", "0", "Khối lượng kế hoạch"),
+        ("1", "0.25", "Khối lượng mang sang"),
+    ],
+)
+def test_item_rejects_quantities_more_precise_than_declared(app, planned_quantity, opening_quantity, message):
+    with app.app_context():
+        _, group, _ = _tree()
+        before = ProgressItem.query.filter_by(progress_group_id=group.id).count()
+
+        with pytest.raises(InvalidDecimalPlacesError, match=message):
+            create_item(
+                group=group,
+                name="Sai độ chính xác",
+                unit="m",
+                planned_quantity=planned_quantity,
+                opening_quantity=opening_quantity,
+                decimal_places=1,
+                actor_id=1,
+            )
+
+        assert ProgressItem.query.filter_by(progress_group_id=group.id).count() == before

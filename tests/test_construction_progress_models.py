@@ -97,3 +97,21 @@ def test_progress_type_value_mode_only_accepts_quantity_or_money(app):
 
         with pytest.raises(IntegrityError):
             db.session.commit()
+
+
+@pytest.mark.parametrize("decimal_places", [-1, 4])
+def test_progress_item_decimal_places_must_be_between_zero_and_three(app, decimal_places):
+    with app.app_context():
+        _, group, _ = _progress_tree()
+        db.session.add(
+            ProgressItem(
+                project_id=1,
+                progress_group_id=group.id,
+                name=f"Hạng mục {decimal_places}",
+                unit="mét",
+                decimal_places=decimal_places,
+                created_by_id=1,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.session.commit()

@@ -7,8 +7,8 @@ from app.models import AuditLog, ProgressEntry, ProgressGroup, ProgressItem, Pro
 from app.construction_progress.services import group_percent, item_percent, type_percent
 
 
-def _login(client):
-    client.post("/login", data={"username_or_email": "reporter", "password": "password123"})
+def _login(client, username="reporter"):
+    client.post("/login", data={"username_or_email": username, "password": "password123"})
 
 
 def _item():
@@ -79,3 +79,33 @@ def test_entry_http_create_update_delete_recalculates_and_audits(client, app):
         assert type_percent(item.progress_group.progress_type) == 0
         deleted = AuditLog.query.filter_by(action="construction_progress.entry.delete").one()
         assert Decimal(deleted.old_values_json["quantity"]) == Decimal("20")
+
+
+def test_item_http_rejects_lower_decimal_places_that_would_round_existing_entries(client, app):
+    with app.app_context():
+        item_id = _item()
+        item = db.session.get(ProgressItem, item_id)
+        item.decimal_places = 1
+        entry = ProgressEntry(
+            project_id=1,
+            progress_item_id=item_id,
+            report_date=date(2026, 1, 1),
+            quantity=Decimal("151.5"),
+            created_by_id=3,
+        )
+        db.session.add(entry)
+        db.session.commit()
+
+    _login(client, "pm")
+    response = client.post(
+        f"/projects/1/progress/items/{item_id}/edit",
+        data={"name": "Hạng mục", "unit": "m", "planned_quantity": "10", "opening_quantity": "0", "decimal_places": "0"},
+        follow_redirects=True,
+    )
+    page = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Không thể hạ xuống 0 chữ số thập phân" in page
+    assert "151,5" in page
+    with app.app_context():
+        assert db.session.get(ProgressItem, item_id).decimal_places == 1
+        assert ProgressEntry.query.filter_by(progress_item_id=item_id).count() == 1

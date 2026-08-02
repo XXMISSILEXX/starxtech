@@ -24,6 +24,10 @@ class InvalidQuantityError(ValueError):
     pass
 
 
+class InvalidDecimalPlacesError(ValueError):
+    pass
+
+
 def item_percent(item):
     planned = Decimal(item.planned_quantity or 0)
     return None if planned <= 0 else Decimal(item.completed_quantity or 0) / planned * 100
@@ -91,8 +95,62 @@ def _quantity(value):
     return value
 
 
+def _nonnegative_quantity(value):
+    try:
+        result = Decimal(str(value))
+    except Exception as exc:
+        raise InvalidQuantityError("Khối lượng kế hoạch và mang sang không hợp lệ.") from exc
+    if result < 0:
+        raise InvalidQuantityError("Khối lượng kế hoạch và mang sang không được âm.")
+    return result
+
+
+def _decimal_places(value):
+    try:
+        result = int(str(value))
+    except (TypeError, ValueError) as exc:
+        raise InvalidDecimalPlacesError("Số chữ số thập phân phải từ 0 đến 3.") from exc
+    if not 0 <= result <= 3:
+        raise InvalidDecimalPlacesError("Số chữ số thập phân phải từ 0 đến 3.")
+    return result
+
+
+def _has_decimal_precision(value, decimal_places):
+    return Decimal(value).quantize(Decimal(1).scaleb(-decimal_places)) == Decimal(value)
+
+
+def _validate_decimal_precision(value, decimal_places, field_label):
+    if not _has_decimal_precision(value, decimal_places):
+        raise InvalidDecimalPlacesError(
+            f"{field_label} chỉ được có tối đa {decimal_places} chữ số thập phân."
+        )
+
+
+def _decimal_value_label(value):
+    text = format(Decimal(value), "f").rstrip("0").rstrip(".")
+    return text.replace(".", ",")
+
+
+def _validate_existing_item_precision(item, decimal_places):
+    candidates = [
+        ("khối lượng kế hoạch", item.planned_quantity),
+        ("khối lượng mang sang", item.opening_quantity),
+    ]
+    candidates.extend(
+        (f"phiếu ngày {entry.report_date:%d/%m/%Y} có khối lượng", entry.quantity)
+        for entry in item.entries
+    )
+    for label, value in candidates:
+        if not _has_decimal_precision(value, decimal_places):
+            raise InvalidDecimalPlacesError(
+                f"Không thể hạ xuống {decimal_places} chữ số thập phân vì {label} "
+                f"{_decimal_value_label(value)} cần độ chính xác cao hơn."
+            )
+
+
 def create_entry(*, item, report_date, quantity, note=None, actor_id=None):
     report_date, quantity = _report_date(report_date), _quantity(quantity)
+    _validate_decimal_precision(quantity, item.decimal_places, "Khối lượng")
     entry = ProgressEntry(project_id=item.project_id, progress_item_id=item.id, report_date=report_date, quantity=quantity, note=(note or "").strip() or None, created_by_id=actor_id, updated_by_id=actor_id)
     try:
         with db.session.begin_nested():
@@ -107,7 +165,9 @@ def create_entry(*, item, report_date, quantity, note=None, actor_id=None):
 
 def update_entry(entry, *, report_date, quantity, note=None, actor_id=None):
     old_values = _entry_values(entry)
-    entry.report_date, entry.quantity, entry.note, entry.updated_by_id = _report_date(report_date), _quantity(quantity), (note or "").strip() or None, actor_id
+    report_date, quantity = _report_date(report_date), _quantity(quantity)
+    _validate_decimal_precision(quantity, entry.progress_item.decimal_places, "Khối lượng")
+    entry.report_date, entry.quantity, entry.note, entry.updated_by_id = report_date, quantity, (note or "").strip() or None, actor_id
     try:
         with db.session.begin_nested():
             db.session.flush()
@@ -138,11 +198,12 @@ def create_group(*, progress_type, name, note=None, display_order=0, actor_id=No
     db.session.add(value); db.session.flush(); log_audit("construction_progress.group.create", "ProgressGroup", value.id, new_values={"name": value.name}); return value
 
 
-def create_item(*, group, name, unit, planned_quantity=0, opening_quantity=0, assignee_user_id=None, note=None, display_order=0, actor_id=None):
-    planned, opening = Decimal(str(planned_quantity)), Decimal(str(opening_quantity))
-    if planned < 0 or opening < 0:
-        raise InvalidQuantityError("Khối lượng kế hoạch và mang sang không được âm.")
-    value = ProgressItem(project_id=group.project_id, progress_group_id=group.id, name=name.strip(), unit=unit.strip(), planned_quantity=planned, opening_quantity=opening, assignee_user_id=assignee_user_id, note=(note or "").strip() or None, display_order=display_order, created_by_id=actor_id, updated_by_id=actor_id)
+def create_item(*, group, name, unit, planned_quantity=0, opening_quantity=0, decimal_places=0, assignee_user_id=None, note=None, display_order=0, actor_id=None):
+    planned, opening = _nonnegative_quantity(planned_quantity), _nonnegative_quantity(opening_quantity)
+    decimal_places = 0 if group.progress_type.value_mode == "money" else _decimal_places(decimal_places)
+    _validate_decimal_precision(planned, decimal_places, "Khối lượng kế hoạch")
+    _validate_decimal_precision(opening, decimal_places, "Khối lượng mang sang")
+    value = ProgressItem(project_id=group.project_id, progress_group_id=group.id, name=name.strip(), unit="VNĐ" if group.progress_type.value_mode == "money" else unit.strip(), decimal_places=decimal_places, planned_quantity=planned, opening_quantity=opening, assignee_user_id=assignee_user_id, note=(note or "").strip() or None, display_order=display_order, created_by_id=actor_id, updated_by_id=actor_id)
     db.session.add(value); db.session.flush(); recalculate_item_completed(value); log_audit("construction_progress.item.create", "ProgressItem", value.id, new_values={"name": value.name}); return value
 
 
@@ -174,13 +235,15 @@ def update_group(group, *, name, note=None, display_order=0, actor_id=None):
     return group
 
 
-def update_item(item, *, name, unit, planned_quantity, opening_quantity, assignee_user_id=None, note=None, display_order=0, actor_id=None):
-    planned, opening = Decimal(str(planned_quantity)), Decimal(str(opening_quantity))
-    if planned < 0 or opening < 0:
-        raise InvalidQuantityError("Khối lượng kế hoạch và mang sang không được âm.")
-    old = {"name": item.name, "planned_quantity": str(item.planned_quantity), "opening_quantity": str(item.opening_quantity)}
-    item.name, item.unit, item.planned_quantity, item.opening_quantity = name.strip(), unit.strip(), planned, opening
+def update_item(item, *, name, unit, planned_quantity, opening_quantity, decimal_places=0, assignee_user_id=None, note=None, display_order=0, actor_id=None):
+    planned, opening = _nonnegative_quantity(planned_quantity), _nonnegative_quantity(opening_quantity)
+    decimal_places = 0 if item.progress_group.progress_type.value_mode == "money" else _decimal_places(decimal_places)
+    _validate_decimal_precision(planned, decimal_places, "Khối lượng kế hoạch")
+    _validate_decimal_precision(opening, decimal_places, "Khối lượng mang sang")
+    _validate_existing_item_precision(item, decimal_places)
+    old = {"name": item.name, "planned_quantity": str(item.planned_quantity), "opening_quantity": str(item.opening_quantity), "decimal_places": item.decimal_places}
+    item.name, item.unit, item.decimal_places, item.planned_quantity, item.opening_quantity = name.strip(), "VNĐ" if item.progress_group.progress_type.value_mode == "money" else unit.strip(), decimal_places, planned, opening
     item.assignee_user_id, item.note, item.display_order, item.updated_by_id = assignee_user_id, (note or "").strip() or None, display_order, actor_id
     recalculate_item_completed(item)
-    log_audit("construction_progress.item.update", "ProgressItem", item.id, old_values=old, new_values={"name": item.name, "planned_quantity": str(item.planned_quantity), "opening_quantity": str(item.opening_quantity)})
+    log_audit("construction_progress.item.update", "ProgressItem", item.id, old_values=old, new_values={"name": item.name, "planned_quantity": str(item.planned_quantity), "opening_quantity": str(item.opening_quantity), "decimal_places": item.decimal_places})
     return item

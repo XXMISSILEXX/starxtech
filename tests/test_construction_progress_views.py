@@ -45,7 +45,9 @@ def test_progress_tree_and_workspace_card_render_expected_content(client, app):
     assert "Tòa C1" in tree_text
     assert "Đi ống" in tree_text
     assert "mét" in tree_text
-    assert "50.0%" in tree_text
+    assert "50,0%" in tree_text
+    assert "<strong>50,0%</strong>" in tree_text
+    assert "<strong>50.0%</strong>" not in tree_text
     assert "Quản lý tiến độ thi công" in client.get("/projects/1/workspace").get_data(as_text=True)
     assert "—" in client.get(f"/projects/1/progress/items/{unplanned_id}").get_data(as_text=True)
 
