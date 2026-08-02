@@ -8,12 +8,12 @@
 {% macro item_row(index, item_id='', name='', unit='', decimal_places=0, planned_quantity='0', opening_quantity='0', entry_count=0, deleting=False, formatted=False) -%}
 <div class="border rounded p-2 mb-2" data-progress-item-row>
   <input type="hidden" name="items-{{ index }}-id" value="{{ item_id }}">
-  <div class="row g-2 align-items-end">
+  <div class="row g-2 align-items-start">
     <div class="col-md-3"><label class="form-label">Tên hạng mục</label><input class="form-control" name="items-{{ index }}-name" value="{{ name }}" data-item-name></div>
     <div class="col-md-2"><label class="form-label">Đơn vị</label><input class="form-control" name="items-{{ index }}-unit" value="{{ unit }}"></div>
     <div class="col-md-2"><label class="form-label">Độ chính xác</label><select class="form-select" name="items-{{ index }}-decimal_places">{{ places_options(decimal_places) }}</select></div>
-    <div class="col-md-2"><label class="form-label">Kế hoạch</label><input class="form-control" type="text" inputmode="decimal" name="items-{{ index }}-planned_quantity" value="{% if formatted %}{{ planned_quantity|vn_number(places=decimal_places) }}{% else %}{{ planned_quantity }}{% endif %}"><div class="form-text">Ví dụ: {{ number_example(decimal_places) }}</div></div>
-    <div class="col-md-2"><label class="form-label">Mang sang</label><input class="form-control" type="text" inputmode="decimal" name="items-{{ index }}-opening_quantity" value="{% if formatted %}{{ opening_quantity|vn_number(places=decimal_places) }}{% else %}{{ opening_quantity }}{% endif %}"><div class="form-text">Ví dụ: {{ number_example(decimal_places) }}</div></div>
+    <div class="col-md-2"><label class="form-label">Kế hoạch</label><input class="form-control" type="text" inputmode="decimal" name="items-{{ index }}-planned_quantity" placeholder="Ví dụ: {{ number_example(decimal_places) }}" value="{% if formatted %}{{ planned_quantity|vn_number(places=decimal_places) }}{% else %}{{ planned_quantity }}{% endif %}"></div>
+    <div class="col-md-2"><label class="form-label">Đã làm trước đó</label><input class="form-control" type="text" inputmode="decimal" name="items-{{ index }}-opening_quantity" placeholder="Ví dụ: {{ number_example(decimal_places) }}" value="{% if formatted %}{{ opening_quantity|vn_number(places=decimal_places) }}{% else %}{{ opening_quantity }}{% endif %}"></div>
     <div class="col-md-1 text-end">
       {% if item_id %}<label class="form-check"><input class="form-check-input" type="checkbox" name="items-{{ index }}-delete" value="on" data-delete-item {% if deleting %}checked{% endif %}> Xóa</label>{% else %}<button class="btn btn-outline-secondary btn-sm" type="button" data-remove-item-row>Bỏ</button>{% endif %}
     </div>
@@ -22,10 +22,10 @@
 </div>
 {%- endmacro %}
 {% macro entry_row(index, group_id='', item_id='', quantity='', note='') -%}
-<div class="row g-2 align-items-end mb-2" data-progress-entry-row>
+<div class="row g-2 align-items-start mb-2" data-progress-entry-row>
   <div class="col-md-3"><label class="form-label">Khu vực</label><select class="form-select" name="entries-{{ index }}-group_id" data-entry-group><option value="">Chọn khu vực</option>{% for node in tree %}{% for group in node['groups'] %}<option value="{{ group['group'].id }}" {% if group_id|int == group['group'].id %}selected{% endif %}>{{ group['group'].name }}</option>{% endfor %}{% endfor %}</select></div>
   <div class="col-md-3"><label class="form-label">Hạng mục</label><select class="form-select" name="entries-{{ index }}-item_id" data-entry-item><option value="">Chọn hạng mục</option>{% for node in tree %}{% for group in node['groups'] %}{% for line in group['items'] %}<option value="{{ line['item'].id }}" data-group-id="{{ group['group'].id }}" {% if item_id|int == line['item'].id %}selected{% endif %}>{{ line['item'].name }}</option>{% endfor %}{% endfor %}{% endfor %}</select></div>
-  <div class="col-md-2"><label class="form-label">Khối lượng</label><input class="form-control" name="entries-{{ index }}-quantity" value="{{ quantity }}"></div>
+  <div class="col-md-2"><label class="form-label">Khối lượng</label><input class="form-control" name="entries-{{ index }}-quantity" placeholder="Ví dụ: 1.280,34" value="{{ quantity }}"></div>
   <div class="col-md-3"><label class="form-label">Ghi chú</label><input class="form-control" name="entries-{{ index }}-note" value="{{ note }}"></div>
   <div class="col-md-1"><button type="button" class="btn btn-outline-secondary btn-sm" data-remove-entry-row>Bỏ</button></div>
 </div>

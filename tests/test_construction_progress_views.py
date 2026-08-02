@@ -1,5 +1,6 @@
 from app.extensions import db
 from app.models import ProgressGroup, ProgressItem, ProgressType
+from pathlib import Path
 
 
 def _login(client, username):
@@ -76,3 +77,16 @@ def test_type_detail_polish_marks_unplanned_and_over_plan_items(client, app):
     assert "vượt kế hoạch +50,0%" in page
     assert "width: 100%" in page
     assert "<th class=\"text-end\">Kế hoạch</th>" in page
+
+
+def test_progress_templates_use_placeholders_and_no_longer_call_opening_quantity_mang_sang():
+    template_dir = Path("app/templates/construction_progress")
+    templates = list(template_dir.rglob("*.html"))
+    assert templates
+    content = "\n".join(template.read_text(encoding="utf-8") for template in templates)
+    assert "Mang sang" not in content
+    assert "Đã làm trước đó" in content
+    assert 'align-items-end' not in content
+    assert 'placeholder="Ví dụ: {{ number_example(decimal_places) }}"' in content
+    assert 'placeholder="Ví dụ: 1.280,34"' in content
+    assert '<div class="form-text">Ví dụ:' not in content
