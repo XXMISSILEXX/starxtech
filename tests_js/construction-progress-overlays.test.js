@@ -42,3 +42,11 @@ test("daily-entry overlay filters items by group and preserves indexed rows", ()
   dom.window.document.querySelector("[data-add-entry-row]").click();
   assert.equal(dom.window.document.querySelectorAll('[name="entries-1-item_id"]').length, 1);
 });
+
+test("server-requested overlay reopens after a validation error", () => {
+  const dom = new JSDOM(`<!doctype html><div id="createEntries"></div><div data-open-progress-modal="createEntries"></div>`, {runScripts: "outside-only"});
+  let opened = null;
+  dom.window.bootstrap = {Modal: class { constructor(element) { opened = element.id; } show() {} }};
+  dom.window.eval(source);
+  assert.equal(opened, "createEntries");
+});

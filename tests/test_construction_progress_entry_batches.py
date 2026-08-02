@@ -63,7 +63,10 @@ def test_entry_batch_invalid_row_rolls_back_everything_and_preserves_overlay_inp
     )
     page = response.get_data(as_text=True)
     assert response.status_code == 400
-    assert "Dòng 2: Khối lượng chỉ được có tối đa 0 chữ số thập phân." in page
+    assert "Khối lượng chỉ được có tối đa 0 chữ số thập phân." in page
+    assert 'name="entries-1-quantity"' in page
+    assert "is-invalid" in page
+    assert 'data-open-progress-modal="createEntries"' in page
     assert "dòng hợp lệ nhưng không được lưu" in page
     assert "dòng sai độ chính xác" in page
     with app.app_context():

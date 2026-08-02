@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.extensions import db
-from app.models import ProgressEntry, ProgressGroup, ProgressItem, ProgressType
+from app.models import AuditLog, ProgressEntry, ProgressGroup, ProgressItem, ProgressType
 
 
 def _login(client):
@@ -48,9 +48,13 @@ def test_create_group_batch_rejects_duplicate_names_in_payload_and_keeps_form_va
     assert "bị trùng trong khu vực" in page
     assert "Khu vực người dùng vừa nhập" in page
     assert "Ống cấp nước" in page
+    assert 'data-open-progress-modal="createGroup"' in page
+    assert 'name="items-1-name"' in page
+    assert "Tên hạng mục &#39;ống cấp nước&#39; bị trùng trong khu vực." in page
     with app.app_context():
         assert ProgressGroup.query.filter_by(progress_type_id=type_id).count() == 0
         assert ProgressItem.query.count() == 0
+        assert AuditLog.query.count() == 0
 
 
 def test_edit_group_batch_rejects_lower_precision_and_rolls_back_every_row(client, app):
@@ -72,6 +76,8 @@ def test_edit_group_batch_rejects_lower_precision_and_rolls_back_every_row(clien
     assert "151,5" in page
     assert "Khu vực đã sửa nhưng phải rollback" in page
     assert "Hạng mục hợp lệ đã sửa" in page
+    assert f'data-open-progress-modal="editGroup-{group_id}"' in page
+    assert 'name="items-0-decimal_places"' in page
     with app.app_context():
         group = db.session.get(ProgressGroup, group_id)
         precise = db.session.get(ProgressItem, precise_item_id)
@@ -83,6 +89,7 @@ def test_edit_group_batch_rejects_lower_precision_and_rolls_back_every_row(clien
         assert ProgressItem.query.filter_by(progress_group_id=group_id).count() == 2
         assert ProgressEntry.query.filter_by(progress_item_id=precise_item_id).count() == 2
         assert ProgressType.query.filter_by(id=type_id).count() == 1
+        assert AuditLog.query.count() == 0
 
 
 def test_edit_group_overlay_shows_real_entry_count_before_item_deletion(client, app):

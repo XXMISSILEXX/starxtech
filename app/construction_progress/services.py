@@ -33,7 +33,18 @@ class InvalidNumberFormatError(ValueError):
 
 
 class BatchValidationError(ValueError):
-    pass
+    def __init__(self, message=None, *, form_errors=None, row_errors=None):
+        self.form_errors = form_errors or ({"_form": message} if message else {})
+        self.row_errors = row_errors or {}
+        super().__init__(message or next(iter(self.form_errors.values()), "Dữ liệu không hợp lệ."))
+
+    @property
+    def errors(self):
+        return {"form": self.form_errors, "rows": self.row_errors}
+
+
+def _batch_row_error(position, field, message):
+    return BatchValidationError(row_errors={position - 1: {field: message}})
 
 
 class BatchItemNotFoundError(ValueError):
@@ -225,7 +236,10 @@ def create_entry(*, item, report_date, quantity, note=None, actor_id=None):
 
 def create_entries_batch(*, progress_type, report_date, rows, actor_id=None):
     """Create daily entries only after every submitted row has passed validation."""
-    report_date = _report_date(report_date)
+    try:
+        report_date = _report_date(report_date)
+    except ValueError as exc:
+        raise BatchValidationError(form_errors={"report_date": str(exc)}) from exc
     prepared, seen_item_ids = [], set()
     for position, raw in enumerate(rows, start=1):
         item_id = (raw.get("item_id") or "").strip()
@@ -235,7 +249,7 @@ def create_entries_batch(*, progress_type, report_date, rows, actor_id=None):
         if not any((item_id, group_id, quantity, note)):
             continue
         if not item_id:
-            raise BatchValidationError(f"Dòng {position}: cần chọn hạng mục.")
+            raise _batch_row_error(position, "item_id", "Cần chọn hạng mục.")
         try:
             item_id = int(item_id)
         except (TypeError, ValueError) as exc:
@@ -248,15 +262,15 @@ def create_entries_batch(*, progress_type, report_date, rows, actor_id=None):
         if item is None:
             raise BatchItemNotFoundError("Hạng mục không thuộc loại tiến độ này.")
         if item.id in seen_item_ids:
-            raise BatchValidationError(f"Dòng {position}: hạng mục '{item.name}' bị trùng trong lượt tạo phiếu.")
+            raise _batch_row_error(position, "item_id", f"Hạng mục '{item.name}' bị trùng trong lượt tạo phiếu.")
         seen_item_ids.add(item.id)
         try:
             quantity_value = _quantity(quantity, item.decimal_places)
             _validate_decimal_precision(quantity_value, item.decimal_places, "Khối lượng")
         except ValueError as exc:
-            raise BatchValidationError(f"Dòng {position}: {exc}") from exc
+            raise _batch_row_error(position, "quantity", str(exc)) from exc
         if ProgressEntry.query.filter_by(progress_item_id=item.id, report_date=report_date).first() is not None:
-            raise BatchValidationError(f"Dòng {position}: hạng mục '{item.name}' đã có phiếu ngày {report_date:%d/%m/%Y}.")
+            raise _batch_row_error(position, "item_id", f"Hạng mục '{item.name}' đã có phiếu ngày {report_date:%d/%m/%Y}.")
         prepared.append({"item": item, "quantity": quantity_value, "note": note})
 
     try:
@@ -322,12 +336,12 @@ def _batch_item_rows(group, rows):
             try:
                 item_id = int(item_id)
             except (TypeError, ValueError) as exc:
-                raise BatchValidationError(f"Dòng {position}: hạng mục không hợp lệ.") from exc
+                raise _batch_row_error(position, "id", "Hạng mục không hợp lệ.") from exc
             item = existing.get(item_id)
             if item is None:
                 raise BatchItemNotFoundError("Hạng mục không thuộc khu vực này.")
             if item_id in submitted_ids:
-                raise BatchValidationError(f"Dòng {position}: hạng mục bị lặp trong biểu mẫu.")
+                raise _batch_row_error(position, "id", "Hạng mục bị lặp trong biểu mẫu.")
             submitted_ids.add(item_id)
         else:
             item = None
@@ -342,26 +356,35 @@ def _batch_item_rows(group, rows):
         }
         if deleting:
             if item is None:
-                raise BatchValidationError(f"Dòng {position}: chỉ có thể xoá hạng mục đã tồn tại.")
+                raise _batch_row_error(position, "delete", "Chỉ có thể xoá hạng mục đã tồn tại.")
             deleting_ids.add(item.id)
             prepared.append({"position": position, "item": item, "delete": True, **values})
             continue
         if item is None and not values["name"] and not values["unit"] and str(values["planned_quantity"]).strip() in {"", "0", "0.0", "0.00", "0.000"} and str(values["opening_quantity"]).strip() in {"", "0", "0.0", "0.00", "0.000"}:
             continue
         if not values["name"]:
-            raise BatchValidationError(f"Dòng {position}: cần nhập tên hạng mục.")
+            raise _batch_row_error(position, "name", "Cần nhập tên hạng mục.")
         if group.progress_type.value_mode != "money" and not values["unit"]:
-            raise BatchValidationError(f"Dòng {position}: cần nhập đơn vị.")
+            raise _batch_row_error(position, "unit", "Cần nhập đơn vị.")
         try:
             decimal_places = 0 if group.progress_type.value_mode == "money" else _decimal_places(values["decimal_places"])
-            planned = _nonnegative_quantity(values["planned_quantity"], decimal_places)
-            opening = _nonnegative_quantity(values["opening_quantity"], decimal_places)
-            _validate_decimal_precision(planned, decimal_places, "Khối lượng kế hoạch")
-            _validate_decimal_precision(opening, decimal_places, "Khối lượng mang sang")
-            if item is not None:
-                _validate_existing_item_precision(item, decimal_places)
         except ValueError as exc:
-            raise BatchValidationError(f"Dòng {position}: {exc}") from exc
+            raise _batch_row_error(position, "decimal_places", str(exc)) from exc
+        try:
+            planned = _nonnegative_quantity(values["planned_quantity"], decimal_places)
+            _validate_decimal_precision(planned, decimal_places, "Khối lượng kế hoạch")
+        except ValueError as exc:
+            raise _batch_row_error(position, "planned_quantity", str(exc)) from exc
+        try:
+            opening = _nonnegative_quantity(values["opening_quantity"], decimal_places)
+            _validate_decimal_precision(opening, decimal_places, "Khối lượng mang sang")
+        except ValueError as exc:
+            raise _batch_row_error(position, "opening_quantity", str(exc)) from exc
+        if item is not None:
+            try:
+                _validate_existing_item_precision(item, decimal_places)
+            except ValueError as exc:
+                raise _batch_row_error(position, "decimal_places", str(exc)) from exc
         prepared.append({
             "position": position, "item": item, "delete": False, "name": values["name"],
             "unit": values["unit"], "decimal_places": decimal_places,
@@ -377,7 +400,7 @@ def _batch_item_rows(group, rows):
             continue
         key = row["name"].casefold()
         if key in final_names:
-            raise BatchValidationError(f"Dòng {row['position']}: tên hạng mục '{row['name']}' bị trùng trong khu vực.")
+            raise _batch_row_error(row["position"], "name", f"Tên hạng mục '{row['name']}' bị trùng trong khu vực.")
         final_names[key] = row["item"].id if row["item"] is not None else None
     return prepared, deleting_ids
 
@@ -385,9 +408,9 @@ def _batch_item_rows(group, rows):
 def create_group_batch(*, progress_type, name, rows, actor_id=None):
     name = (name or "").strip()
     if not name:
-        raise BatchValidationError("Cần nhập tên khu vực.")
+        raise BatchValidationError(form_errors={"name": "Cần nhập tên khu vực."})
     if ProgressGroup.query.filter_by(progress_type_id=progress_type.id, name=name).first() is not None:
-        raise BatchValidationError("Tên khu vực đã tồn tại trong loại tiến độ này.")
+        raise BatchValidationError(form_errors={"name": "Tên khu vực đã tồn tại trong loại tiến độ này."})
     temporary_group = type("BatchGroup", (), {"items": [], "progress_type": progress_type})()
     prepared, _ = _batch_item_rows(temporary_group, rows)
     try:
@@ -403,17 +426,17 @@ def create_group_batch(*, progress_type, name, rows, actor_id=None):
 def update_group_batch(*, group, name, rows, confirm_deletions=False, actor_id=None):
     name = (name or "").strip()
     if not name:
-        raise BatchValidationError("Cần nhập tên khu vực.")
+        raise BatchValidationError(form_errors={"name": "Cần nhập tên khu vực."})
     duplicate_group = ProgressGroup.query.filter(
         ProgressGroup.progress_type_id == group.progress_type_id,
         ProgressGroup.name == name,
         ProgressGroup.id != group.id,
     ).first()
     if duplicate_group is not None:
-        raise BatchValidationError("Tên khu vực đã tồn tại trong loại tiến độ này.")
+        raise BatchValidationError(form_errors={"name": "Tên khu vực đã tồn tại trong loại tiến độ này."})
     prepared, deleting_ids = _batch_item_rows(group, rows)
     if deleting_ids and not confirm_deletions:
-        raise BatchValidationError("Hãy xác nhận việc xoá các hạng mục đã đánh dấu.")
+        raise BatchValidationError(form_errors={"confirm_deletions": "Hãy xác nhận việc xoá các hạng mục đã đánh dấu."})
     try:
         with db.session.begin_nested():
             update_group(group, name=name, actor_id=actor_id)
