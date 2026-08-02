@@ -371,3 +371,43 @@ Lệnh dựng lại môi trường:
 ```bash
 docker run -d --name starx-phase4-pg -e POSTGRES_USER=starx_phase4 -e POSTGRES_PASSWORD=starx_phase4 -e POSTGRES_DB=starx_phase4 -p 127.0.0.1:55433:5432 postgres:16
 ```
+
+## 10. Phase 12.1 — UX, xoá cứng và batch (2026-08-02)
+
+Các commit Phase 12.1:
+
+| Bước | Commit | Kết quả |
+| --- | --- | --- |
+| 0 | `5d4d909` | Ghi baseline 12.1. |
+| 1 | `5042dbc` | `decimal_places`, định dạng `vn_number`, validation độ chính xác. |
+| 2 | `dcbf77e` | Xoá cứng ba cấp, audit snapshot, bỏ archive/filter `is_active`. |
+| 3 | `02f69a7` | Migration xoá `is_active` sau khi dữ liệu ẩn development được chủ dự án dọn qua UI. |
+| 4 | `a36c95f` | Overlay batch tạo/sửa khu vực và hạng mục. |
+| 5 | `6983719` | Overlay batch phiếu cập nhật ngày. |
+| 6 | `6372e06` | Bỏ canvas/chart JavaScript khỏi trang chi tiết; giữ route `chart-data` cho dashboard sau này. |
+| 7 | `bbb4694` | Bảng dữ liệu thuần, gập/mở khu vực, nhãn chưa kế hoạch/vượt kế hoạch. |
+
+### Chức năng đã chốt
+
+- Hiển thị số theo `decimal_places` (0–3), `None` thành `—`, phần trăm luôn một chữ số thập phân.
+- Không thể hạ độ chính xác nếu kế hoạch, mang sang hoặc phiếu hiện hữu sẽ bị làm tròn; quy tắc áp dụng cho cả sửa lẻ và batch.
+- Xoá loại/khu vực/hạng mục là xoá cứng theo thứ tự phiếu → hạng mục → khu vực → loại, có xác nhận và audit đủ dữ liệu phiếu trước khi xoá.
+- Tạo/sửa khu vực và tạo phiếu ngày đều là transaction tất-cả-hoặc-không; overlay giữ nguyên dữ liệu đã nhập khi server từ chối.
+- Route `chart-data` vẫn tồn tại và vẫn có test phân quyền, nhưng không còn được render ở trang chi tiết.
+
+### Kiểm thử chốt Phase 12.1
+
+```text
+$ pytest -p no:cacheprovider -q
+529 passed, 3 skipped in 349.64s (0:05:49)
+```
+
+Skip là ba test PostgreSQL Phase 4/5 đã có từ trước khi không cấu hình URL PostgreSQL.
+
+### Việc phải làm khi deploy
+
+1. Xác nhận backup tự động đã bật và đã restore thử độc lập; audit log phải có màn hình quản trị trước khi cho người dùng thật dùng xoá cứng.
+2. Khi nâng từ bản có `is_active`, cho chủ dự án tự xoá hết bản ghi đang ẩn trên UI trước khi chạy migration drop cột; không dùng SQL/script để xoá dữ liệu thật.
+3. Chạy `flask db upgrade`, sau đó chạy lệnh đồng bộ permission đã ghi ở mục 7 của tài liệu này.
+4. Smoke test: mở trang chi tiết loại, tạo batch khu vực, tạo batch phiếu, thử một lỗi validation và xác nhận dữ liệu overlay còn nguyên.
+5. Nếu khối lượng trở thành số liệu nghiệm thu/thanh toán hoặc bị ràng buộc lưu trữ, xem lại quyết định xoá cứng theo mục 12 của tài liệu Phase 12.1.
