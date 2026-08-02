@@ -53,12 +53,15 @@ def edit_type(project_id, type_id):
     return redirect(url_for("construction_progress.project_progress", project_id=project_id))
 
 
-@bp.post("/projects/<int:project_id>/progress/types/<int:type_id>/archive")
+@bp.post("/projects/<int:project_id>/progress/types/<int:type_id>/delete")
 @progress_structure_required()
-def archive_type(project_id, type_id):
-    services.archive_type(_type(project_id, type_id), actor_id=current_user.id)
+def delete_type(project_id, type_id):
+    try:
+        services.delete_type(_type(project_id, type_id), confirm_name=request.form.get("confirm_name"), actor_id=current_user.id)
+    except services.ConfirmationNameError as exc:
+        abort(400, description=str(exc))
     db.session.commit()
-    flash("Đã ẩn loại tiến độ.", "success")
+    flash("Đã xoá vĩnh viễn loại tiến độ và dữ liệu bên trong.", "success")
     return redirect(url_for("construction_progress.project_progress", project_id=project_id))
 
 
@@ -67,7 +70,13 @@ def archive_type(project_id, type_id):
 def type_detail(project_id, type_id):
     project = _project(project_id)
     value = _type(project_id, type_id)
-    return render_template("construction_progress/type_detail.html", project=project, progress_type=value, tree=services.progress_tree(project, value), types=ProgressType.query.filter_by(project_id=project.id, is_active=True).all(), type_percent=services.type_percent(value), can_manage=can_manage_progress_structure(project.id))
+    tree = services.progress_tree(project, value)
+    delete_summaries = {
+        "type": services.deletion_summary_for_type(value),
+        "groups": {group["group"].id: services.deletion_summary_for_group(group["group"]) for node in tree for group in node["groups"]},
+        "items": {line["item"].id: services.deletion_summary_for_item(line["item"]) for node in tree for group in node["groups"] for line in group["items"]},
+    }
+    return render_template("construction_progress/type_detail.html", project=project, progress_type=value, tree=tree, types=ProgressType.query.filter_by(project_id=project.id).all(), type_percent=services.type_percent(value), can_manage=can_manage_progress_structure(project.id), delete_summaries=delete_summaries)
 
 
 @bp.post("/projects/<int:project_id>/progress/types/<int:type_id>/groups")
@@ -84,10 +93,22 @@ def create_group(project_id, type_id):
 def change_group(project_id, group_id, action):
     group = _group(project_id, group_id)
     if action == "edit": services.update_group(group, name=request.form.get("name", ""), actor_id=current_user.id)
-    elif action == "archive": services.archive_group(group, actor_id=current_user.id)
     else: abort(404)
     db.session.commit()
-    flash("Đã cập nhật khu vực." if action == "edit" else "Đã ẩn khu vực.", "success")
+    flash("Đã cập nhật khu vực.", "success")
+    return redirect(url_for("construction_progress.type_detail", project_id=project_id, type_id=group.progress_type_id))
+
+
+@bp.post("/projects/<int:project_id>/progress/groups/<int:group_id>/delete")
+@progress_structure_required()
+def delete_group(project_id, group_id):
+    group = _group(project_id, group_id)
+    try:
+        services.delete_group(group, confirm_name=request.form.get("confirm_name"), actor_id=current_user.id)
+    except services.ConfirmationNameError as exc:
+        abort(400, description=str(exc))
+    db.session.commit()
+    flash("Đã xoá vĩnh viễn khu vực và dữ liệu bên trong.", "success")
     return redirect(url_for("construction_progress.type_detail", project_id=project_id, type_id=group.progress_type_id))
 
 
@@ -115,11 +136,24 @@ def change_item(project_id, item_id, action):
         except ValueError as exc:
             flash(str(exc), "warning")
             return redirect(url_for("construction_progress.type_detail", project_id=project_id, type_id=item.progress_group.progress_type_id))
-    elif action == "archive": services.archive_item(item, actor_id=current_user.id)
     else: abort(404)
     db.session.commit()
-    flash("Đã cập nhật hạng mục." if action == "edit" else "Đã ẩn hạng mục.", "success")
+    flash("Đã cập nhật hạng mục.", "success")
     return redirect(url_for("construction_progress.type_detail", project_id=project_id, type_id=item.progress_group.progress_type_id))
+
+
+@bp.post("/projects/<int:project_id>/progress/items/<int:item_id>/delete")
+@progress_structure_required()
+def delete_item(project_id, item_id):
+    item = _item(project_id, item_id)
+    type_id = item.progress_group.progress_type_id
+    try:
+        services.delete_item(item, confirm_name=request.form.get("confirm_name"), actor_id=current_user.id)
+    except services.ConfirmationNameError as exc:
+        abort(400, description=str(exc))
+    db.session.commit()
+    flash("Đã xoá vĩnh viễn hạng mục và phiếu cập nhật.", "success")
+    return redirect(url_for("construction_progress.type_detail", project_id=project_id, type_id=type_id))
 
 
 @bp.get("/projects/<int:project_id>/progress/items/<int:item_id>")
@@ -168,13 +202,13 @@ def change_entry(project_id, entry_id, action):
 @progress_read_required()
 def chart_data(project_id, type_id):
     value = _type(project_id, type_id)
-    groups = [group for group in value.groups if group.is_active]
+    groups = list(value.groups)
     payload = {
         "labels": [group.name for group in groups],
         "percentages": [round(float(services.group_percent(group, value.value_mode) or 0), 1) for group in groups],
         "overall_percent": round(float(services.type_percent(value) or 0), 1),
     }
     if value.value_mode == "money":
-        payload["completed"] = [float(sum((item.completed_quantity for item in group.items if item.is_active), 0)) for group in groups]
-        payload["remaining"] = [float(max(sum((item.planned_quantity - item.completed_quantity for item in group.items if item.is_active), 0), 0)) for group in groups]
+        payload["completed"] = [float(sum((item.completed_quantity for item in group.items), 0)) for group in groups]
+        payload["remaining"] = [float(max(sum((item.planned_quantity - item.completed_quantity for item in group.items), 0), 0)) for group in groups]
     return jsonify(payload)

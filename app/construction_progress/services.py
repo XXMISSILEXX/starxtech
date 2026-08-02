@@ -34,7 +34,7 @@ def item_percent(item):
 
 
 def group_percent(group, value_mode):
-    items = [item for item in group.items if item.is_active]
+    items = list(group.items)
     if value_mode == "money":
         planned = sum((Decimal(item.planned_quantity or 0) for item in items), Decimal())
         return None if planned <= 0 else sum((Decimal(item.completed_quantity or 0) for item in items), Decimal()) / planned * 100
@@ -44,7 +44,7 @@ def group_percent(group, value_mode):
 
 
 def type_percent(progress_type):
-    groups = [group for group in progress_type.groups if group.is_active]
+    groups = list(progress_type.groups)
     if progress_type.value_mode == "money":
         items = [item for group in groups for item in group.items]
         planned = sum((Decimal(item.planned_quantity or 0) for item in items), Decimal())
@@ -55,14 +55,14 @@ def type_percent(progress_type):
 
 
 def progress_tree(project, progress_type=None):
-    query = ProgressType.query.filter_by(project_id=project.id, is_active=True).options(joinedload(ProgressType.groups).joinedload(ProgressGroup.items))
+    query = ProgressType.query.filter_by(project_id=project.id).options(joinedload(ProgressType.groups).joinedload(ProgressGroup.items))
     if progress_type is not None:
         query = query.filter_by(id=progress_type.id)
     types = query.order_by(ProgressType.display_order, ProgressType.id).all()
     return [{"type": value, "percent": type_percent(value), "groups": [
         {"group": group, "percent": group_percent(group, value.value_mode), "items": [
-            {"item": item, "percent": item_percent(item)} for item in group.items if item.is_active
-        ]} for group in value.groups if group.is_active
+            {"item": item, "percent": item_percent(item)} for item in group.items
+        ]} for group in value.groups
     ]} for value in types]
 
 
@@ -207,16 +207,153 @@ def create_item(*, group, name, unit, planned_quantity=0, opening_quantity=0, de
     db.session.add(value); db.session.flush(); recalculate_item_completed(value); log_audit("construction_progress.item.create", "ProgressItem", value.id, new_values={"name": value.name}); return value
 
 
-def archive_type(progress_type, *, actor_id=None):
-    progress_type.is_active = False; progress_type.updated_by_id = actor_id; log_audit("construction_progress.type.archive", "ProgressType", progress_type.id, new_values={"is_active": False}); return progress_type
+class ConfirmationNameError(ValueError):
+    pass
 
 
-def archive_group(group, *, actor_id=None):
-    group.is_active = False; group.updated_by_id = actor_id; log_audit("construction_progress.group.archive", "ProgressGroup", group.id, new_values={"is_active": False}); return group
+def _user_values(user):
+    return None if user is None else {
+        "id": user.id,
+        "username": user.username,
+        "full_name": user.full_name,
+    }
 
 
-def archive_item(item, *, actor_id=None):
-    item.is_active = False; item.updated_by_id = actor_id; log_audit("construction_progress.item.archive", "ProgressItem", item.id, new_values={"is_active": False}); return item
+def _entry_values_for_delete(entry):
+    return {
+        "id": entry.id,
+        "report_date": entry.report_date.isoformat(),
+        "quantity": str(entry.quantity),
+        "note": entry.note,
+        "created_by": _user_values(entry.created_by),
+    }
+
+
+def _item_values_for_delete(item):
+    return {
+        "id": item.id,
+        "name": item.name,
+        "unit": item.unit,
+        "decimal_places": item.decimal_places,
+        "planned_quantity": str(item.planned_quantity),
+        "opening_quantity": str(item.opening_quantity),
+        "completed_quantity": str(item.completed_quantity),
+        "note": item.note,
+        "entries": [_entry_values_for_delete(entry) for entry in sorted(item.entries, key=lambda entry: entry.id)],
+    }
+
+
+def _group_values_for_delete(group):
+    return {
+        "id": group.id,
+        "name": group.name,
+        "note": group.note,
+        "items": [_item_values_for_delete(item) for item in sorted(group.items, key=lambda item: item.id)],
+    }
+
+
+def _deletion_context(*, progress_type, groups):
+    groups = sorted(groups, key=lambda group: group.id)
+    items = [item for group in groups for item in sorted(group.items, key=lambda item: item.id)]
+    entries = [entry for item in items for entry in sorted(item.entries, key=lambda entry: entry.id)]
+    return {
+        "progress_type": {
+            "id": progress_type.id,
+            "name": progress_type.name,
+            "value_mode": progress_type.value_mode,
+            "description": progress_type.description,
+        },
+        "groups": [_group_values_for_delete(group) for group in groups],
+        "counts": {"groups": len(groups), "items": len(items), "entries": len(entries)},
+    }, groups, items, entries
+
+
+def deletion_summary_for_type(progress_type):
+    return _deletion_context(progress_type=progress_type, groups=list(progress_type.groups))[0]["counts"]
+
+
+def deletion_summary_for_group(group):
+    return _deletion_context(progress_type=group.progress_type, groups=[group])[0]["counts"]
+
+
+def deletion_summary_for_item(item):
+    return _deletion_context(progress_type=item.progress_group.progress_type, groups=[item.progress_group])[0]["counts"] | {"items": 1, "entries": len(item.entries)}
+
+
+def _confirm_structure_delete(name, confirm_name):
+    if confirm_name != name:
+        raise ConfirmationNameError("Tên xác nhận không khớp. Chưa xoá dữ liệu nào.")
+
+
+def _hard_delete_structure(*, action, entity_type, entity, progress_type, groups, confirm_name):
+    _confirm_structure_delete(entity.name, confirm_name)
+    old_values, groups, items, entries = _deletion_context(progress_type=progress_type, groups=groups)
+    with db.session.begin_nested():
+        log_audit(action, entity_type, entity.id, old_values=old_values)
+        db.session.flush()
+        for entry in entries:
+            db.session.delete(entry)
+        db.session.flush()
+        for item in items:
+            db.session.delete(item)
+        db.session.flush()
+        for group in groups:
+            db.session.delete(group)
+        db.session.flush()
+        if entity_type == "ProgressType":
+            db.session.delete(entity)
+            db.session.flush()
+    return old_values["counts"]
+
+
+def delete_type(progress_type, *, confirm_name, actor_id=None):
+    return _hard_delete_structure(
+        action="construction_progress.type.delete",
+        entity_type="ProgressType",
+        entity=progress_type,
+        progress_type=progress_type,
+        groups=list(progress_type.groups),
+        confirm_name=confirm_name,
+    )
+
+
+def delete_group(group, *, confirm_name, actor_id=None):
+    return _hard_delete_structure(
+        action="construction_progress.group.delete",
+        entity_type="ProgressGroup",
+        entity=group,
+        progress_type=group.progress_type,
+        groups=[group],
+        confirm_name=confirm_name,
+    )
+
+
+def delete_item(item, *, confirm_name, actor_id=None):
+    _confirm_structure_delete(item.name, confirm_name)
+    item_values = _item_values_for_delete(item)
+    old_values = {
+        "progress_type": {
+            "id": item.progress_group.progress_type.id,
+            "name": item.progress_group.progress_type.name,
+            "value_mode": item.progress_group.progress_type.value_mode,
+            "description": item.progress_group.progress_type.description,
+        },
+        "groups": [{
+            "id": item.progress_group.id,
+            "name": item.progress_group.name,
+            "items": [item_values],
+        }],
+        "counts": {"groups": 0, "items": 1, "entries": len(item.entries)},
+    }
+    with db.session.begin_nested():
+        log_audit("construction_progress.item.delete", "ProgressItem", item.id, old_values=old_values)
+        db.session.flush()
+        for entry in item.entries:
+            db.session.delete(entry)
+        db.session.flush()
+        db.session.delete(item)
+        db.session.flush()
+    return old_values["counts"]
 
 
 def update_type(progress_type, *, name, value_mode, description=None, display_order=0, actor_id=None):
