@@ -394,12 +394,13 @@ Các commit Phase 12.1:
 - Xoá loại/khu vực/hạng mục là xoá cứng theo thứ tự phiếu → hạng mục → khu vực → loại, có xác nhận và audit đủ dữ liệu phiếu trước khi xoá.
 - Tạo/sửa khu vực và tạo phiếu ngày đều là transaction tất-cả-hoặc-không; overlay giữ nguyên dữ liệu đã nhập khi server từ chối.
 - Route `chart-data` vẫn tồn tại và vẫn có test phân quyền, nhưng không còn được render ở trang chi tiết.
+- Bổ sung sau khi chủ dự án test tay: số hiển thị kiểu Việt trước đây không đọc lại được khi nhập. `services.py` nay dùng một parser chung, không phụ thuộc locale, cho mọi đường ghi hạng mục/phiếu; parser hiểu dấu chấm hoặc dấu phẩy đối xứng, từ chối trường hợp mơ hồ ở độ chính xác 3, và giữ nguyên validation số âm, dương và `decimal_places`.
 
 ### Kiểm thử chốt Phase 12.1
 
 ```text
 $ pytest -p no:cacheprovider -q
-529 passed, 3 skipped in 349.64s (0:05:49)
+549 passed, 3 skipped in 344.35s (0:05:44)
 ```
 
 Skip là ba test PostgreSQL Phase 4/5 đã có từ trước khi không cấu hình URL PostgreSQL.

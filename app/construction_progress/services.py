@@ -28,6 +28,10 @@ class InvalidDecimalPlacesError(ValueError):
     pass
 
 
+class InvalidNumberFormatError(ValueError):
+    pass
+
+
 class BatchValidationError(ValueError):
     pass
 
@@ -93,21 +97,69 @@ def _report_date(value):
     return result
 
 
-def _quantity(value):
+def _number_example(decimal_places):
+    return {0: "1.280", 1: "1.280,3", 2: "1.280,34", 3: "1.280,345"}[decimal_places]
+
+
+def parse_vietnamese_number(value, decimal_places):
+    """Parse a human-entered number without relying on the host locale."""
+    if isinstance(value, Decimal):
+        return value
+    text = "".join(str(value).replace("\u00a0", " ").split())
+    if not text:
+        raise InvalidNumberFormatError(
+            f"Định dạng số không hợp lệ. Ví dụ với độ chính xác này: {_number_example(decimal_places)}."
+        )
+    sign, body = (text[:1], text[1:]) if text[:1] in {"+", "-"} else ("", text)
+    if not body or any(character not in "0123456789.," for character in body):
+        raise InvalidNumberFormatError(
+            f"Định dạng số không hợp lệ. Ví dụ với độ chính xác này: {_number_example(decimal_places)}."
+        )
+    dots, commas = body.count("."), body.count(",")
+    if dots and commas:
+        decimal_separator = "." if body.rfind(".") > body.rfind(",") else ","
+        thousand_separator = "," if decimal_separator == "." else "."
+        normalized = body.replace(thousand_separator, "").replace(decimal_separator, ".")
+    elif dots or commas:
+        separator = "." if dots else ","
+        occurrences = dots or commas
+        if occurrences > 1:
+            normalized = body.replace(separator, "")
+        else:
+            fraction = body.split(separator, 1)[1]
+            if len(fraction) == 3:
+                if decimal_places == 3:
+                    raise InvalidNumberFormatError(
+                        f"'{body}' có thể là 1000 hoặc 1,000. Hãy viết lại rõ ràng; ví dụ: {_number_example(decimal_places)}."
+                    )
+                normalized = body.replace(separator, "")
+            else:
+                normalized = body.replace(separator, ".")
+    else:
+        normalized = body
     try:
-        value = Decimal(str(value))
+        return Decimal(sign + normalized)
     except Exception as exc:
-        raise InvalidQuantityError("Khối lượng phải lớn hơn 0.") from exc
+        raise InvalidNumberFormatError(
+            f"Định dạng số không hợp lệ. Ví dụ với độ chính xác này: {_number_example(decimal_places)}."
+        ) from exc
+
+
+def _quantity(value, decimal_places):
+    try:
+        value = parse_vietnamese_number(value, decimal_places)
+    except InvalidNumberFormatError:
+        raise
     if value <= 0:
         raise InvalidQuantityError("Khối lượng phải lớn hơn 0.")
     return value
 
 
-def _nonnegative_quantity(value):
+def _nonnegative_quantity(value, decimal_places):
     try:
-        result = Decimal(str(value))
-    except Exception as exc:
-        raise InvalidQuantityError("Khối lượng kế hoạch và mang sang không hợp lệ.") from exc
+        result = parse_vietnamese_number(value, decimal_places)
+    except InvalidNumberFormatError:
+        raise
     if result < 0:
         raise InvalidQuantityError("Khối lượng kế hoạch và mang sang không được âm.")
     return result
@@ -157,7 +209,7 @@ def _validate_existing_item_precision(item, decimal_places):
 
 
 def create_entry(*, item, report_date, quantity, note=None, actor_id=None):
-    report_date, quantity = _report_date(report_date), _quantity(quantity)
+    report_date, quantity = _report_date(report_date), _quantity(quantity, item.decimal_places)
     _validate_decimal_precision(quantity, item.decimal_places, "Khối lượng")
     entry = ProgressEntry(project_id=item.project_id, progress_item_id=item.id, report_date=report_date, quantity=quantity, note=(note or "").strip() or None, created_by_id=actor_id, updated_by_id=actor_id)
     try:
@@ -199,7 +251,7 @@ def create_entries_batch(*, progress_type, report_date, rows, actor_id=None):
             raise BatchValidationError(f"Dòng {position}: hạng mục '{item.name}' bị trùng trong lượt tạo phiếu.")
         seen_item_ids.add(item.id)
         try:
-            quantity_value = _quantity(quantity)
+            quantity_value = _quantity(quantity, item.decimal_places)
             _validate_decimal_precision(quantity_value, item.decimal_places, "Khối lượng")
         except ValueError as exc:
             raise BatchValidationError(f"Dòng {position}: {exc}") from exc
@@ -218,7 +270,7 @@ def create_entries_batch(*, progress_type, report_date, rows, actor_id=None):
 
 def update_entry(entry, *, report_date, quantity, note=None, actor_id=None):
     old_values = _entry_values(entry)
-    report_date, quantity = _report_date(report_date), _quantity(quantity)
+    report_date, quantity = _report_date(report_date), _quantity(quantity, entry.progress_item.decimal_places)
     _validate_decimal_precision(quantity, entry.progress_item.decimal_places, "Khối lượng")
     entry.report_date, entry.quantity, entry.note, entry.updated_by_id = report_date, quantity, (note or "").strip() or None, actor_id
     try:
@@ -252,8 +304,8 @@ def create_group(*, progress_type, name, note=None, display_order=0, actor_id=No
 
 
 def create_item(*, group, name, unit, planned_quantity=0, opening_quantity=0, decimal_places=0, assignee_user_id=None, note=None, display_order=0, actor_id=None):
-    planned, opening = _nonnegative_quantity(planned_quantity), _nonnegative_quantity(opening_quantity)
     decimal_places = 0 if group.progress_type.value_mode == "money" else _decimal_places(decimal_places)
+    planned, opening = _nonnegative_quantity(planned_quantity, decimal_places), _nonnegative_quantity(opening_quantity, decimal_places)
     _validate_decimal_precision(planned, decimal_places, "Khối lượng kế hoạch")
     _validate_decimal_precision(opening, decimal_places, "Khối lượng mang sang")
     value = ProgressItem(project_id=group.project_id, progress_group_id=group.id, name=name.strip(), unit="VNĐ" if group.progress_type.value_mode == "money" else unit.strip(), decimal_places=decimal_places, planned_quantity=planned, opening_quantity=opening, assignee_user_id=assignee_user_id, note=(note or "").strip() or None, display_order=display_order, created_by_id=actor_id, updated_by_id=actor_id)
@@ -302,8 +354,8 @@ def _batch_item_rows(group, rows):
             raise BatchValidationError(f"Dòng {position}: cần nhập đơn vị.")
         try:
             decimal_places = 0 if group.progress_type.value_mode == "money" else _decimal_places(values["decimal_places"])
-            planned = _nonnegative_quantity(values["planned_quantity"])
-            opening = _nonnegative_quantity(values["opening_quantity"])
+            planned = _nonnegative_quantity(values["planned_quantity"], decimal_places)
+            opening = _nonnegative_quantity(values["opening_quantity"], decimal_places)
             _validate_decimal_precision(planned, decimal_places, "Khối lượng kế hoạch")
             _validate_decimal_precision(opening, decimal_places, "Khối lượng mang sang")
             if item is not None:
@@ -547,8 +599,8 @@ def update_group(group, *, name, note=None, display_order=0, actor_id=None):
 
 
 def update_item(item, *, name, unit, planned_quantity, opening_quantity, decimal_places=0, assignee_user_id=None, note=None, display_order=0, actor_id=None):
-    planned, opening = _nonnegative_quantity(planned_quantity), _nonnegative_quantity(opening_quantity)
     decimal_places = 0 if item.progress_group.progress_type.value_mode == "money" else _decimal_places(decimal_places)
+    planned, opening = _nonnegative_quantity(planned_quantity, decimal_places), _nonnegative_quantity(opening_quantity, decimal_places)
     _validate_decimal_precision(planned, decimal_places, "Khối lượng kế hoạch")
     _validate_decimal_precision(opening, decimal_places, "Khối lượng mang sang")
     _validate_existing_item_precision(item, decimal_places)
