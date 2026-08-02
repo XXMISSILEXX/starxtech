@@ -40,7 +40,17 @@ def _batch_rows_from_form():
     return [rows[index] for index in sorted(rows)]
 
 
-def _type_detail_response(project, value, *, batch_form=None, status=200):
+def _entry_batch_rows_from_form():
+    rows = {}
+    pattern = re.compile(r"^entries-(\d+)-(group_id|item_id|quantity|note)$")
+    for key, value in request.form.items():
+        match = pattern.match(key)
+        if match:
+            rows.setdefault(int(match.group(1)), {})[match.group(2)] = value
+    return [rows[index] for index in sorted(rows)]
+
+
+def _type_detail_response(project, value, *, batch_form=None, entry_batch_form=None, status=200):
     tree = services.progress_tree(project, value)
     delete_summaries = {
         "type": services.deletion_summary_for_type(value),
@@ -51,7 +61,9 @@ def _type_detail_response(project, value, *, batch_form=None, status=200):
         "construction_progress/type_detail.html", project=project, progress_type=value,
         tree=tree, types=ProgressType.query.filter_by(project_id=project.id).all(),
         type_percent=services.type_percent(value), can_manage=can_manage_progress_structure(project.id),
+        can_create=can_create_progress_entry(project.id),
         delete_summaries=delete_summaries, batch_form=batch_form,
+        entry_batch_form=entry_batch_form, today=services.local_today(),
     ), status
 
 
@@ -139,6 +151,25 @@ def update_group_batch(project_id, group_id):
         return _type_detail_response(project, _type(project_id, group.progress_type_id), batch_form=batch_form, status=400)
     flash("Đã cập nhật khu vực và hạng mục.", "success")
     return redirect(url_for("construction_progress.type_detail", project_id=project_id, type_id=group.progress_type_id))
+
+
+@bp.post("/projects/<int:project_id>/progress/types/<int:type_id>/entries/batch")
+@progress_entry_required()
+def create_entries_batch(project_id, type_id):
+    project, progress_type, rows = _project(project_id), _type(project_id, type_id), _entry_batch_rows_from_form()
+    entry_batch_form = {"report_date": request.form.get("report_date", ""), "rows": rows}
+    try:
+        services.create_entries_batch(progress_type=progress_type, report_date=entry_batch_form["report_date"], rows=rows, actor_id=current_user.id)
+        db.session.commit()
+    except services.BatchItemNotFoundError:
+        db.session.rollback()
+        abort(404)
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), "warning")
+        return _type_detail_response(project, progress_type, entry_batch_form=entry_batch_form, status=400)
+    flash("Đã tạo các phiếu cập nhật ngày.", "success")
+    return redirect(url_for("construction_progress.type_detail", project_id=project_id, type_id=type_id))
 
 
 @bp.post("/projects/<int:project_id>/progress/types/<int:type_id>/groups")

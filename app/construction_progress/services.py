@@ -171,6 +171,51 @@ def create_entry(*, item, report_date, quantity, note=None, actor_id=None):
     return entry
 
 
+def create_entries_batch(*, progress_type, report_date, rows, actor_id=None):
+    """Create daily entries only after every submitted row has passed validation."""
+    report_date = _report_date(report_date)
+    prepared, seen_item_ids = [], set()
+    for position, raw in enumerate(rows, start=1):
+        item_id = (raw.get("item_id") or "").strip()
+        group_id = (raw.get("group_id") or "").strip()
+        quantity = (raw.get("quantity") or "").strip()
+        note = (raw.get("note") or "").strip()
+        if not any((item_id, group_id, quantity, note)):
+            continue
+        if not item_id:
+            raise BatchValidationError(f"Dòng {position}: cần chọn hạng mục.")
+        try:
+            item_id = int(item_id)
+        except (TypeError, ValueError) as exc:
+            raise BatchItemNotFoundError("Hạng mục không thuộc loại tiến độ này.") from exc
+        item = ProgressItem.query.join(ProgressGroup).filter(
+            ProgressItem.id == item_id,
+            ProgressItem.project_id == progress_type.project_id,
+            ProgressGroup.progress_type_id == progress_type.id,
+        ).first()
+        if item is None:
+            raise BatchItemNotFoundError("Hạng mục không thuộc loại tiến độ này.")
+        if item.id in seen_item_ids:
+            raise BatchValidationError(f"Dòng {position}: hạng mục '{item.name}' bị trùng trong lượt tạo phiếu.")
+        seen_item_ids.add(item.id)
+        try:
+            quantity_value = _quantity(quantity)
+            _validate_decimal_precision(quantity_value, item.decimal_places, "Khối lượng")
+        except ValueError as exc:
+            raise BatchValidationError(f"Dòng {position}: {exc}") from exc
+        if ProgressEntry.query.filter_by(progress_item_id=item.id, report_date=report_date).first() is not None:
+            raise BatchValidationError(f"Dòng {position}: hạng mục '{item.name}' đã có phiếu ngày {report_date:%d/%m/%Y}.")
+        prepared.append({"item": item, "quantity": quantity_value, "note": note})
+
+    try:
+        with db.session.begin_nested():
+            for row in prepared:
+                create_entry(item=row["item"], report_date=report_date, quantity=row["quantity"], note=row["note"], actor_id=actor_id)
+    except DuplicateEntryError as exc:
+        raise BatchValidationError(str(exc)) from exc
+    return prepared
+
+
 def update_entry(entry, *, report_date, quantity, note=None, actor_id=None):
     old_values = _entry_values(entry)
     report_date, quantity = _report_date(report_date), _quantity(quantity)
