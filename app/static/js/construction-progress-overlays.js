@@ -1,4 +1,5 @@
 (() => {
+  const start = () => {
   const template = document.querySelector("template[data-item-row-template]");
   const entryTemplate = document.querySelector("template[data-entry-row-template]");
   const nextRowIndex = (rows, prefix) => Math.max(-1, ...[...rows.querySelectorAll("[name]")].map((input) => Number(input.name.match(new RegExp(`^${prefix}-(\\d+)-`))?.[1])).filter(Number.isInteger)) + 1;
@@ -56,4 +57,7 @@
   });
   const reopen = document.querySelector("[data-open-progress-modal]")?.dataset.openProgressModal;
   if (reopen && window.bootstrap) new window.bootstrap.Modal(document.getElementById(reopen)).show();
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, {once: true});
+  else start();
 })();

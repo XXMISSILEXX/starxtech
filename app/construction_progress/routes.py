@@ -126,7 +126,6 @@ def create_group_batch(project_id, type_id):
         abort(404)
     except ValueError as exc:
         db.session.rollback()
-        flash("Không thể lưu. Hãy kiểm tra các ô được đánh dấu.", "warning")
         errors = exc.errors if isinstance(exc, services.BatchValidationError) else {"form": {"_form": str(exc)}, "rows": {}}
         return _type_detail_response(project, progress_type, batch_form=batch_form, overlay_errors=errors, open_modal="createGroup", status=400)
     flash("Đã tạo khu vực và các hạng mục.", "success")
@@ -149,7 +148,6 @@ def update_group_batch(project_id, group_id):
         abort(404)
     except ValueError as exc:
         db.session.rollback()
-        flash("Không thể lưu. Hãy kiểm tra các ô được đánh dấu.", "warning")
         errors = exc.errors if isinstance(exc, services.BatchValidationError) else {"form": {"_form": str(exc)}, "rows": {}}
         return _type_detail_response(project, _type(project_id, group.progress_type_id), batch_form=batch_form, overlay_errors=errors, open_modal=f"editGroup-{group.id}", status=400)
     flash("Đã cập nhật khu vực và hạng mục.", "success")
@@ -169,7 +167,6 @@ def create_entries_batch(project_id, type_id):
         abort(404)
     except ValueError as exc:
         db.session.rollback()
-        flash("Không thể lưu. Hãy kiểm tra các ô được đánh dấu.", "warning")
         errors = exc.errors if isinstance(exc, services.BatchValidationError) else {"form": {"_form": str(exc)}, "rows": {}}
         return _type_detail_response(project, progress_type, entry_batch_form=entry_batch_form, overlay_errors=errors, open_modal="createEntries", status=400)
     flash("Đã tạo các phiếu cập nhật ngày.", "success")

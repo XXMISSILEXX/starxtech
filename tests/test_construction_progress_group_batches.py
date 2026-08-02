@@ -49,6 +49,10 @@ def test_create_group_batch_rejects_duplicate_names_in_payload_and_keeps_form_va
     assert "Khu vực người dùng vừa nhập" in page
     assert "Ống cấp nước" in page
     assert 'data-open-progress-modal="createGroup"' in page
+    assert page.index('data-open-progress-modal') < page.index('construction-progress-overlays.js')
+    assert 'data-overlay-error-summary>Không thể lưu. Hãy kiểm tra các ô được đánh dấu.</p>' in page
+    page_flash = page.split('<main class="main-content">', 1)[1].split('data-open-progress-modal', 1)[0]
+    assert "Không thể lưu" not in page_flash
     assert 'name="items-1-name"' in page
     assert "Tên hạng mục &#39;ống cấp nước&#39; bị trùng trong khu vực." in page
     with app.app_context():
@@ -77,6 +81,10 @@ def test_edit_group_batch_rejects_lower_precision_and_rolls_back_every_row(clien
     assert "Khu vực đã sửa nhưng phải rollback" in page
     assert "Hạng mục hợp lệ đã sửa" in page
     assert f'data-open-progress-modal="editGroup-{group_id}"' in page
+    assert page.index('data-open-progress-modal') < page.index('construction-progress-overlays.js')
+    assert 'data-overlay-error-summary>Không thể lưu. Hãy kiểm tra các ô được đánh dấu.</p>' in page
+    page_flash = page.split('<main class="main-content">', 1)[1].split('data-open-progress-modal', 1)[0]
+    assert "Không thể lưu" not in page_flash
     assert 'name="items-0-decimal_places"' in page
     with app.app_context():
         group = db.session.get(ProgressGroup, group_id)

@@ -67,6 +67,10 @@ def test_entry_batch_invalid_row_rolls_back_everything_and_preserves_overlay_inp
     assert 'name="entries-1-quantity"' in page
     assert "is-invalid" in page
     assert 'data-open-progress-modal="createEntries"' in page
+    assert page.index('data-open-progress-modal') < page.index('construction-progress-overlays.js')
+    assert 'data-overlay-error-summary>Không thể lưu. Hãy kiểm tra các ô được đánh dấu.</p>' in page
+    page_flash = page.split('<main class="main-content">', 1)[1].split('data-open-progress-modal', 1)[0]
+    assert "Không thể lưu" not in page_flash
     assert "dòng hợp lệ nhưng không được lưu" in page
     assert "dòng sai độ chính xác" in page
     with app.app_context():
