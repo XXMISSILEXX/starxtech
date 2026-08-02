@@ -259,9 +259,9 @@ Ba test skip đều là test PostgreSQL Phase 4/5 đã có từ trước; không
 ✔ tests_js/report-direct-upload.test.js (417.517205ms)
 ✔ tests_js/scoped-dashboard-charts.test.js (382.059243ms)
 ✔ tests_js/theme-preferences.test.js (359.675354ms)
-ℹ tests 8
+ℹ tests 32
 ℹ suites 0
-ℹ pass 8
+ℹ pass 32
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

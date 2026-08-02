@@ -14,7 +14,7 @@ Ba kiểm thử PostgreSQL đã bị skip do chưa đặt các biến môi trư�
 
 ```text
 $ npm test
-8 passed, 0 failed in 475.624147ms
+32 passed, 0 failed in 475.624147ms
 ```
 
 `tests_js/construction-progress.test.js` hiện có trong baseline và còn xanh;
