@@ -54,3 +54,25 @@ def test_progress_tree_and_workspace_card_render_expected_content(client, app):
     client.post("/logout")
     _login(client, "reporter")
     assert "Quản lý tiến độ thi công" not in client.get("/projects/1/workspace").get_data(as_text=True)
+
+
+def test_type_detail_polish_marks_unplanned_and_over_plan_items(client, app):
+    with app.app_context():
+        progress_type = ProgressType(project_id=1, name="Tiến độ hiển thị", created_by_id=1)
+        db.session.add(progress_type); db.session.flush()
+        group = ProgressGroup(project_id=1, progress_type_id=progress_type.id, name="Khu gập mở", created_by_id=1)
+        db.session.add(group); db.session.flush()
+        db.session.add_all((
+            ProgressItem(project_id=1, progress_group_id=group.id, name="Chưa khai kế hoạch", unit="m", planned_quantity=0, created_by_id=1),
+            ProgressItem(project_id=1, progress_group_id=group.id, name="Vượt kế hoạch", unit="m", planned_quantity=10, completed_quantity=15, created_by_id=1),
+        ))
+        db.session.commit()
+        type_id = progress_type.id
+
+    _login(client, "admin")
+    page = client.get(f"/projects/1/progress/types/{type_id}").get_data(as_text=True)
+    assert 'data-bs-toggle="collapse"' in page
+    assert "chưa có kế hoạch" in page
+    assert "vượt kế hoạch +50,0%" in page
+    assert "width: 100%" in page
+    assert "<th class=\"text-end\">Kế hoạch</th>" in page
