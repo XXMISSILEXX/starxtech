@@ -116,11 +116,15 @@ def test_progress_entry_creator_cannot_edit_another_users_entry(client, app):
         entry = ProgressEntry(project_id=1, progress_item_id=item.id, report_date=date(2026, 1, 1), quantity=1, created_by_id=5)
         db.session.add(entry)
         db.session.flush()
-        entry_id = entry.id
+        entry_id, item_id = entry.id, item.id
         db.session.commit()
 
     _login(client, "reporter")
+    page = client.get(f"/projects/1/progress/items/{item_id}").get_data(as_text=True)
+    assert "data-entry-edit" not in page
+    assert "data-entry-delete" not in page
     assert client.post(f"/projects/1/progress/entries/{entry_id}/edit", data={"report_date": "2026-01-01", "quantity": "2"}).status_code == 403
+    assert client.post(f"/projects/1/progress/entries/{entry_id}/delete").status_code == 403
     with app.app_context():
         assert db.session.get(ProgressEntry, entry_id).quantity == 1
 
@@ -158,14 +162,14 @@ def test_progress_cross_project_ids_are_not_disclosed(client, app):
 
 
 @pytest.mark.parametrize("username, expected", [
-    (None, (302, 302, 302, 302)),
-    ("no-progress-module", (403, 403, 403, 403)),
-    ("outsider-progress", (403, 403, 403, 403)),
-    ("limited-progress", (403, 403, 403, 403)),
-    ("reporter", (200, 403, 302, 200)),
-    ("viewer", (200, 403, 403, 200)),
-    ("admin", (200, 302, 302, 200)),
-    ("super", (200, 302, 302, 200)),
+    (None, (302, 302, 302)),
+    ("no-progress-module", (403, 403, 403)),
+    ("outsider-progress", (403, 403, 403)),
+    ("limited-progress", (403, 403, 403)),
+    ("reporter", (200, 403, 200)),
+    ("viewer", (200, 403, 200)),
+    ("admin", (200, 302, 200)),
+    ("super", (200, 302, 200)),
 ])
 def test_progress_route_matrix(client, app, username, expected):
     with app.app_context():
@@ -186,7 +190,6 @@ def test_progress_route_matrix(client, app, username, expected):
     results = (
         client.get("/projects/1/progress").status_code,
         client.post("/projects/1/progress/types", data={"name": f"Cấu trúc {username}"}).status_code,
-        client.post(f"/projects/1/progress/items/{item_id}/entries", data={"report_date": "2026-01-01", "quantity": "1"}).status_code,
         client.get(f"/projects/1/progress/types/{type_id}/chart-data").status_code,
     )
     assert results == expected

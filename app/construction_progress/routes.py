@@ -220,7 +220,7 @@ def create_item(project_id, group_id):
     return redirect(url_for("construction_progress.type_detail", project_id=project_id, type_id=_group(project_id, group_id).progress_type_id))
 
 
-@bp.post("/projects/<int:project_id>/progress/items/<int:item_id>/<action>")
+@bp.post("/projects/<int:project_id>/progress/items/<int:item_id>/<any(edit):action>")
 @progress_structure_required()
 def change_item(project_id, item_id, action):
     item = _item(project_id, item_id)
@@ -256,21 +256,15 @@ def item_detail(project_id, item_id):
     project = _project(project_id)
     item = _item(project_id, item_id)
     entries = sorted(item.entries, key=lambda entry: entry.report_date, reverse=True)
-    return render_template("construction_progress/item_detail.html", project=project, item=item, entries=entries, entry_dates={entry.report_date.isoformat() for entry in entries}, item_percent=services.item_percent(item), can_create=can_create_progress_entry(project.id), today=services.local_today())
-
-
-@bp.post("/projects/<int:project_id>/progress/items/<int:item_id>/entries")
-@progress_entry_required()
-def create_entry(project_id, item_id):
-    item = _item(project_id, item_id)
-    try:
-        value = services.create_entry(item=item, report_date=request.form.get("report_date"), quantity=request.form.get("quantity"), note=request.form.get("note"), actor_id=current_user.id)
-    except ValueError as exc:
-        flash(str(exc), "warning")
-        return redirect(url_for("construction_progress.item_detail", project_id=project_id, item_id=item.id))
-    db.session.commit()
-    flash("Đã tạo phiếu cập nhật tiến độ.", "success")
-    return redirect(url_for("construction_progress.item_detail", project_id=project_id, item_id=item.id))
+    edit_entry = next((entry for entry in entries if entry.id == request.args.get("edit_entry", type=int)), None)
+    if edit_entry is not None and not can_edit_progress_entry(edit_entry):
+        edit_entry = None
+    return render_template(
+        "construction_progress/item_detail.html", project=project, item=item,
+        entries=entries, item_percent=services.item_percent(item),
+        can_edit_entries={entry.id: can_edit_progress_entry(entry) for entry in entries},
+        edit_entry=edit_entry, today=services.local_today(),
+    )
 
 
 @bp.post("/projects/<int:project_id>/progress/entries/<int:entry_id>/<action>")

@@ -47,7 +47,7 @@ def _structure():
     return progress_type.id, group.id, item.id
 
 
-def test_all_seven_number_write_routes_accept_vietnamese_commas(client, app):
+def test_all_remaining_six_number_write_routes_accept_vietnamese_commas(client, app):
     with app.app_context():
         type_id, group_id, item_id = _structure()
     _login(client, "pm")
@@ -70,20 +70,18 @@ def test_all_seven_number_write_routes_accept_vietnamese_commas(client, app):
     updated_group = client.post(f"/projects/1/progress/groups/{batch_group_id}/batch", data={"name": "Khu batch", "items-0-id": str(batch_item_id), "items-0-name": "Hạng mục batch", "items-0-unit": "m", "items-0-decimal_places": "2", "items-0-planned_quantity": "20,50", "items-0-opening_quantity": "1,25"})
     assert updated_group.status_code == 302
     client.post("/logout"); _login(client, "reporter")
-    created_entry = client.post(f"/projects/1/progress/items/{item_id}/entries", data={"report_date": "2026-02-01", "quantity": "1,5"})
-    assert created_entry.status_code == 302
     batch_entries = client.post(f"/projects/1/progress/types/{type_id}/entries/batch", data={"report_date": "2026-02-01", "entries-0-group_id": str(batch_group_id), "entries-0-item_id": str(batch_item_id), "entries-0-quantity": "2,5"})
     assert batch_entries.status_code == 302
     with app.app_context():
-        entry = ProgressEntry.query.filter_by(progress_item_id=item_id, report_date=date(2026, 2, 1)).one()
+        entry = ProgressEntry.query.filter_by(progress_item_id=batch_item_id, report_date=date(2026, 2, 1)).one()
         entry_id = entry.id
     updated_entry = client.post(f"/projects/1/progress/entries/{entry_id}/edit", data={"report_date": "2026-02-01", "quantity": "1,75"})
     assert updated_entry.status_code == 302
     with app.app_context():
         assert db.session.get(ProgressItem, item_id).planned_quantity == Decimal("10.50")
         assert db.session.get(ProgressItem, item_id).opening_quantity == Decimal("0.25")
-        assert db.session.get(ProgressItem, item_id).completed_quantity == Decimal("2.00")
-        assert db.session.get(ProgressItem, batch_item_id).completed_quantity == Decimal("3.75")
+        assert db.session.get(ProgressItem, item_id).completed_quantity == Decimal("0.25")
+        assert db.session.get(ProgressItem, batch_item_id).completed_quantity == Decimal("3.00")
 
 
 def test_integer_precision_still_rejects_comma_decimal_input(client, app):
@@ -115,7 +113,7 @@ def test_unreadable_number_reports_format_instead_of_zero_message(client, app):
     assert "phải lớn hơn 0" not in page
 
 
-def test_edit_forms_prefill_vietnamese_number_format(client, app):
+def test_item_detail_and_group_overlay_use_vietnamese_number_format(client, app):
     with app.app_context():
         type_id, _, item_id = _structure()
         item = db.session.get(ProgressItem, item_id)
@@ -127,5 +125,5 @@ def test_edit_forms_prefill_vietnamese_number_format(client, app):
     item_page = client.get(f"/projects/1/progress/items/{item_id}").get_data(as_text=True)
     assert 'value="1.280,34"' in type_page
     assert 'value="345,32"' in type_page
-    assert 'value="1,50"' in item_page
+    assert "1,50 m" in item_page
     assert "Ví dụ: 1.280,34" in type_page

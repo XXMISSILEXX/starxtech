@@ -1,8 +1,7 @@
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 from app.extensions import db
-from app.date_utils import local_today
 from app.models import AuditLog, ProgressEntry, ProgressGroup, ProgressItem, ProgressType
 from app.construction_progress.services import group_percent, item_percent, type_percent
 
@@ -21,47 +20,58 @@ def _item():
     return item.id
 
 
-def test_entry_http_validation_and_idempotency(client, app):
-    with app.app_context(): item_id = _item()
+def test_item_detail_shows_history_without_create_form_and_removed_create_route_is_404(client, app):
+    with app.app_context():
+        item_id = _item()
+        item = db.session.get(ProgressItem, item_id)
+        item.decimal_places = 2
+        item.opening_quantity = Decimal("1.00")
+        item.completed_quantity = Decimal("14.84")
+        db.session.add_all((
+            ProgressEntry(project_id=1, progress_item_id=item_id, report_date=date(2026, 1, 1), quantity=Decimal("1.50"), note="Phiếu cũ", created_by_id=3),
+            ProgressEntry(project_id=1, progress_item_id=item_id, report_date=date(2026, 1, 3), quantity=Decimal("12.34"), note="Phiếu mới", created_by_id=5),
+        ))
+        db.session.commit()
     _login(client)
-    payload = {"report_date": "2026-01-01", "quantity": "2", "note": "ghi chú"}
-    created = client.post(f"/projects/1/progress/items/{item_id}/entries", data=payload)
-    assert created.status_code == 302
-    assert "application/json" not in created.headers.get("Content-Type", "")
-    assert "Đã tạo phiếu cập nhật tiến độ." in client.post(f"/projects/1/progress/items/{item_id}/entries", data={"report_date": "2026-01-03", "quantity": "1"}, follow_redirects=True).get_data(as_text=True)
-    duplicate = client.post(f"/projects/1/progress/items/{item_id}/entries", data=payload, follow_redirects=True)
-    assert "đã có phiếu" in duplicate.get_data(as_text=True)
+    removed_route = client.post(f"/projects/1/progress/items/{item_id}/entries", data={"report_date": "2026-01-04", "quantity": "1"})
+    assert removed_route.status_code == 404
     with app.app_context():
-        assert ProgressEntry.query.filter_by(progress_item_id=item_id, report_date=date(2026, 1, 1)).count() == 1
-    with app.app_context():
-        future_date = local_today() + timedelta(days=1)
-    future = client.post(f"/projects/1/progress/items/{item_id}/entries", data={"report_date": future_date.isoformat(), "quantity": "2"}, follow_redirects=True)
-    assert "ngày trong tương lai" in future.get_data(as_text=True)
-    with app.app_context():
-        assert ProgressEntry.query.filter_by(progress_item_id=item_id, report_date=future_date).count() == 0
-    for quantity in ("0", "-5"):
-        response = client.post(f"/projects/1/progress/items/{item_id}/entries", data={"report_date": "2026-01-02", "quantity": quantity}, follow_redirects=True)
-        assert "lớn hơn 0" in response.get_data(as_text=True)
-        with app.app_context():
-            assert ProgressEntry.query.filter_by(progress_item_id=item_id, report_date=date(2026, 1, 2)).count() == 0
+        assert ProgressEntry.query.filter_by(progress_item_id=item_id).count() == 2
+    page = client.get(f"/projects/1/progress/items/{item_id}").get_data(as_text=True)
+    assert 'name="report_date"' not in page
+    assert "Tạo phiếu" not in page
+    assert "Kế hoạch" in page
+    assert "Đã làm" in page
+    assert "Còn lại" in page
+    assert "Hoàn thành" in page
+    assert "Lịch sử cập nhật" in page
+    assert page.index("03/01/2026") < page.index("01/01/2026")
+    assert "12,34 m" in page
+    assert "1,50 m" in page
+    assert "Pm" in page
+    assert "Reporter" in page
+    assert "Đã làm trước đó" in page
+    assert "1,00 m" in page
+    assert "data-entry-edit" in page
+    assert "data-entry-delete" in page
 
 
-def test_entry_http_create_update_delete_recalculates_and_audits(client, app):
-    with app.app_context(): item_id = _item()
+def test_entry_http_update_delete_recalculates_and_audits(client, app):
+    with app.app_context():
+        item_id = _item()
+        item = db.session.get(ProgressItem, item_id)
+        item.completed_quantity = Decimal("14")
+        entry = ProgressEntry(project_id=1, progress_item_id=item_id, report_date=date(2026, 1, 1), quantity=Decimal("14"), note="mới", created_by_id=3)
+        db.session.add(entry)
+        db.session.commit()
+        entry_id = entry.id
     _login(client)
-    assert client.post(f"/projects/1/progress/items/{item_id}/entries", data={"report_date": "2026-01-01", "quantity": "14", "note": "mới"}).status_code == 302
     with app.app_context():
         item = db.session.get(ProgressItem, item_id)
-        entry = ProgressEntry.query.filter_by(progress_item_id=item_id).one()
         assert item.completed_quantity == 14
         assert item_percent(item) == 140
         assert group_percent(item.progress_group, "quantity") == 140
         assert type_percent(item.progress_group.progress_type) == 140
-        entry_id = entry.id
-        create = AuditLog.query.filter_by(action="construction_progress.entry.create").one()
-        assert create.new_values_json["report_date"] == "2026-01-01"
-        assert Decimal(create.new_values_json["quantity"]) == Decimal("14")
-        assert create.new_values_json["note"] == "mới"
     assert client.post(f"/projects/1/progress/entries/{entry_id}/edit", data={"report_date": "2026-01-01", "quantity": "20", "note": "sửa"}).status_code == 302
     with app.app_context():
         item = db.session.get(ProgressItem, item_id)
