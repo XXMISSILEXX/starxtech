@@ -25,7 +25,7 @@ def test_progress_templates_hide_structure_actions_and_escape_item_name(client, 
 
     client.post("/logout")
     _login(client, "pm")
-    assert b'name="planned_quantity"' in client.get(f"/projects/1/progress/types/{type_id}").data
+    assert b'name="items-0-planned_quantity"' in client.get(f"/projects/1/progress/types/{type_id}").data
 
 
 def test_progress_tree_and_workspace_card_render_expected_content(client, app):

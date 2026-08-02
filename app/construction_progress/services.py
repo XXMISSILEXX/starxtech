@@ -28,6 +28,14 @@ class InvalidDecimalPlacesError(ValueError):
     pass
 
 
+class BatchValidationError(ValueError):
+    pass
+
+
+class BatchItemNotFoundError(ValueError):
+    pass
+
+
 def item_percent(item):
     planned = Decimal(item.planned_quantity or 0)
     return None if planned <= 0 else Decimal(item.completed_quantity or 0) / planned * 100
@@ -207,6 +215,123 @@ def create_item(*, group, name, unit, planned_quantity=0, opening_quantity=0, de
     db.session.add(value); db.session.flush(); recalculate_item_completed(value); log_audit("construction_progress.item.create", "ProgressItem", value.id, new_values={"name": value.name}); return value
 
 
+def _batch_item_rows(group, rows):
+    """Validate an overlay payload before any of its changes are written."""
+    existing = {item.id: item for item in group.items}
+    prepared, submitted_ids, deleting_ids = [], set(), set()
+    for position, raw in enumerate(rows, start=1):
+        item_id = raw.get("id")
+        if item_id:
+            try:
+                item_id = int(item_id)
+            except (TypeError, ValueError) as exc:
+                raise BatchValidationError(f"Dòng {position}: hạng mục không hợp lệ.") from exc
+            item = existing.get(item_id)
+            if item is None:
+                raise BatchItemNotFoundError("Hạng mục không thuộc khu vực này.")
+            if item_id in submitted_ids:
+                raise BatchValidationError(f"Dòng {position}: hạng mục bị lặp trong biểu mẫu.")
+            submitted_ids.add(item_id)
+        else:
+            item = None
+
+        deleting = str(raw.get("delete", "")).lower() in {"1", "true", "on", "yes"}
+        values = {
+            "name": (raw.get("name") or "").strip(),
+            "unit": (raw.get("unit") or "").strip(),
+            "decimal_places": raw.get("decimal_places", "0"),
+            "planned_quantity": raw.get("planned_quantity", "0"),
+            "opening_quantity": raw.get("opening_quantity", "0"),
+        }
+        if deleting:
+            if item is None:
+                raise BatchValidationError(f"Dòng {position}: chỉ có thể xoá hạng mục đã tồn tại.")
+            deleting_ids.add(item.id)
+            prepared.append({"position": position, "item": item, "delete": True, **values})
+            continue
+        if item is None and not values["name"] and not values["unit"] and str(values["planned_quantity"]).strip() in {"", "0", "0.0", "0.00", "0.000"} and str(values["opening_quantity"]).strip() in {"", "0", "0.0", "0.00", "0.000"}:
+            continue
+        if not values["name"]:
+            raise BatchValidationError(f"Dòng {position}: cần nhập tên hạng mục.")
+        if group.progress_type.value_mode != "money" and not values["unit"]:
+            raise BatchValidationError(f"Dòng {position}: cần nhập đơn vị.")
+        try:
+            decimal_places = 0 if group.progress_type.value_mode == "money" else _decimal_places(values["decimal_places"])
+            planned = _nonnegative_quantity(values["planned_quantity"])
+            opening = _nonnegative_quantity(values["opening_quantity"])
+            _validate_decimal_precision(planned, decimal_places, "Khối lượng kế hoạch")
+            _validate_decimal_precision(opening, decimal_places, "Khối lượng mang sang")
+            if item is not None:
+                _validate_existing_item_precision(item, decimal_places)
+        except ValueError as exc:
+            raise BatchValidationError(f"Dòng {position}: {exc}") from exc
+        prepared.append({
+            "position": position, "item": item, "delete": False, "name": values["name"],
+            "unit": values["unit"], "decimal_places": decimal_places,
+            "planned_quantity": planned, "opening_quantity": opening,
+        })
+
+    final_names = {}
+    for item in group.items:
+        if item.id not in submitted_ids:
+            final_names[item.name.casefold()] = item.id
+    for row in prepared:
+        if row["delete"]:
+            continue
+        key = row["name"].casefold()
+        if key in final_names:
+            raise BatchValidationError(f"Dòng {row['position']}: tên hạng mục '{row['name']}' bị trùng trong khu vực.")
+        final_names[key] = row["item"].id if row["item"] is not None else None
+    return prepared, deleting_ids
+
+
+def create_group_batch(*, progress_type, name, rows, actor_id=None):
+    name = (name or "").strip()
+    if not name:
+        raise BatchValidationError("Cần nhập tên khu vực.")
+    if ProgressGroup.query.filter_by(progress_type_id=progress_type.id, name=name).first() is not None:
+        raise BatchValidationError("Tên khu vực đã tồn tại trong loại tiến độ này.")
+    temporary_group = type("BatchGroup", (), {"items": [], "progress_type": progress_type})()
+    prepared, _ = _batch_item_rows(temporary_group, rows)
+    try:
+        with db.session.begin_nested():
+            group = create_group(progress_type=progress_type, name=name, actor_id=actor_id)
+            for row in prepared:
+                create_item(group=group, name=row["name"], unit=row["unit"], decimal_places=row["decimal_places"], planned_quantity=row["planned_quantity"], opening_quantity=row["opening_quantity"], actor_id=actor_id)
+    except IntegrityError as exc:
+        raise BatchValidationError("Tên khu vực hoặc hạng mục đã tồn tại.") from exc
+    return group
+
+
+def update_group_batch(*, group, name, rows, confirm_deletions=False, actor_id=None):
+    name = (name or "").strip()
+    if not name:
+        raise BatchValidationError("Cần nhập tên khu vực.")
+    duplicate_group = ProgressGroup.query.filter(
+        ProgressGroup.progress_type_id == group.progress_type_id,
+        ProgressGroup.name == name,
+        ProgressGroup.id != group.id,
+    ).first()
+    if duplicate_group is not None:
+        raise BatchValidationError("Tên khu vực đã tồn tại trong loại tiến độ này.")
+    prepared, deleting_ids = _batch_item_rows(group, rows)
+    if deleting_ids and not confirm_deletions:
+        raise BatchValidationError("Hãy xác nhận việc xoá các hạng mục đã đánh dấu.")
+    try:
+        with db.session.begin_nested():
+            update_group(group, name=name, actor_id=actor_id)
+            for row in prepared:
+                if row["delete"]:
+                    _delete_item_without_confirmation(row["item"])
+                elif row["item"] is None:
+                    create_item(group=group, name=row["name"], unit=row["unit"], decimal_places=row["decimal_places"], planned_quantity=row["planned_quantity"], opening_quantity=row["opening_quantity"], actor_id=actor_id)
+                else:
+                    update_item(row["item"], name=row["name"], unit=row["unit"], decimal_places=row["decimal_places"], planned_quantity=row["planned_quantity"], opening_quantity=row["opening_quantity"], actor_id=actor_id)
+    except IntegrityError as exc:
+        raise BatchValidationError("Tên khu vực hoặc hạng mục đã tồn tại.") from exc
+    return group
+
+
 class ConfirmationNameError(ValueError):
     pass
 
@@ -328,8 +453,7 @@ def delete_group(group, *, confirm_name, actor_id=None):
     )
 
 
-def delete_item(item, *, confirm_name, actor_id=None):
-    _confirm_structure_delete(item.name, confirm_name)
+def _delete_item_without_confirmation(item):
     item_values = _item_values_for_delete(item)
     old_values = {
         "progress_type": {
@@ -345,15 +469,20 @@ def delete_item(item, *, confirm_name, actor_id=None):
         }],
         "counts": {"groups": 0, "items": 1, "entries": len(item.entries)},
     }
-    with db.session.begin_nested():
-        log_audit("construction_progress.item.delete", "ProgressItem", item.id, old_values=old_values)
-        db.session.flush()
-        for entry in item.entries:
-            db.session.delete(entry)
-        db.session.flush()
-        db.session.delete(item)
-        db.session.flush()
+    log_audit("construction_progress.item.delete", "ProgressItem", item.id, old_values=old_values)
+    db.session.flush()
+    for entry in item.entries:
+        db.session.delete(entry)
+    db.session.flush()
+    db.session.delete(item)
+    db.session.flush()
     return old_values["counts"]
+
+
+def delete_item(item, *, confirm_name, actor_id=None):
+    _confirm_structure_delete(item.name, confirm_name)
+    with db.session.begin_nested():
+        return _delete_item_without_confirmation(item)
 
 
 def update_type(progress_type, *, name, value_mode, description=None, display_order=0, actor_id=None):
