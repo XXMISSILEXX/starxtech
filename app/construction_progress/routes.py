@@ -4,6 +4,7 @@ from flask import abort, flash, jsonify, redirect, render_template, request, url
 from flask_login import current_user
 
 from app.auth.permissions import can_create_progress_entry, can_edit_progress_entry, can_manage_progress_structure, progress_entry_required, progress_read_required, progress_structure_required
+from app.date_utils import parse_iso_date
 from app.extensions import db
 from app.models import ProgressEntry, ProgressGroup, ProgressItem, ProgressType, Project
 from app.construction_progress import bp
@@ -50,7 +51,42 @@ def _entry_batch_rows_from_form():
     return [rows[index] for index in sorted(rows)]
 
 
-def _type_detail_response(project, value, *, batch_form=None, entry_batch_form=None, overlay_errors=None, open_modal=None, status=200):
+def _entry_list_state(progress_type, source=None):
+    source = source or request.args
+    state = {"date_from": source.get("date_from", ""), "date_to": source.get("date_to", ""), "group_id": source.get("group_id", ""), "page": source.get("page", 1), "errors": []}
+    try:
+        state["date_from_value"] = parse_iso_date(state["date_from"], field_label="Từ ngày")
+        state["date_to_value"] = parse_iso_date(state["date_to"], field_label="Đến ngày")
+    except ValueError as exc:
+        state["errors"].append(str(exc)); state["date_from_value"] = state["date_to_value"] = None
+    if state["date_from_value"] and state["date_to_value"] and state["date_from_value"] > state["date_to_value"]:
+        state["errors"].append("Từ ngày không được lớn hơn đến ngày.")
+    try:
+        state["group_id_value"] = int(state["group_id"]) if state["group_id"] else None
+    except ValueError:
+        state["group_id_value"] = None; state["errors"].append("Khu vực không hợp lệ.")
+    if state["group_id_value"] is not None and not ProgressGroup.query.filter_by(id=state["group_id_value"], project_id=progress_type.project_id, progress_type_id=progress_type.id).first():
+        state["group_id_value"] = None; state["errors"].append("Khu vực không thuộc loại tiến độ này.")
+    try: state["page"] = max(1, int(state["page"]))
+    except ValueError: state["page"] = 1
+    return state
+
+
+def _entry_list_url(project_id, type_id, state):
+    values = {"tab": "entries", "page": state["page"]}
+    for key in ("date_from", "date_to", "group_id"):
+        if state.get(key): values[key] = state[key]
+    return url_for("construction_progress.type_detail", project_id=project_id, type_id=type_id, **values)
+
+
+def _type_detail_response(project, value, *, batch_form=None, entry_batch_form=None, overlay_errors=None, open_modal=None, entry_list_state=None, edit_entry=None, active_tab=None, status=200):
+    active_tab = active_tab or request.args.get("tab", "overview")
+    if active_tab not in {"overview", "entries"}: abort(400)
+    state = entry_list_state or _entry_list_state(value)
+    entries, total = ([], 0)
+    if active_tab == "entries" and not state["errors"]:
+        entries, total = services.progress_entries_page(project=project, progress_type=value, date_from=state["date_from_value"], date_to=state["date_to_value"], group_id=state["group_id_value"], page=state["page"])
+    groups = ProgressGroup.query.filter_by(project_id=project.id, progress_type_id=value.id).order_by(ProgressGroup.display_order, ProgressGroup.id).all()
     tree = services.progress_tree(project, value)
     delete_summaries = {
         "type": services.deletion_summary_for_type(value),
@@ -64,7 +100,9 @@ def _type_detail_response(project, value, *, batch_form=None, entry_batch_form=N
         can_create=can_create_progress_entry(project.id),
         delete_summaries=delete_summaries, batch_form=batch_form,
         entry_batch_form=entry_batch_form, overlay_errors=overlay_errors or {"form": {}, "rows": {}},
-        open_modal=open_modal, today=services.local_today(),
+        open_modal=open_modal, today=services.local_today(), active_tab=active_tab,
+        entry_list_state=state, entries=entries, entry_total=total, entry_page_size=20,
+        entry_groups=groups, can_edit_entries={entry.id: can_edit_progress_entry(entry) for entry in entries}, edit_entry=edit_entry,
     ), status
 
 
@@ -273,16 +311,24 @@ def change_entry(project_id, entry_id, action):
     entry = _entry(project_id, entry_id)
     if not can_edit_progress_entry(entry): abort(403)
     item_id = entry.progress_item_id
+    progress_type = entry.progress_item.progress_group.progress_type
+    state = _entry_list_state(progress_type, request.form)
+    return_to_entries = request.form.get("return_tab") == "entries"
     if action == "edit":
         try:
             services.update_entry(entry, report_date=request.form.get("report_date"), quantity=request.form.get("quantity"), note=request.form.get("note"), actor_id=current_user.id)
         except ValueError as exc:
+            db.session.rollback()
             flash(str(exc), "warning")
+            if return_to_entries:
+                return _type_detail_response(_project(project_id), progress_type, open_modal=f"editEntry-{entry_id}", edit_entry=_entry(project_id, entry_id), entry_list_state=state, active_tab="entries", status=400)
             return redirect(url_for("construction_progress.item_detail", project_id=project_id, item_id=item_id))
     elif action == "delete": services.delete_entry(entry, actor_id=current_user.id)
     else: abort(404)
     db.session.commit()
     flash("Đã cập nhật phiếu tiến độ." if action == "edit" else "Đã xóa phiếu tiến độ.", "success")
+    if return_to_entries:
+        return redirect(_entry_list_url(project_id, progress_type.id, state))
     return redirect(url_for("construction_progress.item_detail", project_id=project_id, item_id=item_id))
 
 

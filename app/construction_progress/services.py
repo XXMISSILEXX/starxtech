@@ -89,6 +89,28 @@ def progress_tree(project, progress_type=None):
     ]} for value in types]
 
 
+def progress_entries_page(*, project, progress_type, date_from=None, date_to=None, group_id=None, page=1, per_page=20):
+    """Fetch one SQL-paginated page of entries scoped to one progress type."""
+    query = ProgressEntry.query.join(ProgressItem).join(ProgressGroup).filter(
+        ProgressEntry.project_id == project.id,
+        ProgressItem.project_id == project.id,
+        ProgressGroup.project_id == project.id,
+        ProgressGroup.progress_type_id == progress_type.id,
+    )
+    if date_from is not None:
+        query = query.filter(ProgressEntry.report_date >= date_from)
+    if date_to is not None:
+        query = query.filter(ProgressEntry.report_date <= date_to)
+    if group_id is not None:
+        query = query.filter(ProgressGroup.id == group_id)
+    total = query.order_by(None).count()
+    entries = query.options(
+        joinedload(ProgressEntry.progress_item).joinedload(ProgressItem.progress_group),
+        joinedload(ProgressEntry.created_by),
+    ).order_by(ProgressEntry.report_date.desc(), ProgressEntry.id.desc()).offset((page - 1) * per_page).limit(per_page).all()
+    return entries, total
+
+
 def recalculate_item_completed(item):
     if db.engine.dialect.name == "postgresql":
         item = ProgressItem.query.filter_by(id=item.id).with_for_update().one()
@@ -98,7 +120,7 @@ def recalculate_item_completed(item):
 
 
 def _entry_values(entry):
-    return {"report_date": entry.report_date.isoformat(), "quantity": str(entry.quantity), "note": entry.note}
+    return {"report_date": entry.report_date.isoformat(), "quantity": str(entry.quantity), "note": entry.note, "created_by": _user_values(entry.created_by)}
 
 
 def _report_date(value):
@@ -291,7 +313,7 @@ def update_entry(entry, *, report_date, quantity, note=None, actor_id=None):
         with db.session.begin_nested():
             db.session.flush()
     except IntegrityError as exc:
-        raise DuplicateEntryError(f"Ngày {entry.report_date:%d/%m/%Y} đã có phiếu cho hạng mục này. Hãy mở phiếu đó để sửa.") from exc
+        raise DuplicateEntryError(f"Ngày {report_date:%d/%m/%Y} đã có phiếu cho hạng mục này. Hãy mở phiếu đó để sửa.") from exc
     recalculate_item_completed(entry.progress_item)
     log_audit("construction_progress.entry.update", "ProgressEntry", entry.id, old_values=old_values, new_values=_entry_values(entry))
     return entry
