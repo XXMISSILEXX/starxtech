@@ -122,3 +122,26 @@ def test_item_rejects_quantities_more_precise_than_declared(app, planned_quantit
             )
 
         assert ProgressItem.query.filter_by(progress_group_id=group.id).count() == before
+
+
+def test_item_update_without_date_fields_preserves_existing_schedule_dates(app):
+    with app.app_context():
+        _, _, item = _tree()
+        item.planned_start_date = date(2026, 8, 1)
+        item.planned_end_date = date(2026, 8, 31)
+        item.actual_start_date = date(2026, 8, 2)
+        db.session.commit()
+
+        update_item(
+            item,
+            name=item.name,
+            unit=item.unit,
+            planned_quantity=item.planned_quantity,
+            opening_quantity=item.opening_quantity,
+            decimal_places=item.decimal_places,
+            actor_id=1,
+        )
+
+        assert item.planned_start_date == date(2026, 8, 1)
+        assert item.planned_end_date == date(2026, 8, 31)
+        assert item.actual_start_date == date(2026, 8, 2)

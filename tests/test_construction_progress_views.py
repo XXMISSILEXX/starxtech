@@ -90,3 +90,14 @@ def test_progress_templates_use_placeholders_and_no_longer_call_opening_quantity
     assert 'placeholder="Ví dụ: {{ number_example(decimal_places) }}"' in content
     assert 'placeholder="Ví dụ: 1.280,34"' in content
     assert '<div class="form-text">Ví dụ:' not in content
+
+
+def test_progress_item_overlay_uses_two_subrows_for_nine_fields():
+    template = Path("app/templates/construction_progress/type_detail.html").read_text(encoding="utf-8")
+    assert 'data-item-quantity-row' in template
+    assert 'data-item-timeline-row' in template
+    assert 'name="items-{{ index }}-planned_start_date"' in template
+    assert 'name="items-{{ index }}-planned_end_date"' in template
+    assert 'name="items-{{ index }}-actual_start_date"' in template
+    assert template.count('data-delete-item') == 1
+    assert template.count('data-remove-item-row') == 1

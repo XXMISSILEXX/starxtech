@@ -1,6 +1,9 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
+import pytest
+
+from app.date_utils import local_today
 from app.extensions import db
 from app.models import AuditLog, ProgressEntry, ProgressGroup, ProgressItem, ProgressType
 
@@ -27,6 +30,154 @@ def _structure(*, with_second_item=False, with_entries=False):
         ])
     db.session.commit()
     return progress_type.id, group.id, item.id, None if second is None else second.id
+
+
+def _item_form_row(index, *, item_id=None, name="Hạng mục ngày", planned_start_date="", planned_end_date="", actual_start_date=""):
+    row = {
+        f"items-{index}-name": name,
+        f"items-{index}-unit": "m",
+        f"items-{index}-decimal_places": "0",
+        f"items-{index}-planned_quantity": "10",
+        f"items-{index}-opening_quantity": "0",
+        f"items-{index}-planned_start_date": planned_start_date,
+        f"items-{index}-planned_end_date": planned_end_date,
+        f"items-{index}-actual_start_date": actual_start_date,
+    }
+    if item_id is not None:
+        row[f"items-{index}-id"] = str(item_id)
+    return row
+
+
+def _assert_date_error_on_row(page, *, index, field, message):
+    marker = f'name="items-{index}-{field}"'
+    field_html = page[page.index(marker) - 200:page.index(marker) + 500]
+    assert "is-invalid" in field_html
+    assert message in field_html
+
+
+@pytest.mark.parametrize("route", ("create", "update"))
+@pytest.mark.parametrize(
+    ("case", "invalid_dates", "field", "message"),
+    (
+        (
+            "planned_dates_must_be_paired",
+            {"planned_start_date": "2026-08-01"},
+            "planned_start_date",
+            "Cần khai cả ngày bắt đầu và ngày kết thúc kế hoạch, hoặc để trống cả hai.",
+        ),
+        (
+            "planned_dates_must_be_ordered",
+            {"planned_start_date": "2026-08-02", "planned_end_date": "2026-08-01"},
+            "planned_start_date",
+            "Ngày bắt đầu kế hoạch không được sau ngày kết thúc kế hoạch.",
+        ),
+        (
+            "actual_start_cannot_be_future",
+            {"actual_start_date": (local_today() + timedelta(days=1)).isoformat()},
+            "actual_start_date",
+            "Ngày bắt đầu thực tế không được sau hôm nay.",
+        ),
+        (
+            "invalid_date_is_rejected",
+            {"planned_start_date": "ngay-khong-hop-le", "planned_end_date": "2026-08-01"},
+            "planned_start_date",
+            "Ngày bắt đầu kế hoạch phải theo định dạng YYYY-MM-DD.",
+        ),
+    ),
+)
+def test_group_batch_date_validation_reopens_overlay_and_rolls_back_every_row(client, app, route, case, invalid_dates, field, message):
+    with app.app_context():
+        if route == "create":
+            progress_type = ProgressType(project_id=1, name=f"Tiến độ tạo ngày {case}", created_by_id=1)
+            db.session.add(progress_type)
+            db.session.commit()
+            target = f"/projects/1/progress/types/{progress_type.id}/groups/batch"
+            data = {"name": "Khu vực không được tạo"}
+            data.update(_item_form_row(0, name="Hạng mục hợp lệ", planned_start_date="2026-08-01", planned_end_date="2026-08-02"))
+            data.update(_item_form_row(1, name="Hạng mục lỗi", **invalid_dates))
+            original = None
+        else:
+            _, group_id, first_item_id, second_item_id = _structure(with_second_item=True)
+            target = f"/projects/1/progress/groups/{group_id}/batch"
+            data = {"name": "Khu vực không được sửa"}
+            data.update(_item_form_row(0, item_id=first_item_id, name="Hạng mục hợp lệ đã sửa", planned_start_date="2026-08-01", planned_end_date="2026-08-02"))
+            data.update(_item_form_row(1, item_id=second_item_id, name="Hạng mục lỗi", **invalid_dates))
+            original = (group_id, first_item_id, second_item_id)
+
+    _login(client)
+    response = client.post(target, data=data)
+    page = response.get_data(as_text=True)
+
+    assert response.status_code == 400
+    assert message in page
+    _assert_date_error_on_row(page, index=1, field=field, message=message)
+    assert page.index("data-open-progress-modal") < page.index("construction-progress-overlays.js")
+    if route == "create":
+        assert 'data-open-progress-modal="createGroup"' in page
+        with app.app_context():
+            assert ProgressGroup.query.filter_by(progress_type_id=progress_type.id).count() == 0
+            assert ProgressItem.query.count() == 0
+            assert AuditLog.query.count() == 0
+    else:
+        assert f'data-open-progress-modal="editGroup-{original[0]}"' in page
+        with app.app_context():
+            group = db.session.get(ProgressGroup, original[0])
+            first_item = db.session.get(ProgressItem, original[1])
+            second_item = db.session.get(ProgressItem, original[2])
+            assert group.name == "Khu vực gốc"
+            assert first_item.name == "Hạng mục mịn"
+            assert first_item.planned_start_date is None
+            assert second_item.name == "Hạng mục hợp lệ"
+            assert second_item.planned_end_date is None
+            assert ProgressItem.query.filter_by(progress_group_id=group.id).count() == 2
+            assert AuditLog.query.count() == 0
+
+
+def _allowed_date_cases():
+    today = local_today()
+    return (
+        ("planned_dates_in_past", "2020-01-01", "2020-01-31", "", date(2020, 1, 1), date(2020, 1, 31), None),
+        ("planned_dates_in_future", (today + timedelta(days=10)).isoformat(), (today + timedelta(days=20)).isoformat(), "", today + timedelta(days=10), today + timedelta(days=20), None),
+        ("actual_start_before_plan", (today - timedelta(days=5)).isoformat(), (today - timedelta(days=3)).isoformat(), (today - timedelta(days=6)).isoformat(), today - timedelta(days=5), today - timedelta(days=3), today - timedelta(days=6)),
+        ("actual_start_without_plan", "", "", (today - timedelta(days=2)).isoformat(), None, None, today - timedelta(days=2)),
+        ("all_dates_empty", "", "", "", None, None, None),
+    )
+
+
+@pytest.mark.parametrize("route", ("create", "update"))
+@pytest.mark.parametrize(
+    ("case", "planned_start", "planned_end", "actual_start", "expected_start", "expected_end", "expected_actual"),
+    _allowed_date_cases(),
+)
+def test_group_batch_allows_permitted_date_combinations(client, app, route, case, planned_start, planned_end, actual_start, expected_start, expected_end, expected_actual):
+    with app.app_context():
+        if route == "create":
+            progress_type = ProgressType(project_id=1, name=f"Tiến độ được phép {case}", created_by_id=1)
+            db.session.add(progress_type)
+            db.session.commit()
+            target = f"/projects/1/progress/types/{progress_type.id}/groups/batch"
+            data = {"name": "Khu vực ngày được phép"}
+            data.update(_item_form_row(0, name="Hạng mục ngày được phép", planned_start_date=planned_start, planned_end_date=planned_end, actual_start_date=actual_start))
+            item_id = None
+        else:
+            _, group_id, item_id, _ = _structure()
+            target = f"/projects/1/progress/groups/{group_id}/batch"
+            data = {"name": "Khu vực ngày đã sửa"}
+            data.update(_item_form_row(0, item_id=item_id, name="Hạng mục ngày đã sửa", planned_start_date=planned_start, planned_end_date=planned_end, actual_start_date=actual_start))
+
+    _login(client)
+    response = client.post(target, data=data)
+
+    assert response.status_code == 302
+    with app.app_context():
+        if route == "create":
+            group = ProgressGroup.query.filter_by(progress_type_id=progress_type.id).one()
+            item = ProgressItem.query.filter_by(progress_group_id=group.id).one()
+        else:
+            item = db.session.get(ProgressItem, item_id)
+        assert item.planned_start_date == expected_start
+        assert item.planned_end_date == expected_end
+        assert item.actual_start_date == expected_actual
 
 
 def test_create_group_batch_rejects_duplicate_names_in_payload_and_keeps_form_values(client, app):

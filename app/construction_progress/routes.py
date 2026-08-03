@@ -33,7 +33,7 @@ def _entry(project_id, entry_id):
 
 def _batch_rows_from_form():
     rows = {}
-    pattern = re.compile(r"^items-(\d+)-(id|name|unit|decimal_places|planned_quantity|opening_quantity|delete)$")
+    pattern = re.compile(r"^items-(\d+)-(id|name|unit|decimal_places|planned_quantity|opening_quantity|planned_start_date|planned_end_date|actual_start_date|delete)$")
     for key, value in request.form.items():
         match = pattern.match(key)
         if match:

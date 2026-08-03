@@ -51,6 +51,9 @@ class BatchItemNotFoundError(ValueError):
     pass
 
 
+_UNSET = object()
+
+
 def item_percent(item):
     planned = Decimal(item.planned_quantity or 0)
     return None if planned <= 0 else Decimal(item.completed_quantity or 0) / planned * 100
@@ -339,13 +342,49 @@ def create_group(*, progress_type, name, note=None, display_order=0, actor_id=No
     db.session.add(value); db.session.flush(); log_audit("construction_progress.group.create", "ProgressGroup", value.id, new_values={"name": value.name}); return value
 
 
-def create_item(*, group, name, unit, planned_quantity=0, opening_quantity=0, decimal_places=0, assignee_user_id=None, note=None, display_order=0, actor_id=None):
+def create_item(*, group, name, unit, planned_quantity=0, opening_quantity=0, planned_start_date=None, planned_end_date=None, actual_start_date=None, decimal_places=0, assignee_user_id=None, note=None, display_order=0, actor_id=None):
     decimal_places = 0 if group.progress_type.value_mode == "money" else _decimal_places(decimal_places)
     planned, opening = _nonnegative_quantity(planned_quantity, decimal_places), _nonnegative_quantity(opening_quantity, decimal_places)
     _validate_decimal_precision(planned, decimal_places, "Khối lượng kế hoạch")
     _validate_decimal_precision(opening, decimal_places, "Khối lượng mang sang")
-    value = ProgressItem(project_id=group.project_id, progress_group_id=group.id, name=name.strip(), unit="VNĐ" if group.progress_type.value_mode == "money" else unit.strip(), decimal_places=decimal_places, planned_quantity=planned, opening_quantity=opening, assignee_user_id=assignee_user_id, note=(note or "").strip() or None, display_order=display_order, created_by_id=actor_id, updated_by_id=actor_id)
+    value = ProgressItem(project_id=group.project_id, progress_group_id=group.id, name=name.strip(), unit="VNĐ" if group.progress_type.value_mode == "money" else unit.strip(), decimal_places=decimal_places, planned_quantity=planned, opening_quantity=opening, planned_start_date=planned_start_date, planned_end_date=planned_end_date, actual_start_date=actual_start_date, assignee_user_id=assignee_user_id, note=(note or "").strip() or None, display_order=display_order, created_by_id=actor_id, updated_by_id=actor_id)
     db.session.add(value); db.session.flush(); recalculate_item_completed(value); log_audit("construction_progress.item.create", "ProgressItem", value.id, new_values={"name": value.name}); return value
+
+
+class ItemDateValidationError(ValueError):
+    def __init__(self, field, message):
+        self.field = field
+        super().__init__(message)
+
+
+def _item_schedule_dates(values):
+    """Parse and validate the three Gantt dates for both group-batch writers."""
+    dates = {}
+    for field, label in (
+        ("planned_start_date", "Ngày bắt đầu kế hoạch"),
+        ("planned_end_date", "Ngày kết thúc kế hoạch"),
+        ("actual_start_date", "Ngày bắt đầu thực tế"),
+    ):
+        try:
+            dates[field] = parse_iso_date(values[field], field_label=label)
+        except ValueError as exc:
+            raise ItemDateValidationError(field, str(exc)) from exc
+    if (dates["planned_start_date"] is None) != (dates["planned_end_date"] is None):
+        raise ItemDateValidationError(
+            "planned_start_date",
+            "Cần khai cả ngày bắt đầu và ngày kết thúc kế hoạch, hoặc để trống cả hai.",
+        )
+    if dates["planned_start_date"] and dates["planned_start_date"] > dates["planned_end_date"]:
+        raise ItemDateValidationError(
+            "planned_start_date",
+            "Ngày bắt đầu kế hoạch không được sau ngày kết thúc kế hoạch.",
+        )
+    if dates["actual_start_date"] and dates["actual_start_date"] > local_today():
+        raise ItemDateValidationError(
+            "actual_start_date",
+            "Ngày bắt đầu thực tế không được sau hôm nay.",
+        )
+    return dates
 
 
 def _batch_item_rows(group, rows):
@@ -375,6 +414,9 @@ def _batch_item_rows(group, rows):
             "decimal_places": raw.get("decimal_places", "0"),
             "planned_quantity": raw.get("planned_quantity", "0"),
             "opening_quantity": raw.get("opening_quantity", "0"),
+            "planned_start_date": raw.get("planned_start_date", ""),
+            "planned_end_date": raw.get("planned_end_date", ""),
+            "actual_start_date": raw.get("actual_start_date", ""),
         }
         if deleting:
             if item is None:
@@ -382,7 +424,7 @@ def _batch_item_rows(group, rows):
             deleting_ids.add(item.id)
             prepared.append({"position": position, "item": item, "delete": True, **values})
             continue
-        if item is None and not values["name"] and not values["unit"] and str(values["planned_quantity"]).strip() in {"", "0", "0.0", "0.00", "0.000"} and str(values["opening_quantity"]).strip() in {"", "0", "0.0", "0.00", "0.000"}:
+        if item is None and not values["name"] and not values["unit"] and str(values["planned_quantity"]).strip() in {"", "0", "0.0", "0.00", "0.000"} and str(values["opening_quantity"]).strip() in {"", "0", "0.0", "0.00", "0.000"} and not any(values[field] for field in ("planned_start_date", "planned_end_date", "actual_start_date")):
             continue
         if not values["name"]:
             raise _batch_row_error(position, "name", "Cần nhập tên hạng mục.")
@@ -402,6 +444,10 @@ def _batch_item_rows(group, rows):
             _validate_decimal_precision(opening, decimal_places, "Khối lượng mang sang")
         except ValueError as exc:
             raise _batch_row_error(position, "opening_quantity", str(exc)) from exc
+        try:
+            dates = _item_schedule_dates(values)
+        except ItemDateValidationError as exc:
+            raise _batch_row_error(position, exc.field, str(exc)) from exc
         if item is not None:
             try:
                 _validate_existing_item_precision(item, decimal_places)
@@ -411,6 +457,7 @@ def _batch_item_rows(group, rows):
             "position": position, "item": item, "delete": False, "name": values["name"],
             "unit": values["unit"], "decimal_places": decimal_places,
             "planned_quantity": planned, "opening_quantity": opening,
+            **dates,
         })
 
     final_names = {}
@@ -439,7 +486,7 @@ def create_group_batch(*, progress_type, name, rows, actor_id=None):
         with db.session.begin_nested():
             group = create_group(progress_type=progress_type, name=name, actor_id=actor_id)
             for row in prepared:
-                create_item(group=group, name=row["name"], unit=row["unit"], decimal_places=row["decimal_places"], planned_quantity=row["planned_quantity"], opening_quantity=row["opening_quantity"], actor_id=actor_id)
+                create_item(group=group, name=row["name"], unit=row["unit"], decimal_places=row["decimal_places"], planned_quantity=row["planned_quantity"], opening_quantity=row["opening_quantity"], planned_start_date=row["planned_start_date"], planned_end_date=row["planned_end_date"], actual_start_date=row["actual_start_date"], actor_id=actor_id)
     except IntegrityError as exc:
         raise BatchValidationError("Tên khu vực hoặc hạng mục đã tồn tại.") from exc
     return group
@@ -466,9 +513,9 @@ def update_group_batch(*, group, name, rows, confirm_deletions=False, actor_id=N
                 if row["delete"]:
                     _delete_item_without_confirmation(row["item"])
                 elif row["item"] is None:
-                    create_item(group=group, name=row["name"], unit=row["unit"], decimal_places=row["decimal_places"], planned_quantity=row["planned_quantity"], opening_quantity=row["opening_quantity"], actor_id=actor_id)
+                    create_item(group=group, name=row["name"], unit=row["unit"], decimal_places=row["decimal_places"], planned_quantity=row["planned_quantity"], opening_quantity=row["opening_quantity"], planned_start_date=row["planned_start_date"], planned_end_date=row["planned_end_date"], actual_start_date=row["actual_start_date"], actor_id=actor_id)
                 else:
-                    update_item(row["item"], name=row["name"], unit=row["unit"], decimal_places=row["decimal_places"], planned_quantity=row["planned_quantity"], opening_quantity=row["opening_quantity"], actor_id=actor_id)
+                    update_item(row["item"], name=row["name"], unit=row["unit"], decimal_places=row["decimal_places"], planned_quantity=row["planned_quantity"], opening_quantity=row["opening_quantity"], planned_start_date=row["planned_start_date"], planned_end_date=row["planned_end_date"], actual_start_date=row["actual_start_date"], actor_id=actor_id)
     except IntegrityError as exc:
         raise BatchValidationError("Tên khu vực hoặc hạng mục đã tồn tại.") from exc
     return group
@@ -643,15 +690,21 @@ def update_group(group, *, name, note=None, display_order=0, actor_id=None):
     return group
 
 
-def update_item(item, *, name, unit, planned_quantity, opening_quantity, decimal_places=0, assignee_user_id=None, note=None, display_order=0, actor_id=None):
+def update_item(item, *, name, unit, planned_quantity, opening_quantity, planned_start_date=_UNSET, planned_end_date=_UNSET, actual_start_date=_UNSET, decimal_places=0, assignee_user_id=None, note=None, display_order=0, actor_id=None):
     decimal_places = 0 if item.progress_group.progress_type.value_mode == "money" else _decimal_places(decimal_places)
     planned, opening = _nonnegative_quantity(planned_quantity, decimal_places), _nonnegative_quantity(opening_quantity, decimal_places)
     _validate_decimal_precision(planned, decimal_places, "Khối lượng kế hoạch")
     _validate_decimal_precision(opening, decimal_places, "Khối lượng mang sang")
     _validate_existing_item_precision(item, decimal_places)
-    old = {"name": item.name, "planned_quantity": str(item.planned_quantity), "opening_quantity": str(item.opening_quantity), "decimal_places": item.decimal_places}
+    old = {"name": item.name, "planned_quantity": str(item.planned_quantity), "opening_quantity": str(item.opening_quantity), "decimal_places": item.decimal_places, "planned_start_date": item.planned_start_date.isoformat() if item.planned_start_date else None, "planned_end_date": item.planned_end_date.isoformat() if item.planned_end_date else None, "actual_start_date": item.actual_start_date.isoformat() if item.actual_start_date else None}
     item.name, item.unit, item.decimal_places, item.planned_quantity, item.opening_quantity = name.strip(), "VNĐ" if item.progress_group.progress_type.value_mode == "money" else unit.strip(), decimal_places, planned, opening
+    if planned_start_date is not _UNSET:
+        item.planned_start_date = planned_start_date
+    if planned_end_date is not _UNSET:
+        item.planned_end_date = planned_end_date
+    if actual_start_date is not _UNSET:
+        item.actual_start_date = actual_start_date
     item.assignee_user_id, item.note, item.display_order, item.updated_by_id = assignee_user_id, (note or "").strip() or None, display_order, actor_id
     recalculate_item_completed(item)
-    log_audit("construction_progress.item.update", "ProgressItem", item.id, old_values=old, new_values={"name": item.name, "planned_quantity": str(item.planned_quantity), "opening_quantity": str(item.opening_quantity), "decimal_places": item.decimal_places})
+    log_audit("construction_progress.item.update", "ProgressItem", item.id, old_values=old, new_values={"name": item.name, "planned_quantity": str(item.planned_quantity), "opening_quantity": str(item.opening_quantity), "decimal_places": item.decimal_places, "planned_start_date": item.planned_start_date.isoformat() if item.planned_start_date else None, "planned_end_date": item.planned_end_date.isoformat() if item.planned_end_date else None, "actual_start_date": item.actual_start_date.isoformat() if item.actual_start_date else None})
     return item
