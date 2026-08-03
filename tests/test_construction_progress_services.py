@@ -10,7 +10,8 @@ from app.models import AuditLog, ProgressEntry, ProgressItem, Project
 from app.construction_progress.services import (
     DuplicateEntryError, FutureDateError, InvalidQuantityError, create_entry,
     create_group, create_item, create_type, delete_entry, group_percent,
-    gantt_timeline_for_type, group_gantt_timeline, item_gantt_timeline,
+    gantt_axis_for_dates, gantt_chart_for_type, gantt_timeline_for_type,
+    group_gantt_timeline, item_gantt_timeline,
     item_percent, type_percent, update_entry, update_item, InvalidDecimalPlacesError,
 )
 
@@ -246,3 +247,31 @@ def test_gantt_timeline_for_type_counts_excluded_items_and_omits_empty_groups():
 
     assert [group["group"].name for group in timeline["groups"]] == ["Khu xuất hiện"]
     assert [item.name for item in timeline["excluded_items"]] == ["Chưa khai hai", "Chưa khai một"]
+
+
+@pytest.mark.parametrize(
+    ("last_date", "expected_unit"),
+    (
+        (date(2026, 1, 31), "day"),
+        (date(2026, 2, 1), "week"),
+        (date(2026, 7, 1), "week"),
+        (date(2026, 7, 2), "month"),
+    ),
+)
+def test_gantt_axis_selects_daily_weekly_and_monthly_ticks_at_thresholds(last_date, expected_unit):
+    axis = gantt_axis_for_dates(date(2026, 1, 1), last_date, today=date(2026, 1, 1))
+
+    assert axis["unit"] == expected_unit
+    assert axis["ticks"]
+
+
+def test_gantt_chart_axis_expands_to_today_without_extending_actual_bar_to_today():
+    item = _gantt_item("Công việc dừng", planned_start=date(2026, 1, 1), planned_end=date(2026, 1, 10))
+    group = _gantt_group("Khu A", item)
+    progress_type = type("GanttType", (), {"groups": [group]})()
+
+    chart = gantt_chart_for_type(progress_type, {item.id: [date(2026, 1, 2), date(2026, 1, 4)]}, today=date(2026, 2, 1))
+
+    line = chart["groups"][0]["items"][0]
+    assert chart["axis"]["end"] == date(2026, 2, 1)
+    assert line["actual_bar"]["end"] == date(2026, 1, 4)

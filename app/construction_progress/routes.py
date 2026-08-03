@@ -2,6 +2,7 @@ import re
 
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
+from sqlalchemy.orm import joinedload
 
 from app.auth.permissions import can_create_progress_entry, can_edit_progress_entry, can_manage_progress_structure, progress_entry_required, progress_read_required, progress_structure_required
 from app.date_utils import parse_iso_date
@@ -81,11 +82,29 @@ def _entry_list_url(project_id, type_id, state):
 
 def _type_detail_response(project, value, *, batch_form=None, entry_batch_form=None, overlay_errors=None, open_modal=None, entry_list_state=None, edit_entry=None, active_tab=None, status=200):
     active_tab = active_tab or request.args.get("tab", "overview")
-    if active_tab not in {"overview", "entries"}: abort(400)
+    if active_tab not in {"overview", "entries", "gantt"}: abort(400)
     state = entry_list_state or _entry_list_state(value)
     entries, total = ([], 0)
     if active_tab == "entries" and not state["errors"]:
         entries, total = services.progress_entries_page(project=project, progress_type=value, date_from=state["date_from_value"], date_to=state["date_to_value"], group_id=state["group_id_value"], page=state["page"])
+    gantt_chart = None
+    if active_tab == "gantt":
+        gantt_type = ProgressType.query.options(
+            joinedload(ProgressType.groups).joinedload(ProgressGroup.items)
+        ).filter_by(id=value.id, project_id=project.id).one()
+        item_ids = [item.id for group in gantt_type.groups for item in group.items]
+        gantt_entries = ProgressEntry.query.filter(
+            ProgressEntry.project_id == project.id,
+            ProgressEntry.progress_item_id.in_(item_ids or [0]),
+        ).order_by(ProgressEntry.report_date).all()
+        entries_by_item_id = {item_id: [] for item_id in item_ids}
+        for entry in gantt_entries:
+            entries_by_item_id[entry.progress_item_id].append(entry)
+        gantt_chart = services.gantt_chart_for_type(
+            gantt_type,
+            entries_by_item_id,
+            today=services.local_today(),
+        )
     groups = ProgressGroup.query.filter_by(project_id=project.id, progress_type_id=value.id).order_by(ProgressGroup.display_order, ProgressGroup.id).all()
     tree = services.progress_tree(project, value)
     delete_summaries = {
@@ -103,6 +122,7 @@ def _type_detail_response(project, value, *, batch_form=None, entry_batch_form=N
         open_modal=open_modal, today=services.local_today(), active_tab=active_tab,
         entry_list_state=state, entries=entries, entry_total=total, entry_page_size=20,
         entry_groups=groups, can_edit_entries={entry.id: can_edit_progress_entry(entry) for entry in entries}, edit_entry=edit_entry,
+        gantt_chart=gantt_chart,
     ), status
 
 

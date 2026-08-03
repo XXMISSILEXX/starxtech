@@ -1,5 +1,7 @@
 from app.extensions import db
-from app.models import ProgressGroup, ProgressItem, ProgressType
+from datetime import date
+
+from app.models import ProgressEntry, ProgressGroup, ProgressItem, ProgressType
 from pathlib import Path
 
 
@@ -101,3 +103,73 @@ def test_progress_item_overlay_uses_two_subrows_for_nine_fields():
     assert 'name="items-{{ index }}-actual_start_date"' in template
     assert template.count('data-delete-item') == 1
     assert template.count('data-remove-item-row') == 1
+
+
+def test_gantt_tab_renders_server_side_bars_and_required_disclosures(client, app):
+    with app.app_context():
+        progress_type = ProgressType(project_id=1, name="Tiến độ Gantt", created_by_id=1)
+        db.session.add(progress_type)
+        db.session.flush()
+        shown_group = ProgressGroup(project_id=1, progress_type_id=progress_type.id, name="Khu vực hiển thị", created_by_id=1)
+        empty_group = ProgressGroup(project_id=1, progress_type_id=progress_type.id, name="Khu vực không có ngày", created_by_id=1)
+        db.session.add_all((shown_group, empty_group))
+        db.session.flush()
+        overdue = ProgressItem(project_id=1, progress_group_id=shown_group.id, name="Hạng mục quá hạn", unit="m", planned_quantity=10, completed_quantity=5, planned_start_date=date(2020, 1, 1), planned_end_date=date(2020, 1, 10), created_by_id=1)
+        complete = ProgressItem(project_id=1, progress_group_id=shown_group.id, name="Hạng mục hoàn thành", unit="m", planned_quantity=10, completed_quantity=10, planned_start_date=date(2020, 1, 1), planned_end_date=date(2020, 1, 10), created_by_id=1)
+        opening_without_actual = ProgressItem(project_id=1, progress_group_id=shown_group.id, name="Hạng mục thiếu mốc thực tế", unit="m", planned_quantity=10, opening_quantity=2, completed_quantity=2, planned_start_date=date(2030, 1, 1), planned_end_date=date(2030, 1, 10), created_by_id=1)
+        manual_point = ProgressItem(project_id=1, progress_group_id=shown_group.id, name="Hạng mục điểm thực tế", unit="m", planned_quantity=10, opening_quantity=2, planned_start_date=date(2030, 1, 1), planned_end_date=date(2030, 1, 10), actual_start_date=date(2020, 1, 2), created_by_id=1)
+        excluded = ProgressItem(project_id=1, progress_group_id=shown_group.id, name="Hạng mục chưa khai ngày", unit="m", planned_quantity=10, created_by_id=1)
+        empty_group_item = ProgressItem(project_id=1, progress_group_id=empty_group.id, name="Hạng mục làm khu vực rỗng", unit="m", planned_quantity=10, created_by_id=1)
+        db.session.add_all((overdue, complete, opening_without_actual, manual_point, excluded, empty_group_item))
+        db.session.flush()
+        db.session.add_all((
+            ProgressEntry(project_id=1, progress_item_id=overdue.id, report_date=date(2020, 1, 2), quantity=1, created_by_id=1),
+            ProgressEntry(project_id=1, progress_item_id=overdue.id, report_date=date(2020, 1, 4), quantity=1, created_by_id=1),
+        ))
+        db.session.commit()
+        type_id, no_actual_id, manual_point_id, empty_group_id = progress_type.id, opening_without_actual.id, manual_point.id, empty_group.id
+
+    _login(client, "admin")
+    response = client.get(f"/projects/1/progress/types/{type_id}?tab=gantt")
+    page = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'href="/projects/1/progress/types/' in page
+    assert "Biểu đồ Gantt" in page
+    assert "data-gantt-chart" in page
+    assert "data-gantt-today-line" in page
+    assert "data-gantt-excluded-items" in page
+    assert "Hạng mục chưa khai ngày" in page
+    assert "Khu vực hiển thị" in page
+    assert f'data-gantt-group-id="{empty_group_id}"' not in page
+    assert page.count("data-gantt-overdue") == 1
+    assert "quá hạn" in page
+    assert "data-gantt-opening-reminder" in page
+    no_actual_html = page.split(f'data-gantt-item-id="{no_actual_id}"', 1)[1].split('data-gantt-item-id=', 1)[0]
+    manual_point_html = page.split(f'data-gantt-item-id="{manual_point_id}"', 1)[1].split('data-gantt-item-id=', 1)[0]
+    assert "data-gantt-actual-bar" not in no_actual_html
+    assert "data-gantt-opening-reminder" in no_actual_html
+    assert "data-gantt-actual-point" in manual_point_html
+    assert "data-gantt-opening-reminder" not in manual_point_html
+    gantt_html = page.split("data-gantt-chart", 1)[1].split('id="createGroup"', 1)[0]
+    assert "<canvas" not in gantt_html
+
+
+def test_gantt_tab_empty_state_and_invalid_tab_follow_the_tab_contract(client, app):
+    with app.app_context():
+        progress_type = ProgressType(project_id=1, name="Tiến độ trống", created_by_id=1)
+        db.session.add(progress_type)
+        db.session.flush()
+        group = ProgressGroup(project_id=1, progress_type_id=progress_type.id, name="Khu vực trống", created_by_id=1)
+        db.session.add(group)
+        db.session.flush()
+        db.session.add(ProgressItem(project_id=1, progress_group_id=group.id, name="Chưa có ngày", unit="m", planned_quantity=10, created_by_id=1))
+        db.session.commit()
+        type_id = progress_type.id
+
+    _login(client, "admin")
+    empty = client.get(f"/projects/1/progress/types/{type_id}?tab=gantt")
+
+    assert empty.status_code == 200
+    assert "data-gantt-empty" in empty.get_data(as_text=True)
+    assert client.get(f"/projects/1/progress/types/{type_id}?tab=khong-hop-le").status_code == 400

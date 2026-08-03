@@ -162,14 +162,14 @@ def test_progress_cross_project_ids_are_not_disclosed(client, app):
 
 
 @pytest.mark.parametrize("username, expected", [
-    (None, (302, 302, 302, 302)),
-    ("no-progress-module", (403, 403, 403, 403)),
-    ("outsider-progress", (403, 403, 403, 403)),
-    ("limited-progress", (403, 403, 403, 403)),
-    ("reporter", (200, 403, 200, 200)),
-    ("viewer", (200, 403, 200, 200)),
-    ("admin", (200, 302, 200, 200)),
-    ("super", (200, 302, 200, 200)),
+    (None, (302, 302, 302, 302, 302)),
+    ("no-progress-module", (403, 403, 403, 403, 403)),
+    ("outsider-progress", (403, 403, 403, 403, 403)),
+    ("limited-progress", (403, 403, 403, 403, 403)),
+    ("reporter", (200, 403, 200, 200, 200)),
+    ("viewer", (200, 403, 200, 200, 200)),
+    ("admin", (200, 302, 200, 200, 200)),
+    ("super", (200, 302, 200, 200, 200)),
 ])
 def test_progress_route_matrix(client, app, username, expected):
     with app.app_context():
@@ -192,6 +192,7 @@ def test_progress_route_matrix(client, app, username, expected):
         client.post("/projects/1/progress/types", data={"name": f"Cấu trúc {username}"}).status_code,
         client.get(f"/projects/1/progress/types/{type_id}/chart-data").status_code,
         client.get(f"/projects/1/progress/types/{type_id}?tab=entries").status_code,
+        client.get(f"/projects/1/progress/types/{type_id}?tab=gantt").status_code,
     )
     assert results == expected
     if 302 not in expected:

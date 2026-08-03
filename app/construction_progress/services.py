@@ -1,5 +1,7 @@
 """Construction-progress calculations and transactional mutations."""
 
+from calendar import monthrange
+from datetime import timedelta
 from decimal import Decimal
 
 from sqlalchemy import func
@@ -137,6 +139,81 @@ def gantt_timeline_for_type(progress_type, entries_by_item_id=None):
             groups.append(timeline)
     groups.sort(key=lambda timeline: (timeline["planned_start"], timeline["group"].name.casefold()))
     return {"groups": groups, "excluded_items": excluded_items}
+
+
+def gantt_axis_for_dates(first_date, last_date, *, today=None):
+    """Return an outward-rounded Gantt axis and Vietnamese-calendar tick dates."""
+    today = today or local_today()
+    first_date, last_date = min(first_date, today), max(last_date, today)
+    span_days = (last_date - first_date).days + 1
+    if span_days <= 31:
+        unit, axis_start, axis_end = "day", first_date, last_date
+    elif span_days <= 26 * 7:
+        unit = "week"
+        axis_start = first_date - timedelta(days=first_date.weekday())
+        axis_end = last_date + timedelta(days=6 - last_date.weekday())
+    else:
+        unit = "month"
+        axis_start = first_date.replace(day=1)
+        axis_end = last_date.replace(day=monthrange(last_date.year, last_date.month)[1])
+    total_days = max((axis_end - axis_start).days, 1)
+    ticks, tick_date = [], axis_start
+    while tick_date <= axis_end:
+        ticks.append({"date": tick_date, "left": (tick_date - axis_start).days / total_days * 100})
+        if unit == "day":
+            tick_date += timedelta(days=1)
+        elif unit == "week":
+            tick_date += timedelta(days=7)
+        elif tick_date.month == 12:
+            tick_date = tick_date.replace(year=tick_date.year + 1, month=1, day=1)
+        else:
+            tick_date = tick_date.replace(month=tick_date.month + 1, day=1)
+    return {"start": axis_start, "end": axis_end, "unit": unit, "ticks": ticks, "total_days": total_days}
+
+
+def _gantt_bar(start, end, axis, *, is_point=False):
+    if start is None:
+        return None
+    return {
+        "start": start,
+        "end": end,
+        "left": (start - axis["start"]).days / axis["total_days"] * 100,
+        "width": (end - start).days / axis["total_days"] * 100,
+        "is_point": is_point,
+        "is_single_day": start == end,
+    }
+
+
+def gantt_chart_for_type(progress_type, entries_by_item_id=None, *, today=None):
+    """Enrich a pure type timeline with axis-relative CSS bar positions."""
+    today = today or local_today()
+    timeline = gantt_timeline_for_type(progress_type, entries_by_item_id)
+    dates = [
+        value
+        for group in timeline["groups"]
+        for value in (group["planned_start"], group["planned_end"], group["actual_start"], group["actual_end"])
+        if value is not None
+    ]
+    if not dates:
+        return {**timeline, "axis": None, "today_left": None}
+    axis = gantt_axis_for_dates(min(dates), max(dates), today=today)
+    for group in timeline["groups"]:
+        group["planned_bar"] = _gantt_bar(group["planned_start"], group["planned_end"], axis)
+        group["actual_bar"] = _gantt_bar(group["actual_start"], group["actual_end"], axis)
+        for item in group["items"]:
+            item["planned_bar"] = _gantt_bar(item["planned_start"], item["planned_end"], axis)
+            item["actual_bar"] = _gantt_bar(
+                item["actual_start"],
+                item["actual_end"],
+                axis,
+                is_point=item["actual_is_point"],
+            )
+            item["is_overdue"] = item["planned_end"] < today and (item["percent"] is None or item["percent"] < 100)
+    return {
+        **timeline,
+        "axis": axis,
+        "today_left": (today - axis["start"]).days / axis["total_days"] * 100,
+    }
 
 
 def progress_tree(project, progress_type=None):
