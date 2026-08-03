@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from enum import Enum
 from zoneinfo import ZoneInfo
 
@@ -21,10 +21,15 @@ from app.models import (
     ProjectContractorAssignment,
     ProjectContractorAssignmentStatus,
     ProjectUpdate,
+    ProgressEntry,
+    ProgressGroup,
+    ProgressItem,
+    ProgressType,
     SectionStatus,
 )
 from app.extensions import db
 from app.ui import ASSIGNMENT_STATUS_LABELS, CONTRACTOR_ROLE_LABELS
+from app.construction_progress.services import type_progress_summary
 RECENT_DASHBOARD_LIMIT = 5
 SECTION_STATUS_LABELS = {
     "INFO": "Thông tin",
@@ -141,6 +146,7 @@ def project_dashboard_context(project):
 
     can_view_reports = user_has_project_capability(current_user, project.id, "can_view_reports")
     can_view_issues = user_has_project_capability(current_user, project.id, "can_view_issues")
+    can_view_progress = user_has_project_capability(current_user, project.id, "can_view_progress")
     can_view_updates = _can_view_project_updates(project.id)
     reports = DailyReport.query.filter(DailyReport.project_id == project.id).order_by(
         DailyReport.report_date.desc(),
@@ -188,6 +194,7 @@ def project_dashboard_context(project):
         "can_view_reports": can_view_reports,
         "can_view_issues": can_view_issues,
         "can_view_updates": can_view_updates,
+        "progress_dashboard": project_progress_dashboard_context(project) if can_view_progress else None,
         "open_issues": open_issues,
         "recent_updates": recent_updates,
         "recent_updates_total": recent_updates_query.order_by(None).count() if can_view_updates else 0,
@@ -198,6 +205,40 @@ def project_dashboard_context(project):
             "attention_reports": status_counts.get(DailyReportStatus.ATTENTION.value, 0),
             "critical_reports": status_counts.get(DailyReportStatus.CRITICAL.value, 0),
         },
+    }
+
+
+def project_progress_dashboard_context(project):
+    """Build project-progress dashboard data from eagerly loaded progress records."""
+    progress_types = ProgressType.query.options(
+        joinedload(ProgressType.groups).joinedload(ProgressGroup.items)
+    ).filter(
+        ProgressType.project_id == project.id,
+    ).order_by(ProgressType.display_order, ProgressType.id).all()
+    item_ids = [item.id for progress_type in progress_types for group in progress_type.groups for item in group.items]
+    entries_by_item_id = {item_id: [] for item_id in item_ids}
+    entries = ProgressEntry.query.filter(
+        ProgressEntry.project_id == project.id,
+        ProgressEntry.progress_item_id.in_(item_ids or [0]),
+    ).order_by(ProgressEntry.report_date, ProgressEntry.id).all()
+    for entry in entries:
+        entries_by_item_id[entry.progress_item_id].append(entry)
+    summaries = [type_progress_summary(progress_type, entries_by_item_id) for progress_type in progress_types]
+    summaries.sort(key=lambda summary: (
+        summary["planned_start"] is None,
+        summary["planned_start"] or date.max,
+        summary["progress_type"].name.casefold(),
+    ))
+    return {
+        "summaries": summaries,
+        "active_types": sum(summary["status"] == "in_progress" for summary in summaries),
+        "total_types": len(summaries),
+        "overdue_items": sum(summary["overdue_items"] for summary in summaries),
+        "undated_items": sum(summary["undated_items"] for summary in summaries),
+        "last_entry_date": max(
+            (summary["last_entry_date"] for summary in summaries if summary["last_entry_date"] is not None),
+            default=None,
+        ),
     }
 
 

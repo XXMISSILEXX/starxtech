@@ -4,7 +4,7 @@ from pathlib import Path
 from sqlalchemy import event
 
 from app.extensions import db
-from app.models import AuditLog, Customer, DailyReport, DailyReportSection, IssueStatus, PersistentIssue, Permission, Project, ProjectContractor, ProjectContractorAssignment, ProjectUpdate, ReportCategory, Role, RolePermission, User
+from app.models import AuditLog, Customer, DailyReport, DailyReportSection, IssueStatus, PersistentIssue, Permission, ProgressEntry, ProgressGroup, ProgressItem, ProgressType, Project, ProjectContractor, ProjectContractorAssignment, ProjectUpdate, ProjectUser, ReportCategory, Role, RolePermission, User
 from app.dashboard.services import _activity_payload, project_dashboard_context, project_section_status_payload
 
 
@@ -121,6 +121,78 @@ def test_project_dashboard_uses_project_context_issue_wording(client, app):
     assert response.status_code == 200
     assert "Vấn đề tồn đọng".encode() in response.data
     assert "Vấn đề đang mở".encode() not in response.data
+
+
+def _seed_project_progress_dashboard_data():
+    scheduled_type = ProgressType(project_id=1, name="Giai đoạn có lịch", created_by_id=1)
+    undated_type = ProgressType(project_id=1, name="Giai đoạn chưa lịch", created_by_id=1)
+    db.session.add_all((scheduled_type, undated_type))
+    db.session.flush()
+    scheduled_group = ProgressGroup(project_id=1, progress_type_id=scheduled_type.id, name="Khu có lịch", created_by_id=1)
+    undated_group = ProgressGroup(project_id=1, progress_type_id=undated_type.id, name="Khu chưa lịch", created_by_id=1)
+    db.session.add_all((scheduled_group, undated_group))
+    db.session.flush()
+    scheduled_item = ProgressItem(project_id=1, progress_group_id=scheduled_group.id, name="Hạng mục có lịch", unit="m", planned_quantity=10, completed_quantity=5, planned_start_date=date(2026, 8, 1), planned_end_date=date(2026, 8, 10), created_by_id=1)
+    undated_item = ProgressItem(project_id=1, progress_group_id=undated_group.id, name="Hạng mục chưa lịch", unit="m", planned_quantity=10, completed_quantity=2, created_by_id=1)
+    db.session.add_all((scheduled_item, undated_item))
+    db.session.flush()
+    db.session.add(ProgressEntry(project_id=1, progress_item_id=scheduled_item.id, report_date=date(2026, 8, 3), quantity=1, created_by_id=1))
+    db.session.commit()
+    return scheduled_type, undated_type
+
+
+def test_project_dashboard_renders_capability_scoped_progress_block_without_project_percent(client, app):
+    with app.app_context():
+        _seed_project_progress_dashboard_data()
+
+    login(client, "admin")
+    response = client.get("/reports/projects/1/dashboard")
+    page = response.get_data(as_text=True)
+    stats = page[page.index("data-project-progress-stats"):page.index("data-project-progress-table")]
+    table = page[page.index("data-project-progress-table"):page.index("</table>", page.index("data-project-progress-table"))]
+
+    assert response.status_code == 200
+    assert "data-project-progress-dashboard" in page
+    assert "Giai đoạn đang chạy" in stats
+    assert "Hạng mục quá hạn" in stats
+    assert "Chưa khai ngày" in stats
+    assert "Cập nhật gần nhất" in stats
+    assert "%" not in stats
+    assert page.index("Giai đoạn có lịch") < page.index("Giai đoạn chưa lịch")
+    assert '<td data-project-progress-planned></td>' in table
+    assert '<td data-project-progress-days></td>' in table
+    assert "0 ngày" not in table
+    assert "—/—" not in table
+    assert "Tổng" not in table
+    assert 'href="/projects/1/progress"' in table
+
+
+def test_project_dashboard_hides_progress_block_without_progress_capability(client, app):
+    with app.app_context():
+        _seed_project_progress_dashboard_data()
+        user = User.query.filter_by(username="reporter").one()
+        permission = Permission.query.filter_by(code="dashboards.project.view").one()
+        db.session.add(RolePermission(role_id=user.role_id, permission_id=permission.id))
+        membership = ProjectUser.query.filter_by(project_id=1, user_id=user.id).one()
+        membership.can_view_progress = False
+        db.session.commit()
+
+    login(client, "reporter")
+    response = client.get("/reports/projects/1/dashboard")
+
+    assert response.status_code == 200
+    assert "data-project-progress-dashboard" not in response.get_data(as_text=True)
+
+
+def test_project_dashboard_shows_progress_instruction_without_progress_types(client, app):
+    login(client, "admin")
+    response = client.get("/reports/projects/2/dashboard")
+    page = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "data-project-progress-dashboard" in page
+    assert "data-project-progress-empty" in page
+    assert "data-project-progress-table" not in page
 
 
 def test_project_dashboard_aggregates_multiple_report_dates_without_invalid_grouping(client, app):

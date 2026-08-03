@@ -23,6 +23,29 @@
   <div class="col-md-3"><div class="stat-card"><div><div class="stat-label">Vấn đề tồn đọng</div><div class="stat-value">{{ project_dashboard.issue_counts.values()|sum if can_view_issues else '—' }}</div></div></div></div>
 </div>
 
+{% if progress_dashboard %}
+<section class="card mb-4" data-project-progress-dashboard>
+  <div class="card-header d-flex justify-content-between align-items-center gap-2"><h2 class="h6 mb-0">Tiến độ thi công</h2><a class="btn btn-sm btn-outline-primary" href="{{ url_for('construction_progress.project_progress', project_id=project.id) }}">Xem tiến độ</a></div>
+  <div class="card-body">
+    <div class="row g-3 mb-4" data-project-progress-stats>
+      <div class="col-md-3"><div class="stat-card"><div><div class="stat-label">Giai đoạn đang chạy</div><div class="stat-value">{{ progress_dashboard.active_types }} / {{ progress_dashboard.total_types }}</div></div></div></div>
+      <div class="col-md-3"><div class="stat-card"><div><div class="stat-label">Hạng mục quá hạn</div><div class="stat-value">{{ progress_dashboard.overdue_items }}</div></div></div></div>
+      <div class="col-md-3"><div class="stat-card"><div><div class="stat-label">Chưa khai ngày</div><div class="stat-value">{{ progress_dashboard.undated_items }}</div></div></div></div>
+      <div class="col-md-3"><div class="stat-card"><div><div class="stat-label">Cập nhật gần nhất</div><div class="stat-value">{{ progress_dashboard.last_entry_date|vn_date or '—' }}</div></div></div></div>
+    </div>
+    {% if progress_dashboard.summaries %}
+    {% set status_labels = {'not_started': 'Chưa bắt đầu', 'in_progress': 'Đang triển khai', 'overdue': 'Quá hạn', 'done': 'Hoàn thành'} %}
+    {% set status_tones = {'not_started': 'text-bg-secondary', 'in_progress': 'text-bg-primary', 'overdue': 'text-bg-danger', 'done': 'text-bg-success'} %}
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0" data-project-progress-table><thead><tr><th>Giai đoạn</th><th>Kế hoạch</th><th>Số ngày</th><th>Hoàn thành</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+      {% for summary in progress_dashboard.summaries %}<tr><td>{{ summary.progress_type.name }}</td><td data-project-progress-planned>{% if summary.planned_start %}{{ summary.planned_start|vn_date }} → {{ summary.planned_end|vn_date }}{% endif %}</td><td data-project-progress-days>{% if summary.days is not none %}{{ summary.days }}{% endif %}</td><td><div class="d-flex align-items-center gap-2"><div class="progress flex-grow-1" role="progressbar" aria-label="Hoàn thành {{ summary.progress_type.name }}" aria-valuenow="{{ [summary.percent or 0, 100]|min }}" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar" style="width: {{ [summary.percent or 0, 100]|min }}%"></div></div><span class="small text-nowrap">{{ summary.percent|vn_number(places=1) }}{% if summary.percent is not none %}%{% endif %}</span></div></td><td><span class="badge {{ status_tones[summary.status] }}">{{ status_labels[summary.status] }}</span></td><td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('construction_progress.project_progress', project_id=project.id) }}">Xem tiến độ</a></td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}
+    <p class="text-muted mb-0" data-project-progress-empty>Chưa có giai đoạn tiến độ. Hãy mở Quản lý tiến độ thi công để tạo loại tiến độ đầu tiên.</p>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
 {% if can_view_updates %}<section class="card mb-4">
   <div class="card-header d-flex justify-content-between align-items-center"><h2 class="h6 mb-0">Báo cáo xuyên suốt gần đây</h2>{% if recent_updates_total > recent_updates|length %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('project_operations.project_updates', project_id=project.id) }}">Xem tất cả báo cáo xuyên suốt</a>{% endif %}</div>
   <div class="list-group list-group-flush">
