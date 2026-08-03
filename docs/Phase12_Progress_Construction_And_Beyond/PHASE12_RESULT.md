@@ -458,3 +458,102 @@ Quản trị tổng**, vì thẻ được lọc bằng RBAC toàn cục chứ kh
 lỗi, dù code hoàn toàn đúng.
 
 Giới hạn: suite dùng SQLite in-memory, không chứng minh tranh chấp PostgreSQL; mô đun tiến độ chưa có test đồng thời riêng và đang có task riêng.
+
+## 12. Phase 12.3 — Biểu đồ Gantt theo khu vực (2026-08-03)
+
+### Commit
+
+- `cad69e4` — ghi mốc xanh `BASELINE_12_3.md` trước khi thay đổi.
+- `fd522f4` — thêm ba cột ngày, hai `CheckConstraint` và migration Gantt.
+- `138335c` — thêm ba ô ngày trong overlay batch, bố cục hai dòng con và validation dùng chung ở service.
+- `baa1c43` — suy diễn khoảng Gantt thuần cho hạng mục, khu vực và các hạng mục bị loại.
+- `fcb8a23` — render tab `?tab=gantt` bằng HTML/CSS server-side, trục, thanh và các nhãn.
+- `d7a8688` — sửa ba đặc tả Phase 12 dùng đúng guard `grep -rnF '\x'`.
+- `16c74f3` — sửa tương phản tab, nhãn vạch hôm nay và danh sách hạng mục bị loại sau cổng dừng 2.
+
+### Đối chiếu đặc tả Gantt
+
+| Mục | Trạng thái | Bằng chứng kiểm thử |
+| --- | --- | --- |
+| 1. Thay đổi dữ liệu | Đạt | `test_progress_item_database_rejects_unpaired_planned_dates`, `test_progress_item_database_rejects_reversed_planned_dates`, `test_progress_item_database_allows_valid_planned_dates`, `test_progress_item_database_allows_all_gantt_dates_empty` |
+| 2. Quy tắc suy diễn | Đạt | `test_item_gantt_timeline_uses_earliest_actual_evidence`, `test_item_gantt_timeline_marks_manual_actual_start_without_entries_as_point`, `test_item_gantt_timeline_has_no_actual_bar_without_start_or_entries`, `test_group_gantt_timeline_uses_only_scheduled_items_and_excludes_empty_group`, `test_gantt_timeline_for_type_counts_excluded_items_and_omits_empty_groups` |
+| 3. Nhập ngày trong overlay | Đạt | `test_progress_item_overlay_uses_two_subrows_for_nine_fields`, `test_group_batch_date_validation_reopens_overlay_and_rolls_back_every_row`, `test_group_batch_allows_permitted_date_combinations` |
+| 4. Vẽ biểu đồ | Đạt | `test_gantt_axis_selects_daily_weekly_and_monthly_ticks_at_thresholds`, `test_gantt_chart_axis_expands_to_today_without_extending_actual_bar_to_today`, `test_gantt_tab_renders_server_side_bars_and_required_disclosures`, `test_gantt_tab_empty_state_and_invalid_tab_follow_the_tab_contract`, `test_progress_route_matrix` |
+
+Không có mục nào trong §1–§4 không áp dụng.
+
+### Dữ liệu và deploy
+
+`progress_items` có thêm ba cột `nullable=True`: `planned_start_date`,
+`planned_end_date`, `actual_start_date`. Migration revision là `233012a8c8dc`; nó thêm
+hai constraint `ck_progress_items_planned_dates_paired` và
+`ck_progress_items_planned_date_order`, đồng thời `downgrade()` bỏ đúng ba cột và hai
+constraint.
+
+Phase 12.3 **KHÔNG thêm permission** nên không cần `sync-permissions`, nhưng deploy vẫn
+cần chạy:
+
+```bash
+flask db upgrade
+```
+
+### Quyết định thiết kế Gantt
+
+Có `actual_start_date` nhập tay nhưng **KHÔNG** có `actual_end_date`. Ngày kết thúc thực
+tế suy từ ngày phiếu muộn nhất và tự cập nhật mỗi lần có phiếu mới; nhập tay sẽ lỗi thời
+và tạo hai nguồn cho cùng một sự thật.
+
+Nguyên tắc phân định ở §0 của đặc tả:
+
+> **Ngày bắt đầu thực tế nhập tay** vì nó thỏa hai điều kiện. Hệ thống **không thể biết**
+> nó — với hạng mục đã thi công trước khi dùng hệ thống, `opening_quantity` cho biết khối
+> lượng nhưng không có mốc thời gian nào. Và nó **ghi một lần là xong** — ngày một công
+> việc bắt đầu không thay đổi về sau, nên trường này không bao giờ lỗi thời.
+>
+> **Ngày kết thúc thực tế suy từ phiếu** vì cả hai điều kiện đều không thỏa. Hệ thống đã
+> biết nó: chính là ngày phiếu muộn nhất. Và nếu nhập tay thì nó **sẽ lỗi thời** — người
+> dùng điền một lần lúc khai kế hoạch rồi không ai quay lại sửa khi công việc thực sự
+> xong. Một ngày kết thúc cũ trên Gantt tệ hơn không có ngày nào, vì nó khẳng định một
+> điều sai. Phiếu thì được nhập hằng ngày như một phần công việc, nên ngày suy từ phiếu
+> luôn đúng mà không ai phải nhớ gì.
+>
+> Ngoài ra, nhập tay ngày kết thúc sẽ tạo hai nguồn cho cùng một sự thật và chúng sẽ lệch
+> nhau — trái nguyên tắc mô đun đã chốt từ Phase 12: chỉ hạng mục nhỏ mang dữ liệu gốc,
+> mọi thứ suy ra được thì không lưu.
+
+Thanh thực tế không kéo tới hôm nay. Khi phiếu cuối đã cũ, thanh dừng ở ngày phiếu đó;
+khoảng trống tới vạch hôm nay là thông tin rằng công việc đang dừng. Kéo thanh tới hôm
+nay sẽ che mất thông tin này. Trường hợp “Điện” ở cổng dừng 2 kết thúc đúng tại vạch hôm
+nay là đúng dữ liệu: phiếu cuối rơi đúng vào hôm nay, không phải lỗi render.
+
+### Bổ sung sau cổng dừng 2
+
+Chủ dự án tìm ra ba lỗi giao diện và commit `16c74f3` đã sửa:
+
+1. Tab đang chọn dùng `nav-pills` có chữ xanh trên nền xanh ở theme dự án; đổi sang
+   `nav-tabs` đồng bộ với tab loại và giữ tương phản ở cả light/dark theme.
+2. Danh sách hạng mục bị loại chỉ có tên hạng mục; đổi thành `Khu vực — Hạng mục` để
+   phân biệt tên trùng ở hai khu vực.
+3. Nhãn “Hôm nay” che nhãn mốc trục; bỏ chữ, giữ vạch đỏ với `title` và `aria-label`.
+
+Lỗi tương phản tab đã tồn tại từ Phase 12.2 nhưng test không bắt được vì chuỗi nhãn vẫn
+có trong HTML — chỉ màu chữ sai. Bài học: assertion HTML chỉ khẳng định chuỗi tồn tại
+không chứng minh người dùng đọc được nó; với trạng thái active phải khẳng định class/kiểu
+tạo tương phản, và cần kiểm thử hiển thị ở light/dark theme.
+
+Bài học thứ hai: guard `grep -rn '\x'` dùng trong ba vòng là sai. Trong BRE, `\x` khớp
+mọi dòng có chữ `x`, không phải literal byte escape. Dạng đúng là:
+
+```bash
+grep -rnF '\x' tests/test_construction_progress_*.py
+```
+
+Ba đặc tả Phase 12.1, 12.2 và 12.3 đã được sửa bằng `d7a8688`; mọi phase sau dùng dạng
+có `-F`.
+
+### Nợ kỹ thuật và giới hạn đã biết
+
+- `vn_number` vẫn raise `ValueError` khi `places` ngoài 0–3.
+- Chưa có test chống hồi quy riêng cho việc không còn ô input trong bảng dữ liệu.
+- Mô đun tiến độ chưa có test đồng thời riêng trên PostgreSQL.
+- Suite chạy SQLite in-memory nên không chứng minh hành vi PostgreSQL đồng thời.
