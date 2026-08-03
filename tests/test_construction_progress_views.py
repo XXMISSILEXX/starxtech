@@ -119,7 +119,7 @@ def test_gantt_tab_renders_server_side_bars_and_required_disclosures(client, app
         opening_without_actual = ProgressItem(project_id=1, progress_group_id=shown_group.id, name="Hạng mục thiếu mốc thực tế", unit="m", planned_quantity=10, opening_quantity=2, completed_quantity=2, planned_start_date=date(2030, 1, 1), planned_end_date=date(2030, 1, 10), created_by_id=1)
         manual_point = ProgressItem(project_id=1, progress_group_id=shown_group.id, name="Hạng mục điểm thực tế", unit="m", planned_quantity=10, opening_quantity=2, planned_start_date=date(2030, 1, 1), planned_end_date=date(2030, 1, 10), actual_start_date=date(2020, 1, 2), created_by_id=1)
         excluded = ProgressItem(project_id=1, progress_group_id=shown_group.id, name="Hạng mục chưa khai ngày", unit="m", planned_quantity=10, created_by_id=1)
-        empty_group_item = ProgressItem(project_id=1, progress_group_id=empty_group.id, name="Hạng mục làm khu vực rỗng", unit="m", planned_quantity=10, created_by_id=1)
+        empty_group_item = ProgressItem(project_id=1, progress_group_id=empty_group.id, name="Hạng mục chưa khai ngày", unit="m", planned_quantity=10, created_by_id=1)
         db.session.add_all((overdue, complete, opening_without_actual, manual_point, excluded, empty_group_item))
         db.session.flush()
         db.session.add_all((
@@ -136,10 +136,14 @@ def test_gantt_tab_renders_server_side_bars_and_required_disclosures(client, app
     assert response.status_code == 200
     assert 'href="/projects/1/progress/types/' in page
     assert "Biểu đồ Gantt" in page
+    assert '<nav class="nav nav-tabs mb-3"><a class="nav-link "' in page
+    assert f'<a class="nav-link active" href="/projects/1/progress/types/{type_id}?tab=gantt">Biểu đồ Gantt</a>' in page
     assert "data-gantt-chart" in page
-    assert "data-gantt-today-line" in page
+    assert 'data-gantt-today-line role="img" aria-label="Vạch hôm nay" title="Hôm nay"' in page
+    assert "gantt-today-label" not in page
     assert "data-gantt-excluded-items" in page
-    assert "Hạng mục chưa khai ngày" in page
+    assert "Khu vực hiển thị — Hạng mục chưa khai ngày" in page
+    assert "Khu vực không có ngày — Hạng mục chưa khai ngày" in page
     assert "Khu vực hiển thị" in page
     assert f'data-gantt-group-id="{empty_group_id}"' not in page
     assert page.count("data-gantt-overdue") == 1
