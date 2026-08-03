@@ -80,6 +80,65 @@ def type_percent(progress_type):
     return sum(values, Decimal()) / len(values) if values else None
 
 
+def item_gantt_timeline(item, entries=()):
+    """Derive one item's planned and actual timeline without database access."""
+    entry_dates = sorted(
+        entry.report_date if hasattr(entry, "report_date") else entry
+        for entry in entries
+    )
+    planned_start, planned_end = item.planned_start_date, item.planned_end_date
+    is_scheduled = planned_start is not None and planned_end is not None
+    actual_starts = [value for value in (item.actual_start_date, entry_dates[0] if entry_dates else None) if value is not None]
+    actual_start = min(actual_starts) if actual_starts else None
+    actual_end = entry_dates[-1] if entry_dates else actual_start
+    return {
+        "item": item,
+        "planned_start": planned_start if is_scheduled else None,
+        "planned_end": planned_end if is_scheduled else None,
+        "actual_start": actual_start,
+        "actual_end": actual_end,
+        "actual_is_point": actual_start is not None and not entry_dates,
+        "has_opening_actual_start_reminder": Decimal(item.opening_quantity or 0) > 0 and item.actual_start_date is None,
+        "percent": item_percent(item),
+    }
+
+
+def group_gantt_timeline(group, item_timelines):
+    """Derive one group's ranges from only its scheduled item timelines."""
+    scheduled_items = [timeline for timeline in item_timelines if timeline["planned_start"] is not None]
+    if not scheduled_items:
+        return None
+    scheduled_items.sort(key=lambda timeline: (timeline["planned_start"], timeline["item"].name.casefold()))
+    actual_items = [timeline for timeline in scheduled_items if timeline["actual_start"] is not None]
+    return {
+        "group": group,
+        "items": scheduled_items,
+        "planned_start": min(timeline["planned_start"] for timeline in scheduled_items),
+        "planned_end": max(timeline["planned_end"] for timeline in scheduled_items),
+        "actual_start": min((timeline["actual_start"] for timeline in actual_items), default=None),
+        "actual_end": max((timeline["actual_end"] for timeline in actual_items), default=None),
+    }
+
+
+def gantt_timeline_for_type(progress_type, entries_by_item_id=None):
+    """Build Gantt-ready groups and excluded items from already-loaded model data."""
+    entries_by_item_id = entries_by_item_id or {}
+    groups, excluded_items = [], []
+    for group in progress_type.groups:
+        item_timelines = [
+            item_gantt_timeline(item, entries_by_item_id.get(item.id, ()))
+            for item in group.items
+        ]
+        excluded_items.extend(
+            timeline["item"] for timeline in item_timelines if timeline["planned_start"] is None
+        )
+        timeline = group_gantt_timeline(group, item_timelines)
+        if timeline is not None:
+            groups.append(timeline)
+    groups.sort(key=lambda timeline: (timeline["planned_start"], timeline["group"].name.casefold()))
+    return {"groups": groups, "excluded_items": excluded_items}
+
+
 def progress_tree(project, progress_type=None):
     query = ProgressType.query.filter_by(project_id=project.id).options(joinedload(ProgressType.groups).joinedload(ProgressGroup.items))
     if progress_type is not None:

@@ -10,6 +10,7 @@ from app.models import AuditLog, ProgressEntry, ProgressItem, Project
 from app.construction_progress.services import (
     DuplicateEntryError, FutureDateError, InvalidQuantityError, create_entry,
     create_group, create_item, create_type, delete_entry, group_percent,
+    gantt_timeline_for_type, group_gantt_timeline, item_gantt_timeline,
     item_percent, type_percent, update_entry, update_item, InvalidDecimalPlacesError,
 )
 
@@ -145,3 +146,103 @@ def test_item_update_without_date_fields_preserves_existing_schedule_dates(app):
         assert item.planned_start_date == date(2026, 8, 1)
         assert item.planned_end_date == date(2026, 8, 31)
         assert item.actual_start_date == date(2026, 8, 2)
+
+
+def _gantt_item(name, *, planned_start=None, planned_end=None, actual_start=None, opening=0, completed=0):
+    return type(
+        "GanttItem",
+        (),
+        {
+            "id": name,
+            "name": name,
+            "planned_start_date": planned_start,
+            "planned_end_date": planned_end,
+            "actual_start_date": actual_start,
+            "opening_quantity": Decimal(opening),
+            "planned_quantity": Decimal("100"),
+            "completed_quantity": Decimal(completed),
+        },
+    )()
+
+
+def _gantt_group(name, *items):
+    return type("GanttGroup", (), {"name": name, "items": list(items)})()
+
+
+def test_item_gantt_timeline_derives_planned_and_entry_based_actual_ranges():
+    item = _gantt_item("Đi ống", planned_start=date(2026, 8, 1), planned_end=date(2026, 8, 31))
+
+    timeline = item_gantt_timeline(item, (date(2026, 8, 3), date(2026, 8, 10), date(2026, 8, 7)))
+
+    assert timeline["planned_start"] == date(2026, 8, 1)
+    assert timeline["planned_end"] == date(2026, 8, 31)
+    assert timeline["actual_start"] == date(2026, 8, 3)
+    assert timeline["actual_end"] == date(2026, 8, 10)
+    assert timeline["actual_is_point"] is False
+
+
+@pytest.mark.parametrize(
+    ("actual_start", "entry_dates", "expected_start"),
+    (
+        (date(2026, 8, 1), (date(2026, 8, 3),), date(2026, 8, 1)),
+        (date(2026, 8, 5), (date(2026, 8, 3),), date(2026, 8, 3)),
+    ),
+)
+def test_item_gantt_timeline_uses_earliest_actual_evidence(actual_start, entry_dates, expected_start):
+    item = _gantt_item("Đi dây", planned_start=date(2026, 8, 1), planned_end=date(2026, 8, 31), actual_start=actual_start)
+
+    timeline = item_gantt_timeline(item, entry_dates)
+
+    assert timeline["actual_start"] == expected_start
+    assert timeline["actual_end"] == date(2026, 8, 3)
+
+
+def test_item_gantt_timeline_marks_manual_actual_start_without_entries_as_point():
+    item = _gantt_item("Lắp tủ", planned_start=date(2026, 8, 1), planned_end=date(2026, 8, 31), actual_start=date(2026, 8, 4))
+
+    timeline = item_gantt_timeline(item)
+
+    assert timeline["actual_start"] == date(2026, 8, 4)
+    assert timeline["actual_end"] == date(2026, 8, 4)
+    assert timeline["actual_is_point"] is True
+
+
+def test_item_gantt_timeline_has_no_actual_bar_without_start_or_entries():
+    item = _gantt_item("Nghiệm thu", planned_start=date(2026, 8, 1), planned_end=date(2026, 8, 31), opening=10)
+
+    timeline = item_gantt_timeline(item)
+
+    assert timeline["actual_start"] is None
+    assert timeline["actual_end"] is None
+    assert timeline["actual_is_point"] is False
+    assert timeline["has_opening_actual_start_reminder"] is True
+
+
+def test_group_gantt_timeline_uses_only_scheduled_items_and_excludes_empty_group():
+    scheduled_early = _gantt_item("A", planned_start=date(2026, 8, 1), planned_end=date(2026, 8, 5), actual_start=date(2026, 8, 2))
+    scheduled_late = _gantt_item("B", planned_start=date(2026, 8, 10), planned_end=date(2026, 8, 20))
+    excluded = _gantt_item("Không có ngày", actual_start=date(2026, 7, 20))
+    group = _gantt_group("Khu C1", scheduled_late, excluded, scheduled_early)
+
+    timeline = group_gantt_timeline(group, [item_gantt_timeline(item) for item in group.items])
+
+    assert timeline["planned_start"] == date(2026, 8, 1)
+    assert timeline["planned_end"] == date(2026, 8, 20)
+    assert timeline["actual_start"] == date(2026, 8, 2)
+    assert timeline["actual_end"] == date(2026, 8, 2)
+    assert [row["item"].name for row in timeline["items"]] == ["A", "B"]
+    assert group_gantt_timeline(_gantt_group("Khu trống", excluded), [item_gantt_timeline(excluded)]) is None
+
+
+def test_gantt_timeline_for_type_counts_excluded_items_and_omits_empty_groups():
+    shown = _gantt_item("Có kế hoạch", planned_start=date(2026, 8, 3), planned_end=date(2026, 8, 8))
+    excluded_one = _gantt_item("Chưa khai một")
+    excluded_two = _gantt_item("Chưa khai hai", actual_start=date(2026, 8, 1))
+    first_group = _gantt_group("Khu xuất hiện", shown, excluded_one)
+    empty_group = _gantt_group("Khu không xuất hiện", excluded_two)
+    progress_type = type("GanttType", (), {"groups": [empty_group, first_group]})()
+
+    timeline = gantt_timeline_for_type(progress_type)
+
+    assert [group["group"].name for group in timeline["groups"]] == ["Khu xuất hiện"]
+    assert [item.name for item in timeline["excluded_items"]] == ["Chưa khai hai", "Chưa khai một"]
