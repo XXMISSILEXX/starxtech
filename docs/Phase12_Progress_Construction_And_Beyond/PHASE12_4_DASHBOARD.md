@@ -293,3 +293,100 @@ Tiến độ tổng của dự án và cách chọn trọng số (xem quyết đ
 có (quyết định 5). Tạo một hạng mục cho nhiều khu vực cùng lúc — việc này đáng làm và
 đã được ghi nhận, nhưng không thuộc vòng dashboard. Xuất báo cáo, so sánh nhiều kỳ,
 biểu đồ trên dashboard tiến độ, và drill-down sâu hơn một liên kết sang mô đun.
+
+---
+
+## 5. Bổ sung — biểu đồ cột theo khu vực trên dashboard tiến độ
+
+Yêu cầu thêm của chủ dự án sau khi nghiệm thu Bước 3: dashboard tiến độ cần chi tiết
+hơn, có biểu đồ cột cho các khu vực của **một** giai đoạn, kèm bộ chọn giai đoạn.
+
+### Dùng lại thứ đã có, không thêm gì mới
+
+- Route `chart-data` (`app/construction_progress/routes.py:357`) đã trả về đúng dữ
+  liệu: `labels` là tên khu vực, `percentages` là phần trăm từng khu vực,
+  `overall_percent`, cộng `completed`/`remaining` khi `value_mode = money`. **Không sửa
+  route này.** Đây là route đã được cố ý giữ lại ở Phase 12.2 cho đúng việc này.
+- Khuôn vẽ chart trên dashboard đã có ở `app/static/js/scoped-dashboard-charts.js`:
+  đọc URL từ một `data-*` attribute, `fetch` với `Accept: application/json`, rồi
+  `new Chart(...)`. Bám khuôn đó, đừng phát minh cách khác.
+
+### Bộ chọn giai đoạn
+
+Bộ chọn phải chọn **cặp (dự án, giai đoạn)**, không phải chỉ giai đoạn — hai dự án có
+thể có giai đoạn trùng tên. Nhãn dạng `001 · An Bình Homeland — THI CÔNG PHẦN THÔ`.
+
+Cơ chế: form `GET` với tham số `?type_id=`, dropdown tự submit khi đổi — cùng cách bộ
+lọc danh sách phiếu ở Phase 12.2 đang làm. Nhờ vậy lựa chọn nằm trong URL nên chia sẻ
+được và bấm Back hoạt động đúng.
+
+Danh sách trong dropdown **chỉ chứa các cặp trong phạm vi người xem** — đúng tập đã
+dùng cho bảng, tức dự án tiếp cận được giao với dự án có `can_view_progress`.
+
+**Mặc định**: giai đoạn ở dòng đầu của bảng đã sắp xếp, tức giai đoạn có vấn đề nhất
+(`overdue` trước). Nhờ vậy biểu đồ có ích ngay khi mở, không cần bấm gì.
+
+`type_id` không thuộc phạm vi người xem → xử lý như không tìm thấy, quay về mặc định
+hoặc 404; chọn một cách và test nó. Không được dùng `type_id` để dựng tên template hay
+tên thuộc tính.
+
+### Biểu đồ
+
+- Cột dọc, một cột mỗi khu vực, trục dọc là phần trăm hoàn thành 0–100.
+- `value_mode = money` dùng cột xếp lớp `completed` và `remaining` như `chart-data` đã
+  trả về.
+- **Bọc canvas trong một div có chiều cao xác định và `position: relative`, cùng
+  `maintainAspectRatio: false`.** Biểu đồ ở Phase 12 đã từng vỡ layout, cao vô hạn vì
+  thiếu đúng hai thứ này — ảnh chụp của chủ dự án cho thấy rõ. Đây là yêu cầu bắt buộc.
+- Canvas có `role="img"` và `aria-label` mô tả nội dung, cộng văn bản dự phòng bên trong
+  thẻ.
+- Không dùng màu làm dấu hiệu duy nhất; nếu có hai chuỗi thì kèm dấu hiệu thứ hai.
+
+### Trạng thái rỗng
+
+| Tình huống | Hiển thị |
+|---|---|
+| Phạm vi không có giai đoạn nào | Không hiện bộ chọn và không hiện khung biểu đồ, chỉ một dòng hướng dẫn |
+| Giai đoạn được chọn chưa có khu vực nào | Giữ bộ chọn, thay khung biểu đồ bằng "Giai đoạn này chưa có khu vực nào" |
+
+Không hiện khung trắng, không hiện biểu đồ trống trục.
+
+### Phân quyền
+
+Không thêm permission code nào. Route `chart-data` tự kiểm quyền theo dự án
+(`progress_read_required`), nên kể cả khi dropdown lọt một cặp ngoài phạm vi thì lệnh
+`fetch` vẫn bị chặn. Đó là lớp phòng vệ thứ hai, miễn phí — nhưng **không** được dùng nó
+để thay cho việc lọc dropdown cho đúng.
+
+### Kiểm thử bổ sung
+
+- Dropdown chỉ chứa cặp trong phạm vi: test với hai dự án và một người chỉ có
+  `can_view_progress` ở một dự án; khẳng định tên dự án kia **không** có trong HTML của
+  dropdown.
+- `?type_id=` của dự án ngoài phạm vi → xử lý đúng cách đã chọn, và **không** lộ tên
+  giai đoạn hay tên dự án trong phản hồi.
+- Mặc định chọn đúng giai đoạn ở dòng đầu bảng.
+- Hai trạng thái rỗng ở bảng trên.
+- HTML có `data-*` chứa URL `chart-data` đúng của cặp đang chọn.
+- `tests_js`: đọc `data-*`, gọi `fetch` đã mock, vẽ đúng số cột theo `labels`; và trường
+  hợp `labels` rỗng thì không tạo `Chart`.
+- Khẳng định div bọc canvas có chiều cao xác định và `maintainAspectRatio: false` trong
+  cấu hình.
+
+### Kế hoạch cập nhật
+
+Chèn thành **Bước 4**, dồn bước chốt thành **Bước 5**:
+
+| Bước | Nội dung |
+|---|---|
+| 4 | Bộ chọn giai đoạn + biểu đồ cột theo khu vực trên dashboard tiến độ |
+| 5 | Chốt: thêm mục mới vào cuối `PHASE12_RESULT.md`, gồm cả commit `4bde515` |
+
+Cổng dừng thêm: sau **Bước 4** để chủ dự án bấm thử bộ chọn và biểu đồ.
+
+File được phép sửa, bổ sung so với mục 4:
+
+```
+app/static/js/progress-dashboard-chart.js     (hoặc thêm vào file chart dashboard sẵn có)
+tests_js/progress-dashboard-chart.test.js
+```
