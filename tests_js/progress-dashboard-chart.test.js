@@ -8,6 +8,8 @@ const source = fs.readFileSync("app/static/js/progress-dashboard-chart.js", "utf
 async function page(data) {
   const dom = new JSDOM(`<!doctype html><div data-progress-dashboard-chart data-chart-url="/projects/1/progress/types/2/chart-data"><canvas data-progress-dashboard-chart-canvas></canvas><p data-progress-dashboard-chart-summary></p></div>`, {runScripts: "outside-only"});
   Object.defineProperty(dom.window.document, "readyState", {configurable: true, value: "loading"});
+  const colors = {"--sx-primary": "#2563eb", "--sx-chart-good": "#16a34a", "--sx-chart-neutral": "#64748b"};
+  dom.window.getComputedStyle = () => ({getPropertyValue: (token) => colors[token] || ""});
   const charts = [];
   dom.window.Chart = class { constructor(target, config) { charts.push({target, config}); } };
   dom.window.fetch = async (url, options) => ({ok: true, json: async () => data});
@@ -23,6 +25,8 @@ test("loads chart data and renders one vertical bar for every area", async () =>
   assert.equal(charts.length, 1);
   assert.deepEqual(Array.from(charts[0].config.data.labels), ["Khu A", "Khu B"]);
   assert.equal(charts[0].config.data.datasets[0].data.length, 2);
+  assert.equal(charts[0].config.data.datasets[0].backgroundColor, "#2563eb");
+  assert.equal(charts[0].config.data.datasets[0].backgroundColor.startsWith("var("), false);
   assert.equal(charts[0].config.options.maintainAspectRatio, false);
   assert.equal(charts[0].config.options.scales.y.max, 100);
   assert.match(dom.window.document.querySelector("[data-progress-dashboard-chart-summary]").textContent, /50%/);
@@ -41,5 +45,8 @@ test("uses completed and remaining stacked datasets for money progress", async (
 
   assert.equal(charts.length, 1);
   assert.deepEqual(Array.from(charts[0].config.data.datasets, (dataset) => dataset.label), ["Đã hoàn thành", "Còn lại"]);
+  assert.equal(charts[0].config.data.datasets[0].backgroundColor.startsWith("var("), false);
+  assert.equal(charts[0].config.data.datasets[1].backgroundColor.startsWith("var("), false);
+  assert.equal(charts[0].config.data.datasets[1].borderWidth, 2);
   assert.equal(charts[0].config.options.scales.y.stacked, true);
 });

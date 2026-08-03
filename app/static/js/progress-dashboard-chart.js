@@ -1,4 +1,6 @@
 (() => {
+  const color = (token) => getComputedStyle(document.documentElement).getPropertyValue(token).trim();
+
   const start = async () => {
     const root = document.querySelector('[data-progress-dashboard-chart]');
     if (!root || !root.dataset.chartUrl || root.dataset.chartsInitialized === 'true') return;
@@ -16,12 +18,15 @@
         return;
       }
       const moneyMode = Array.isArray(data.completed) && Array.isArray(data.remaining);
+      const primary = color('--sx-primary');
+      const completedColor = color('--sx-chart-good');
+      const remainingColor = color('--sx-chart-neutral');
       const datasets = moneyMode
         ? [
-          {label: 'Đã hoàn thành', data: data.completed, backgroundColor: 'var(--sx-chart-good)', stack: 'value'},
-          {label: 'Còn lại', data: data.remaining, backgroundColor: 'var(--sx-chart-neutral)', stack: 'value'},
+          {label: 'Đã hoàn thành', data: data.completed, backgroundColor: completedColor, borderColor: completedColor, borderWidth: 1, stack: 'value'},
+          {label: 'Còn lại', data: data.remaining, backgroundColor: remainingColor, borderColor: remainingColor, borderWidth: 2, stack: 'value'},
         ]
-        : [{label: 'Hoàn thành (%)', data: data.percentages || [], backgroundColor: 'var(--sx-primary)'}];
+        : [{label: 'Hoàn thành (%)', data: data.percentages || [], backgroundColor: primary}];
       const options = moneyMode
         ? {
           responsive: true,
