@@ -141,6 +141,50 @@ def gantt_timeline_for_type(progress_type, entries_by_item_id=None):
     return {"groups": groups, "excluded_items": excluded_items}
 
 
+def type_progress_summary(progress_type, entries_by_item_id=None, *, today=None):
+    """Derive one type's dashboard summary from already-loaded model data."""
+    today = today or local_today()
+    entries_by_item_id = entries_by_item_id or {}
+    timeline = gantt_timeline_for_type(progress_type, entries_by_item_id)
+    scheduled_groups = timeline["groups"]
+    planned_start = min((group["planned_start"] for group in scheduled_groups), default=None)
+    planned_end = max((group["planned_end"] for group in scheduled_groups), default=None)
+    percent = type_percent(progress_type)
+    scheduled_items = [item for group in scheduled_groups for item in group["items"]]
+    overdue_items = sum(
+        1
+        for item in scheduled_items
+        if item["planned_end"] < today and item["percent"] is not None and item["percent"] < 100
+    )
+    entry_dates = [
+        entry.report_date if hasattr(entry, "report_date") else entry
+        for group in progress_type.groups
+        for item in group.items
+        for entry in entries_by_item_id.get(item.id, ())
+    ]
+    if percent is None or not scheduled_groups:
+        status = "not_started"
+    elif percent >= 100:
+        status = "done"
+    elif planned_end < today and percent < 100:
+        status = "overdue"
+    elif planned_start <= today:
+        status = "in_progress"
+    else:
+        status = "not_started"
+    return {
+        "progress_type": progress_type,
+        "percent": percent,
+        "planned_start": planned_start,
+        "planned_end": planned_end,
+        "days": (planned_end - planned_start).days + 1 if planned_start is not None else None,
+        "status": status,
+        "overdue_items": overdue_items,
+        "undated_items": len(timeline["excluded_items"]),
+        "last_entry_date": max(entry_dates, default=None),
+    }
+
+
 def gantt_axis_for_dates(first_date, last_date, *, today=None):
     """Return an outward-rounded Gantt axis and Vietnamese-calendar tick dates."""
     today = today or local_today()

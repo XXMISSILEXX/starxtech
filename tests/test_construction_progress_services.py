@@ -12,7 +12,8 @@ from app.construction_progress.services import (
     create_group, create_item, create_type, delete_entry, group_percent,
     gantt_axis_for_dates, gantt_chart_for_type, gantt_timeline_for_type,
     group_gantt_timeline, item_gantt_timeline,
-    item_percent, type_percent, update_entry, update_item, InvalidDecimalPlacesError,
+    item_percent, type_percent, type_progress_summary, update_entry, update_item,
+    InvalidDecimalPlacesError,
 )
 
 
@@ -168,6 +169,95 @@ def _gantt_item(name, *, planned_start=None, planned_end=None, actual_start=None
 
 def _gantt_group(name, *items):
     return type("GanttGroup", (), {"name": name, "items": list(items)})()
+
+
+def _gantt_type(*groups):
+    return type("GanttType", (), {"groups": list(groups), "value_mode": "quantity"})()
+
+
+def test_type_progress_summary_leaves_dates_and_days_none_without_scheduled_groups():
+    undated = _gantt_item("Chưa khai ngày", completed=50)
+
+    summary = type_progress_summary(_gantt_type(_gantt_group("Khu trống", undated)), today=date(2026, 8, 10))
+
+    assert summary["planned_start"] is None
+    assert summary["planned_end"] is None
+    assert summary["days"] is None
+    assert summary["status"] == "not_started"
+    assert summary["undated_items"] == 1
+
+
+def test_type_progress_summary_uses_scheduled_group_bounds_and_ignores_undated_items():
+    early = _gantt_item("Sớm", planned_start=date(2026, 8, 2), planned_end=date(2026, 8, 4), completed=20)
+    late = _gantt_item("Muộn", planned_start=date(2026, 8, 10), planned_end=date(2026, 8, 20), completed=20)
+    undated = _gantt_item("Chưa khai", completed=99)
+
+    summary = type_progress_summary(
+        _gantt_type(_gantt_group("Khu A", late, undated), _gantt_group("Khu B", early)),
+        today=date(2026, 8, 10),
+    )
+
+    assert summary["planned_start"] == date(2026, 8, 2)
+    assert summary["planned_end"] == date(2026, 8, 20)
+    assert summary["days"] == 19
+    assert summary["undated_items"] == 1
+
+
+def test_type_progress_summary_counts_single_planned_day_inclusively():
+    item = _gantt_item("Một ngày", planned_start=date(2026, 8, 1), planned_end=date(2026, 8, 1), completed=20)
+
+    summary = type_progress_summary(_gantt_type(_gantt_group("Khu A", item)), today=date(2026, 8, 1))
+
+    assert summary["days"] == 1
+
+
+def test_type_progress_summary_marks_not_started_before_planned_start():
+    item = _gantt_item("Sắp làm", planned_start=date(2026, 8, 12), planned_end=date(2026, 8, 20), completed=20)
+
+    summary = type_progress_summary(_gantt_type(_gantt_group("Khu A", item)), today=date(2026, 8, 10))
+
+    assert summary["status"] == "not_started"
+
+
+def test_type_progress_summary_marks_in_progress_during_planned_range():
+    item = _gantt_item("Đang làm", planned_start=date(2026, 8, 1), planned_end=date(2026, 8, 20), completed=20)
+
+    summary = type_progress_summary(_gantt_type(_gantt_group("Khu A", item)), today=date(2026, 8, 10))
+
+    assert summary["status"] == "in_progress"
+
+
+def test_type_progress_summary_marks_overdue_when_incomplete_after_planned_end():
+    item = _gantt_item("Chậm", planned_start=date(2026, 8, 1), planned_end=date(2026, 8, 5), completed=99)
+
+    summary = type_progress_summary(_gantt_type(_gantt_group("Khu A", item)), today=date(2026, 8, 10))
+
+    assert summary["status"] == "overdue"
+
+
+def test_type_progress_summary_marks_done_before_overdue_when_complete():
+    item = _gantt_item("Đã xong", planned_start=date(2026, 8, 1), planned_end=date(2026, 8, 5), completed=100)
+
+    summary = type_progress_summary(_gantt_type(_gantt_group("Khu A", item)), today=date(2026, 8, 10))
+
+    assert summary["status"] == "done"
+
+
+def test_type_progress_summary_counts_only_scheduled_incomplete_items_as_overdue():
+    overdue = _gantt_item("Quá hạn", planned_start=date(2026, 8, 1), planned_end=date(2026, 8, 5), completed=50)
+    complete = _gantt_item("Đã xong", planned_start=date(2026, 8, 1), planned_end=date(2026, 8, 5), completed=100)
+    undated = _gantt_item("Chưa khai ngày", completed=0)
+    progress_type = _gantt_type(_gantt_group("Khu A", overdue, complete, undated))
+
+    summary = type_progress_summary(
+        progress_type,
+        {overdue.id: [date(2026, 8, 2)], undated.id: [date(2026, 8, 12)]},
+        today=date(2026, 8, 10),
+    )
+
+    assert summary["overdue_items"] == 1
+    assert summary["undated_items"] == len(gantt_timeline_for_type(progress_type)["excluded_items"]) == 1
+    assert summary["last_entry_date"] == date(2026, 8, 12)
 
 
 def test_item_gantt_timeline_derives_planned_and_entry_based_actual_ranges():
