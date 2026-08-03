@@ -164,7 +164,8 @@ def test_project_dashboard_renders_capability_scoped_progress_block_without_proj
     assert "0 ngày" not in table
     assert "—/—" not in table
     assert "Tổng" not in table
-    assert 'href="/projects/1/progress"' in table
+    assert 'href="/projects/1/progress/types/1"' in table
+    assert 'href="/projects/1/progress"' in page
 
 
 def test_project_dashboard_hides_progress_block_without_progress_capability(client, app):

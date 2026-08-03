@@ -4,7 +4,7 @@ from enum import Enum
 from zoneinfo import ZoneInfo
 
 from flask_login import current_user
-from sqlalchemy import String, cast, func, literal, select, union_all
+from sqlalchemy import String, and_, case, cast, func, literal, or_, select, union_all
 from sqlalchemy.orm import joinedload
 
 from app.models import (
@@ -29,7 +29,7 @@ from app.models import (
 )
 from app.extensions import db
 from app.ui import ASSIGNMENT_STATUS_LABELS, CONTRACTOR_ROLE_LABELS
-from app.construction_progress.services import type_progress_summary
+from app.construction_progress.services import local_today, type_progress_summary
 RECENT_DASHBOARD_LIMIT = 5
 SECTION_STATUS_LABELS = {
     "INFO": "Thông tin",
@@ -58,6 +58,13 @@ PROJECT_STATUS_LABELS = {
 }
 PROJECT_ACTIVITY_PERIODS = (7, 30, 90)
 PROJECT_ACTIVITY_DEFAULT_DAYS = 30
+PROGRESS_DASHBOARD_PAGE_SIZE = 50
+PROGRESS_STATUS_ORDER = {
+    "overdue": 0,
+    "in_progress": 1,
+    "not_started": 2,
+    "done": 3,
+}
 
 
 class DashboardScopeType(str, Enum):
@@ -240,6 +247,157 @@ def project_progress_dashboard_context(project):
             default=None,
         ),
     }
+
+
+def progress_dashboard_context(*, page=1, today=None):
+    """Build the cross-project progress dashboard from SQL-paginated rows."""
+    from app.project_memberships import accessible_project_ids
+
+    today = today or local_today()
+    scope_project_ids = accessible_project_ids(
+        current_user,
+        ("can_view_project", "can_view_progress"),
+    )
+    scope_filter = [] if scope_project_ids is None else [
+        ProgressType.project_id.in_(scope_project_ids or [0]),
+    ]
+    type_scope = ProgressType.query.join(Project).filter(
+        Project.deleted_at.is_(None),
+        *scope_filter,
+    )
+    rollup = _progress_type_rollup()
+    percent = case(
+        (ProgressType.value_mode == "money", rollup.c.money_percent),
+        else_=rollup.c.quantity_percent,
+    )
+    status_rank = case(
+        (or_(percent.is_(None), rollup.c.planned_start.is_(None)), PROGRESS_STATUS_ORDER["not_started"]),
+        (percent >= 100, PROGRESS_STATUS_ORDER["done"]),
+        (rollup.c.planned_end < today, PROGRESS_STATUS_ORDER["overdue"]),
+        (rollup.c.planned_start <= today, PROGRESS_STATUS_ORDER["in_progress"]),
+        else_=PROGRESS_STATUS_ORDER["not_started"],
+    )
+    ordered_ids = type_scope.outerjoin(rollup, rollup.c.type_id == ProgressType.id).with_entities(
+        ProgressType.id.label("type_id"),
+    ).order_by(
+        status_rank.asc(),
+        rollup.c.planned_end.asc().nulls_last(),
+        ProgressType.id.asc(),
+    )
+    total_rows = ordered_ids.order_by(None).count()
+    type_ids = [row.type_id for row in ordered_ids.limit(PROGRESS_DASHBOARD_PAGE_SIZE).offset((page - 1) * PROGRESS_DASHBOARD_PAGE_SIZE).all()]
+    progress_types = []
+    entries_by_item_id = {}
+    if type_ids:
+        loaded_types = ProgressType.query.options(
+            joinedload(ProgressType.project),
+            joinedload(ProgressType.groups).joinedload(ProgressGroup.items),
+        ).filter(ProgressType.id.in_(type_ids)).all()
+        by_id = {progress_type.id: progress_type for progress_type in loaded_types}
+        progress_types = [by_id[type_id] for type_id in type_ids]
+        item_ids = [
+            item.id
+            for progress_type in progress_types
+            for group in progress_type.groups
+            for item in group.items
+        ]
+        entries_by_item_id = {item_id: [] for item_id in item_ids}
+        entries = ProgressEntry.query.filter(
+            ProgressEntry.progress_item_id.in_(item_ids or [0]),
+        ).order_by(ProgressEntry.report_date, ProgressEntry.id).all()
+        for entry in entries:
+            entries_by_item_id[entry.progress_item_id].append(entry)
+    summaries = [
+        type_progress_summary(progress_type, entries_by_item_id, today=today)
+        for progress_type in progress_types
+    ]
+    status_counts = dict(type_scope.outerjoin(rollup, rollup.c.type_id == ProgressType.id).with_entities(
+        status_rank.label("status_rank"),
+        func.count(ProgressType.id),
+    ).group_by(status_rank).all())
+    progress_project_ids = type_scope.with_entities(ProgressType.project_id).distinct().subquery()
+    projects_with_progress = db.session.query(func.count()).select_from(progress_project_ids).scalar()
+    overdue_types = status_counts.get(PROGRESS_STATUS_ORDER["overdue"], 0)
+    overdue_items = _progress_dashboard_overdue_item_count(scope_filter, today)
+    stale_projects = _progress_dashboard_stale_project_count(progress_project_ids, today)
+    return {
+        "summaries": summaries,
+        "cards": {
+            "projects_with_progress": projects_with_progress,
+            "overdue_types": overdue_types,
+            "overdue_items": overdue_items,
+            "stale_projects": stale_projects,
+        },
+        "page": page,
+        "page_size": PROGRESS_DASHBOARD_PAGE_SIZE,
+        "total_rows": total_rows,
+        "has_previous": page > 1,
+        "has_next": page * PROGRESS_DASHBOARD_PAGE_SIZE < total_rows,
+    }
+
+
+def _progress_type_rollup():
+    """Return a SQL rollup matching the planned bounds and type percent rules."""
+    scheduled_start = case(
+        (and_(ProgressItem.planned_start_date.is_not(None), ProgressItem.planned_end_date.is_not(None)), ProgressItem.planned_start_date),
+        else_=None,
+    )
+    scheduled_end = case(
+        (and_(ProgressItem.planned_start_date.is_not(None), ProgressItem.planned_end_date.is_not(None)), ProgressItem.planned_end_date),
+        else_=None,
+    )
+    item_percent_value = case(
+        (ProgressItem.planned_quantity > 0, ProgressItem.completed_quantity * 100 / ProgressItem.planned_quantity),
+        else_=None,
+    )
+    group_rollup = select(
+        ProgressGroup.progress_type_id.label("type_id"),
+        func.min(scheduled_start).label("planned_start"),
+        func.max(scheduled_end).label("planned_end"),
+        func.avg(item_percent_value).label("quantity_percent"),
+        func.sum(ProgressItem.planned_quantity).label("planned_quantity"),
+        func.sum(ProgressItem.completed_quantity).label("completed_quantity"),
+    ).join(ProgressItem, ProgressItem.progress_group_id == ProgressGroup.id).group_by(
+        ProgressGroup.id,
+        ProgressGroup.progress_type_id,
+    ).subquery()
+    return select(
+        group_rollup.c.type_id,
+        func.min(group_rollup.c.planned_start).label("planned_start"),
+        func.max(group_rollup.c.planned_end).label("planned_end"),
+        func.avg(group_rollup.c.quantity_percent).label("quantity_percent"),
+        (func.sum(group_rollup.c.completed_quantity) * 100 / func.nullif(func.sum(group_rollup.c.planned_quantity), 0)).label("money_percent"),
+    ).group_by(group_rollup.c.type_id).subquery()
+
+
+def _progress_dashboard_overdue_item_count(scope_filter, today):
+    return ProgressItem.query.join(ProgressGroup).join(ProgressType).join(Project).filter(
+        Project.deleted_at.is_(None),
+        *scope_filter,
+        ProgressItem.planned_start_date.is_not(None),
+        ProgressItem.planned_end_date.is_not(None),
+        ProgressItem.planned_end_date < today,
+        ProgressItem.planned_quantity > 0,
+        ProgressItem.completed_quantity * 100 / ProgressItem.planned_quantity < 100,
+    ).count()
+
+
+def _progress_dashboard_stale_project_count(project_ids, today):
+    latest_entries = db.session.query(
+        ProgressEntry.project_id.label("project_id"),
+        func.max(ProgressEntry.report_date).label("last_entry_date"),
+    ).filter(ProgressEntry.project_id.in_(select(project_ids.c.project_id))).group_by(ProgressEntry.project_id).subquery()
+    stale_before = today - timedelta(days=7)
+    return Project.query.outerjoin(
+        latest_entries,
+        latest_entries.c.project_id == Project.id,
+    ).filter(
+        Project.id.in_(select(project_ids.c.project_id)),
+        or_(
+            latest_entries.c.last_entry_date.is_(None),
+            latest_entries.c.last_entry_date < stale_before,
+        ),
+    ).count()
 
 
 def project_dashboard_metrics(project, selected_date=None, days=7, *, include_reports=True,

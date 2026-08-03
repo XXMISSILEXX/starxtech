@@ -84,6 +84,7 @@ PERMISSIONS = [
           ("customer", "khách hàng"),
           ("project", "dự án"),
           ("contractor", "đối tác"),
+          ("progress", "tiến độ thi công"),
       )],
     *[_permission(f"customers.{action}", f"{label} Khách hàng", dangerous=action == "archive")
       for action, label in (("view", "Xem"), ("create", "Tạo"), ("edit", "Sửa"), ("archive", "Lưu trữ"))],
@@ -108,7 +109,7 @@ DEFAULTS = {
         "modules.company_media.access", "company_media_albums.view", "company_media_files.view", "company_media_files.download",
         "storage.dashboard.view",
         "reports.today.view", "project_operations.view", "projects.scope_all",
-        "dashboards.system.view", "dashboards.customer.view", "dashboards.project.view", "dashboards.contractor.view",
+        "dashboards.system.view", "dashboards.customer.view", "dashboards.project.view", "dashboards.contractor.view", "dashboards.progress.view",
         "customers.view", "project_contractors.view", "contractor_assignments.view", "project_updates.view",
     },
     UserRole.SUPER_ADMIN.value: set(),  # bypass; grants intentionally meaningless
