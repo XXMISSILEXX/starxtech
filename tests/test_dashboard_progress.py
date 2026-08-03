@@ -159,9 +159,10 @@ def test_progress_dashboard_orders_statuses_and_uses_sql_pagination(client, app)
     assert table.index('data-progress-dashboard-status="overdue"') < table.index('data-progress-dashboard-status="in_progress"') < table.index('data-progress-dashboard-status="not_started"')
     assert 'data-progress-dashboard-status="done"' not in table
     assert 'data-progress-dashboard-status="done"' in second_page
-    assert "Phân trang 50" not in first_page
-    assert "Phân trang 50" in second_page
-    assert 'href="/reports/dashboard/progress?page=2"' in first_page
+    second_table = second_page[second_page.index("data-progress-dashboard-table"):second_page.index("</table>", second_page.index("data-progress-dashboard-table"))]
+    assert "Phân trang 50" not in table
+    assert "Phân trang 50" in second_table
+    assert 'href="/reports/dashboard/progress?page=2&amp;type_id=' in first_page
 
 
 def test_progress_dashboard_cards_include_projects_without_recent_entries(client, app):
@@ -212,3 +213,92 @@ def test_progress_dashboard_query_count_is_not_linear(client, app):
     large = request_count()
 
     assert large == small
+
+
+def test_progress_dashboard_chart_selector_scopes_pairs_and_defaults_to_first_problem(client, app):
+    today = date.today()
+    with app.app_context():
+        default_type = _add_progress_type(1, "Giai đoạn quá hạn được chọn", planned_start=today - timedelta(days=3), planned_end=today - timedelta(days=1))
+        _add_progress_type(2, "Giai đoạn ngoài phạm vi", planned_start=today - timedelta(days=3), planned_end=today - timedelta(days=1))
+        db.session.commit()
+        default_id = default_type.id
+    username = _dashboard_user(
+        app,
+        870,
+        "progress-chart-scoped",
+        ("modules.reports.access", "dashboards.progress.view"),
+        (
+            (1, {"can_view_project": True, "can_view_progress": True}),
+            (2, {"can_view_project": True, "can_view_progress": False}),
+        ),
+    )
+
+    _login(client, username)
+    page = client.get(PROGRESS_DASHBOARD_URL).get_data(as_text=True)
+    selector = page[page.index("data-progress-dashboard-type-select"):page.index("</select>", page.index("data-progress-dashboard-type-select"))]
+
+    assert "P001 · Assigned Project — Giai đoạn quá hạn được chọn" in selector
+    assert "P002" not in selector
+    assert "Giai đoạn ngoài phạm vi" not in page
+    assert f'value="{default_id}" selected' in selector
+    assert f'data-chart-url="/projects/1/progress/types/{default_id}/chart-data"' in page
+    assert '<form method="get" data-progress-dashboard-type-form>' in page
+    assert 'onchange="this.form.submit()"' in page
+    assert 'style="height: 320px; position: relative;"' in page
+    assert 'role="img" aria-label="Biểu đồ phần trăm hoàn thành theo khu vực' in page
+    assert page.index("data-progress-dashboard-chart-canvas") < page.index("progress-dashboard-chart.js")
+
+
+def test_progress_dashboard_chart_out_of_scope_type_falls_back_without_disclosure(client, app):
+    today = date.today()
+    with app.app_context():
+        visible_type = _add_progress_type(1, "Giai đoạn mặc định", planned_start=today, planned_end=today + timedelta(days=2))
+        hidden_type = _add_progress_type(2, "Giai đoạn bí mật", planned_start=today, planned_end=today + timedelta(days=2))
+        db.session.commit()
+        visible_id, hidden_id = visible_type.id, hidden_type.id
+    username = _dashboard_user(
+        app,
+        871,
+        "progress-chart-outside",
+        ("modules.reports.access", "dashboards.progress.view"),
+        (
+            (1, {"can_view_project": True, "can_view_progress": True}),
+            (2, {"can_view_project": True, "can_view_progress": False}),
+        ),
+    )
+
+    _login(client, username)
+    response = client.get(f"{PROGRESS_DASHBOARD_URL}?type_id={hidden_id}")
+    page = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert f'value="{visible_id}" selected' in page
+    assert "Giai đoạn bí mật" not in page
+    assert "Other Project" not in page
+
+
+def test_progress_dashboard_chart_empty_states(client, app):
+    empty_user = _dashboard_user(
+        app,
+        872,
+        "progress-chart-empty",
+        ("modules.reports.access", "dashboards.progress.view"),
+    )
+    _login(client, empty_user)
+    empty_page = client.get(PROGRESS_DASHBOARD_URL).get_data(as_text=True)
+    client.post("/logout")
+    with app.app_context():
+        no_group_type = ProgressType(project_id=1, name="Giai đoạn chưa có khu vực", created_by_id=1)
+        db.session.add(no_group_type)
+        db.session.commit()
+        no_group_id = no_group_type.id
+    _login(client, "admin")
+    no_group_page = client.get(f"{PROGRESS_DASHBOARD_URL}?type_id={no_group_id}").get_data(as_text=True)
+
+    assert "data-progress-dashboard-no-types" in empty_page
+    assert "data-progress-dashboard-type-select" not in empty_page
+    assert "data-progress-dashboard-chart-canvas" not in empty_page
+    assert "data-progress-dashboard-table" not in empty_page
+    assert "data-progress-dashboard-type-select" in no_group_page
+    assert "Giai đoạn này chưa có khu vực nào." in no_group_page
+    assert "data-progress-dashboard-chart-canvas" not in no_group_page

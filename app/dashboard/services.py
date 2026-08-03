@@ -249,7 +249,7 @@ def project_progress_dashboard_context(project):
     }
 
 
-def progress_dashboard_context(*, page=1, today=None):
+def progress_dashboard_context(*, page=1, selected_type_id=None, today=None):
     """Build the cross-project progress dashboard from SQL-paginated rows."""
     from app.project_memberships import accessible_project_ids
 
@@ -286,6 +286,26 @@ def progress_dashboard_context(*, page=1, today=None):
     )
     total_rows = ordered_ids.order_by(None).count()
     type_ids = [row.type_id for row in ordered_ids.limit(PROGRESS_DASHBOARD_PAGE_SIZE).offset((page - 1) * PROGRESS_DASHBOARD_PAGE_SIZE).all()]
+    selector_type_ids = [row.type_id for row in ordered_ids.all()]
+    selector_types = []
+    if selector_type_ids:
+        loaded_selector_types = ProgressType.query.options(
+            joinedload(ProgressType.project),
+        ).filter(ProgressType.id.in_(selector_type_ids)).all()
+        selector_by_id = {progress_type.id: progress_type for progress_type in loaded_selector_types}
+        selector_types = [selector_by_id[type_id] for type_id in selector_type_ids]
+    try:
+        selected_type_id = int(selected_type_id) if selected_type_id is not None else None
+    except (TypeError, ValueError):
+        selected_type_id = None
+    selected_type = next((progress_type for progress_type in selector_types if progress_type.id == selected_type_id), None)
+    if selected_type is None and selector_types:
+        selected_type = selector_types[0]
+    if selected_type is not None:
+        selected_type = ProgressType.query.options(
+            joinedload(ProgressType.project),
+            joinedload(ProgressType.groups),
+        ).filter(ProgressType.id == selected_type.id).one()
     progress_types = []
     entries_by_item_id = {}
     if type_ids:
@@ -322,6 +342,8 @@ def progress_dashboard_context(*, page=1, today=None):
     stale_projects = _progress_dashboard_stale_project_count(progress_project_ids, today)
     return {
         "summaries": summaries,
+        "selector_types": selector_types,
+        "selected_type": selected_type,
         "cards": {
             "projects_with_progress": projects_with_progress,
             "overdue_types": overdue_types,

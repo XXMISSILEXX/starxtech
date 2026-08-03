@@ -75,7 +75,7 @@ def progress_dashboard():
     return render_template(
         "dashboard/progress.html",
         dashboard_kind="progress",
-        **progress_dashboard_context(page=page),
+        **progress_dashboard_context(page=page, selected_type_id=request.args.get("type_id")),
         **dashboard_navigation_context("progress"),
     )
 
