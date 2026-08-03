@@ -211,7 +211,7 @@ báo** — nghĩa là hiểu sai phạm vi.
 - Tab: giá trị `tab` không hợp lệ xử lý đúng như đã chọn; cả hai tab render đúng nội
   dung; ma trận 8 vai vẫn xanh cho cả hai URL.
 - Nhãn: không còn chuỗi "Mang sang" ở bất kỳ template nào.
-- `grep -rn '\x' tests/test_construction_progress_*.py` phải rỗng. Assertion tiếng
+- `grep -rnF '\x' tests/test_construction_progress_*.py` phải rỗng. Assertion tiếng
   Việt dùng `response.get_data(as_text=True)`, không dùng byte literal.
 - `npm test`: dán nguyên văn khối tổng kết của `node --test`, không đếm số file.
 

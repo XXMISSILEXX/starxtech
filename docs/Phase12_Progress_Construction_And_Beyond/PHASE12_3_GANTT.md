@@ -302,7 +302,7 @@ Tab và biểu đồ:
   **không** xuất hiện khi đã khai `actual_start_date`.
 - Mốc chia đổi đúng theo ba ngưỡng 31 ngày / 26 tuần / dài hơn.
 
-Chốt: `grep -rn '\x' tests/test_construction_progress_*.py` phải rỗng. Assertion tiếng
+Chốt: `grep -rnF '\x' tests/test_construction_progress_*.py` phải rỗng. Assertion tiếng
 Việt dùng `get_data(as_text=True)`. JS: dán cả
 `grep -h '^test(' tests_js/*.test.js | wc -l` và khối tổng kết node.
 

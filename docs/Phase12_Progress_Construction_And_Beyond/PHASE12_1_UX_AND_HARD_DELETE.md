@@ -362,7 +362,7 @@ Cấm chạm: `app/config.py`, `pytest.ini`, `docker-compose.yml`, `.audit/**`,
 - Overlay giữ lại dữ liệu người dùng đã nhập khi có lỗi.
 
 Assertion tiếng Việt dùng `get_data(as_text=True)`, **không** dùng byte literal
-`b"..."`. Chốt: `grep -rn '\x' tests/test_construction_progress_*.py` phải rỗng.
+`b"..."`. Chốt: `grep -rnF '\x' tests/test_construction_progress_*.py` phải rỗng.
 
 ### Ngoài phạm vi
 
