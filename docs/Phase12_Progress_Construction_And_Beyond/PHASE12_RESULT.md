@@ -557,3 +557,70 @@ có `-F`.
 - Chưa có test chống hồi quy riêng cho việc không còn ô input trong bảng dữ liệu.
 - Mô đun tiến độ chưa có test đồng thời riêng trên PostgreSQL.
 - Suite chạy SQLite in-memory nên không chứng minh hành vi PostgreSQL đồng thời.
+
+## 13. Phase 12.4 — Dashboard tiến độ thi công (2026-08-03)
+
+### Commit
+
+| Commit | Kết quả |
+| --- | --- |
+| `4bde515` | Trau nhóm nút và thẻ overlay tiến độ đã hoàn tất trước vòng dashboard; bổ sung hồ sơ theo yêu cầu. |
+| `c936ab7` | Ghi mốc xanh `BASELINE_12_4.md`. |
+| `b0e72b2` | Thêm hàm thuần `type_progress_summary()` và test quy tắc suy diễn. |
+| `284512f` | Hiện khối tiến độ capability-scoped trên dashboard dự án. |
+| `a2ee57f` | Thêm hub “Dashboard tiến độ thi công”, permission và phân trang SQL. |
+| `39759f5` | Thêm bộ chọn cặp dự án–giai đoạn và biểu đồ cột khu vực. |
+| `ae4a293` | Resolve CSS token trước khi đưa màu vào Chart.js, sửa cột đen ở light/dark theme. |
+
+### Đối chiếu đặc tả §1–§4
+
+| Mục | Trạng thái | Bằng chứng kiểm thử |
+| --- | --- | --- |
+| 1. `type_progress_summary()` | Đạt | `test_type_progress_summary_leaves_dates_and_days_none_without_scheduled_groups`, `test_type_progress_summary_counts_single_planned_day_inclusively`, `test_type_progress_summary_marks_done_before_overdue_when_complete`, `test_type_progress_summary_counts_only_scheduled_incomplete_items_as_overdue` |
+| 2. Khối tiến độ trên dashboard dự án | Đạt | `test_project_dashboard_renders_capability_scoped_progress_block_without_project_percent`, `test_project_dashboard_hides_progress_block_without_progress_capability`, `test_project_dashboard_shows_progress_instruction_without_progress_types` |
+| 3. Hub Dashboard tiến độ thi công | Đạt | `test_progress_dashboard_route_matrix`, `test_progress_dashboard_scopes_rows_to_progress_capability_without_global_scope`, `test_progress_dashboard_navigation_card_respects_permission`, `test_progress_dashboard_orders_statuses_and_uses_sql_pagination`, `test_progress_dashboard_query_count_is_not_linear` |
+| 4. Kế hoạch thi hành và cổng dừng | Đạt | Baseline `c936ab7`; chủ dự án đã nghiệm thu khối dự án và card hub trên dữ liệu thật. |
+
+### Bổ sung §5 — bộ chọn và biểu đồ khu vực
+
+- Bộ chọn là cặp dự án–giai đoạn, dùng form `GET` với `?type_id=` và tự submit. Mặc định là giai đoạn đầu tiên theo thứ tự bảng đã sắp xếp; `type_id` ngoài phạm vi quay về lựa chọn mặc định mà không lộ tên dự án/giai đoạn.
+- Dropdown chỉ chứa dự án người xem tiếp cận được đồng thời có `can_view_progress`. Không thêm permission hay capability.
+- Canvas chỉ render khi giai đoạn có khu vực. Div bọc có chiều cao xác định, `position: relative`, và Chart.js có `maintainAspectRatio: false`; không còn layout cao vô hạn.
+- Chế độ khối lượng dùng một màu để so sánh độ lớn. Chế độ tiền dùng hai phần xếp lớp “Đã hoàn thành”/“Còn lại”, có nhãn và viền cho phần còn lại, không dựa riêng vào màu.
+- Chart.js không hiểu chuỗi CSS `var(...)` khi vẽ canvas. Bản sửa `ae4a293` dùng `getComputedStyle(document.documentElement).getPropertyValue(token).trim()` cho `--sx-primary`, `--sx-chart-good`, `--sx-chart-neutral`; token có giá trị ở cả light/dark theme và test chặn `backgroundColor` bắt đầu bằng `var(`.
+
+Bằng chứng: `test_progress_dashboard_chart_selector_scopes_pairs_and_defaults_to_first_problem`, `test_progress_dashboard_chart_out_of_scope_type_falls_back_without_disclosure`, `test_progress_dashboard_chart_empty_states`, `loads chart data and renders one vertical bar for every area`, `does not create a Chart when chart-data has no area labels`, `uses completed and remaining stacked datasets for money progress`.
+
+Chủ dự án đã nghiệm thu bằng mắt bộ chọn và biểu đồ ở cả theme sáng/tối sau bản sửa màu.
+
+### Dữ liệu, permission và deploy
+
+Phase 12.4 không đổi schema và không có migration; **không cần** `flask db upgrade` riêng cho vòng này. Permission mới duy nhất là `dashboards.progress.view`, được default cho `ADMIN` và `VIEWER_ADMIN`.
+
+Deploy cần chạy:
+
+```bash
+flask sync-permissions --apply-defaults
+```
+
+Database development đã được đồng bộ sau Bước 3 với kết quả `roles=0 permissions=1 grants=2 deprecated-orphan=0`.
+
+Không có phần trăm tổng dự án hay toàn hệ thống. Phần trăm chỉ thuộc dòng giai đoạn, vì chưa chốt quy tắc trọng số giữa các giai đoạn.
+
+### Kiểm thử chốt
+
+```text
+pytest -p no:cacheprovider -q --durations=10
+620 passed, 3 skipped in 392.63s (0:06:32)
+
+npm test
+9 passed, 0 failed
+```
+
+`grep -h '^test(' tests_js/*.test.js | wc -l` là `36`; `node -v` là `v24.16.0`; `grep -rnF '\x' tests/test_construction_progress_*.py tests/test_dashboard_*.py` không có output.
+
+### Giới hạn còn lại
+
+- Suite vẫn dùng SQLite in-memory; không chứng minh hành vi PostgreSQL đồng thời.
+- Mô đun tiến độ chưa có test tranh chấp PostgreSQL riêng cho phiếu trùng ngày hoặc `recalculate_item_completed()`.
+- Test HTML/JS bảo vệ hợp đồng và màu đã resolve, nhưng không tự chứng minh được chất lượng thẩm mỹ; cổng nghiệm thu thực vẫn là kiểm tra bằng mắt ở cả hai theme.
