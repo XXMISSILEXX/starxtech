@@ -94,10 +94,26 @@ def test_progress_templates_use_placeholders_and_no_longer_call_opening_quantity
     assert '<div class="form-text">Ví dụ:' not in content
 
 
-def test_progress_item_overlay_uses_two_subrows_for_nine_fields():
+def test_type_detail_actions_and_item_overlay_use_clear_presentation_groups():
     template = Path("app/templates/construction_progress/type_detail.html").read_text(encoding="utf-8")
+    assert 'class="d-flex align-items-center gap-2" data-type-actions' in template
+    assert 'class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createEntries">Tạo phiếu cập nhật ngày</button>' in template
+    assert 'class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#createGroup">Thêm khu vực</button>' in template
+    assert 'class="dropdown ms-auto" data-type-actions-menu' in template
+    assert 'class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#editType">Sửa loại</button>' in template
+    assert 'class="dropdown-item text-danger" type="button" data-bs-toggle="modal" data-bs-target="#deleteType">Xóa loại</button>' in template
+    assert template.index('data-bs-target="#editType">Sửa loại') < template.index('dropdown-divider') < template.index('data-bs-target="#deleteType">Xóa loại')
+    assert 'class="btn-group">{% if can_create' not in template
+    assert 'modal-dialog modal-xl modal-dialog-scrollable' in template
+    assert 'class="border rounded p-3 mb-3 {% if row_errors %}border-danger{% endif %}" data-progress-item-row' in template
+    assert 'data-item-row-header' in template
+    assert 'data-item-information-row' in template
     assert 'data-item-quantity-row' in template
     assert 'data-item-timeline-row' in template
+    assert 'data-item-timeline-group' in template
+    assert '<hr class="my-3">' in template
+    assert 'Thời gian (không bắt buộc)' in template
+    assert 'Để trống cả hai ngày kế hoạch nếu chưa lập lịch. Hạng mục chưa khai ngày sẽ không có trên biểu đồ Gantt.' in template
     assert 'name="items-{{ index }}-planned_start_date"' in template
     assert 'name="items-{{ index }}-planned_end_date"' in template
     assert 'name="items-{{ index }}-actual_start_date"' in template
