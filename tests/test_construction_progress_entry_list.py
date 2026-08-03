@@ -2,6 +2,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from app.extensions import db
+from app.date_utils import local_today
 from app.models import AuditLog, ProgressEntry, ProgressGroup, ProgressItem, ProgressType
 
 
@@ -72,3 +73,24 @@ def test_entry_list_edit_failure_and_delete_keep_list_state_and_audit(client, ap
         assert audit.old_values_json["report_date"]
         assert audit.old_values_json["quantity"]
         assert audit.old_values_json["created_by"]["username"] == "reporter"
+
+
+def test_entry_list_edit_rejects_future_date_and_excess_precision_without_writing(client, app):
+    with app.app_context():
+        type_id, group_id, _ = _entries()
+        entry = ProgressEntry.query.order_by(ProgressEntry.id).first()
+        entry_id, original_date, original_quantity, original_note = entry.id, entry.report_date, entry.quantity, entry.note
+    _login(client)
+    base = {"return_tab": "entries", "page": "1", "group_id": str(group_id), "date_from": "2026-01-01", "note": "không đổi"}
+    future = client.post(f"/projects/1/progress/entries/{entry_id}/edit", data={**base, "report_date": (local_today() + timedelta(days=1)).isoformat(), "quantity": "1,5"})
+    assert future.status_code == 400
+    assert "ngày trong tương lai" in future.get_data(as_text=True)
+    with app.app_context():
+        saved = db.session.get(ProgressEntry, entry_id)
+        assert (saved.report_date, saved.quantity, saved.note) == (original_date, original_quantity, original_note)
+    precise = client.post(f"/projects/1/progress/entries/{entry_id}/edit", data={**base, "report_date": original_date.isoformat(), "quantity": "1,55"})
+    assert precise.status_code == 400
+    assert "tối đa 1 chữ số thập phân" in precise.get_data(as_text=True)
+    with app.app_context():
+        saved = db.session.get(ProgressEntry, entry_id)
+        assert (saved.report_date, saved.quantity, saved.note) == (original_date, original_quantity, original_note)

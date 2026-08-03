@@ -412,3 +412,36 @@ Skip là ba test PostgreSQL Phase 4/5 đã có từ trước khi không cấu h�
 3. Chạy `flask db upgrade`, sau đó chạy lệnh đồng bộ permission đã ghi ở mục 7 của tài liệu này.
 4. Smoke test: mở trang chi tiết loại, tạo batch khu vực, tạo batch phiếu, thử một lỗi validation và xác nhận dữ liệu overlay còn nguyên.
 5. Nếu khối lượng trở thành số liệu nghiệm thu/thanh toán hoặc bị ràng buộc lưu trữ, xem lại quyết định xoá cứng theo mục 12 của tài liệu Phase 12.1.
+
+## 11. Phase 12.2 — lỗi overlay, danh sách phiếu và tab (2026-08-03)
+
+### Commit
+
+- `57b6435` — baseline Phase 12.2.
+- `d65371c` — căn hàng overlay, placeholder và nhãn “Đã làm trước đó”.
+- `c718c79` — lỗi batch có cấu trúc và gắn cạnh đúng ô.
+- `39b2f3c` — mở lại overlay tin cậy, bỏ flash cảnh báo cấp trang.
+- `d3f8fc1` — trang hạng mục chỉ còn số liệu và lịch sử; bỏ `create_entry`.
+- `8f91df8` — tab URL thật, danh sách phiếu có filter/phân trang, sửa/xóa từ danh sách.
+
+### Đối chiếu đặc tả
+
+| Mục | Trạng thái | Bằng chứng |
+| --- | --- | --- |
+| 1. Lỗi trong overlay | Đạt | `test_create_group_batch_rejects_duplicate_names_in_payload_and_keeps_form_values`, `test_overlay_reopening_waits_for_domcontentloaded_when_the_page_is_still_loading` |
+| 2. Danh sách phiếu | Đạt | `test_entry_tab_uses_sql_page_filters_and_distinguishes_empty_states`, `test_entry_list_edit_failure_and_delete_keep_list_state_and_audit`, `test_entry_list_edit_rejects_future_date_and_excess_precision_without_writing` |
+| 3. Lệch dòng và nhãn | Đạt | `test_progress_templates_use_placeholders_and_no_longer_call_opening_quantity_mang_sang` |
+| 4. Trang hạng mục | Đạt | `test_item_detail_shows_history_without_create_form_and_removed_create_route_is_404` |
+| 5. Hai tab | Đạt | `test_entry_tab_uses_sql_page_filters_and_distinguishes_empty_states`, `test_progress_route_matrix` |
+
+Đã bỏ route `create_entry`, giảm từ 18 xuống 17 route. Flash cảnh báo cấp trang khi batch lỗi cũng đã bỏ; câu tổng kết lỗi nằm trong overlay.
+
+Gantt được **hoãn có chủ ý**: `ProgressItem` không có cột ngày. Hai hướng đã cân nhắc: thêm `planned_start_date`/`planned_end_date` để vẽ kế hoạch và thực tế; hoặc chỉ suy thanh thực tế từ phiếu đầu đến phiếu gần nhất, nhưng không có mốc kế hoạch.
+
+Bài học: test JSDOM đánh giá script trên DOM hoàn chỉnh nên không bắt lỗi thứ tự tải. Guard thực sự là assertion tầng server so vị trí `data-open-progress-modal` trước script trong HTML.
+
+Nợ kỹ thuật đã biết: `vn_number` raise `ValueError` khi `places` ngoài 0–3 (hiện CheckConstraint ngăn được); chưa có test chống hồi quy riêng cho việc không còn input trong bảng dữ liệu và không còn canvas biểu đồ.
+
+Deploy: chạy `flask db upgrade` tới revision mới nhất. Phase 12.2 không thêm permission, **không cần** `sync-permissions`.
+
+Giới hạn: suite dùng SQLite in-memory, không chứng minh tranh chấp PostgreSQL; mô đun tiến độ chưa có test đồng thời riêng và đang có task riêng.
