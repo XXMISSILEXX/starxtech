@@ -71,6 +71,14 @@ class ProgressItem(TimestampMixin, db.Model):
         db.CheckConstraint("planned_quantity >= 0", name="ck_progress_items_planned_quantity_nonnegative"),
         db.CheckConstraint("opening_quantity >= 0", name="ck_progress_items_opening_quantity_nonnegative"),
         db.CheckConstraint("decimal_places BETWEEN 0 AND 3", name="ck_progress_items_decimal_places_range"),
+        db.CheckConstraint(
+            "(planned_start_date IS NULL) = (planned_end_date IS NULL)",
+            name="ck_progress_items_planned_dates_paired",
+        ),
+        db.CheckConstraint(
+            "planned_start_date IS NULL OR planned_start_date <= planned_end_date",
+            name="ck_progress_items_planned_date_order",
+        ),
     )
 
     id = db.Column(db.BigInteger().with_variant(db.Integer(), "sqlite"), primary_key=True)
@@ -92,6 +100,9 @@ class ProgressItem(TimestampMixin, db.Model):
     planned_quantity = db.Column(db.Numeric(18, 3), nullable=False, default=0, server_default="0")
     opening_quantity = db.Column(db.Numeric(18, 3), nullable=False, default=0, server_default="0")
     completed_quantity = db.Column(db.Numeric(18, 3), nullable=False, default=0, server_default="0")
+    planned_start_date = db.Column(db.Date, nullable=True)
+    planned_end_date = db.Column(db.Date, nullable=True)
+    actual_start_date = db.Column(db.Date, nullable=True)
     assignee_user_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=True)
     note = db.Column(db.Text, nullable=True)
     display_order = db.Column(db.Integer, nullable=False, default=0, server_default="0")

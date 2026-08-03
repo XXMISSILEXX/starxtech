@@ -121,3 +121,87 @@ def test_progress_item_decimal_places_must_be_between_zero_and_three(app, decima
         )
         with pytest.raises(IntegrityError):
             db.session.commit()
+
+
+@pytest.mark.parametrize(
+    ("planned_start_date", "planned_end_date"),
+    [
+        (date(2026, 8, 1), None),
+        (None, date(2026, 8, 2)),
+    ],
+)
+def test_progress_item_database_rejects_unpaired_planned_dates(app, planned_start_date, planned_end_date):
+    with app.app_context():
+        _, group, _ = _progress_tree()
+        db.session.add(
+            ProgressItem(
+                project_id=1,
+                progress_group_id=group.id,
+                name="Hạng mục khai ngày lẻ",
+                unit="mét",
+                planned_start_date=planned_start_date,
+                planned_end_date=planned_end_date,
+                created_by_id=1,
+            )
+        )
+
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+
+
+def test_progress_item_database_rejects_reversed_planned_dates(app):
+    with app.app_context():
+        _, group, _ = _progress_tree()
+        db.session.add(
+            ProgressItem(
+                project_id=1,
+                progress_group_id=group.id,
+                name="Hạng mục đảo ngày",
+                unit="mét",
+                planned_start_date=date(2026, 8, 2),
+                planned_end_date=date(2026, 8, 1),
+                created_by_id=1,
+            )
+        )
+
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+
+
+def test_progress_item_database_allows_valid_planned_dates(app):
+    with app.app_context():
+        _, group, _ = _progress_tree()
+        item = ProgressItem(
+            project_id=1,
+            progress_group_id=group.id,
+            name="Hạng mục khai ngày hợp lệ",
+            unit="mét",
+            planned_start_date=date(2026, 8, 1),
+            planned_end_date=date(2026, 8, 31),
+            actual_start_date=date(2026, 8, 2),
+            created_by_id=1,
+        )
+        db.session.add(item)
+        db.session.commit()
+
+        assert item.planned_start_date == date(2026, 8, 1)
+        assert item.planned_end_date == date(2026, 8, 31)
+        assert item.actual_start_date == date(2026, 8, 2)
+
+
+def test_progress_item_database_allows_all_gantt_dates_empty(app):
+    with app.app_context():
+        _, group, _ = _progress_tree()
+        item = ProgressItem(
+            project_id=1,
+            progress_group_id=group.id,
+            name="Hạng mục chưa khai ngày",
+            unit="mét",
+            created_by_id=1,
+        )
+        db.session.add(item)
+        db.session.commit()
+
+        assert item.planned_start_date is None
+        assert item.planned_end_date is None
+        assert item.actual_start_date is None
