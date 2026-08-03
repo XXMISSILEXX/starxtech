@@ -444,4 +444,17 @@ Nợ kỹ thuật đã biết: `vn_number` raise `ValueError` khi `places` ngoà
 
 Deploy: chạy `flask db upgrade` tới revision mới nhất. Phase 12.2 không thêm permission, **không cần** `sync-permissions`.
 
+⚠️ **Cảnh báo cho người deploy — đừng đọc câu trên rời khỏi ngữ cảnh.** Câu đó chỉ đúng cho
+riêng vòng 12.2. **Phase 12 đã thêm 6 permission code** (`construction_progress.*`, xem mục 7).
+Nếu server đang ở trạng thái trước Phase 12 thì lần deploy này vẫn phải chạy đủ hai lệnh:
+
+```bash
+flask db upgrade && flask sync-permissions --apply-defaults
+```
+
+Bỏ lệnh thứ hai thì thẻ "Quản lý tiến độ thi công" sẽ **không hiện với bất kỳ ai ngoài
+Quản trị tổng**, vì thẻ được lọc bằng RBAC toàn cục chứ không phải capability dự án
+(`project_workspace()` dùng `current_user.can(...)`). Triệu chứng khi đó trông như mô đun bị
+lỗi, dù code hoàn toàn đúng.
+
 Giới hạn: suite dùng SQLite in-memory, không chứng minh tranh chấp PostgreSQL; mô đun tiến độ chưa có test đồng thời riêng và đang có task riêng.
