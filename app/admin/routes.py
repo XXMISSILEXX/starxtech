@@ -28,6 +28,7 @@ from app.customers.services import (
     can_manage_customer,
 )
 from app.permissions.services import permission_required
+from app.permissions.registry import DEFAULTS, PERMISSIONS
 from app.extensions import db
 from app.models import Customer, Permission, Project, ProjectDocumentFolder, ProjectStatus, ProjectUser, ReportCategory, Role, RolePermission, User, UserRole
 from app.project_memberships import (CAPABILITY_FIELDS, CAPABILITY_LABELS, PROJECT_ROLE_LABELS,
@@ -35,6 +36,9 @@ from app.project_memberships import (CAPABILITY_FIELDS, CAPABILITY_LABELS, PROJE
     is_owner_equivalent_membership, is_super_admin, manageable_project_capabilities,
     manageable_project_role_level, membership_capability_labels, membership_summary)
 from app.security import password_policy_errors
+
+
+REGISTRY_PERMISSION_CODES = frozenset(permission["code"] for permission in PERMISSIONS)
 
 DEPRECATED_GLOBAL_ROLE_CODES = ("PROJECT_MANAGER", "REPORTER")
 
@@ -185,7 +189,8 @@ def role_permissions(role_id):
         "projects.scope_all": "Dashboard",
     }
     grouped = {}
-    for permission in Permission.query.order_by(Permission.module, Permission.sort_order, Permission.code).all():
+    for permission in Permission.query.filter(Permission.code.in_(REGISTRY_PERMISSION_CODES)).order_by(
+            Permission.module, Permission.sort_order, Permission.code).all():
         group = phase9_group_labels.get(permission.code, group_labels.get(permission.module, permission.group_name))
         grouped.setdefault(group, []).append(permission)
     return render_template("admin/roles/permissions.html", role=role, grouped=grouped,
@@ -196,9 +201,10 @@ def role_permissions(role_id):
 @permission_required("roles.manage")
 def role_permissions_reset_defaults(role_id):
     role = db.get_or_404(Role, role_id)
-    from app.permissions.registry import DEFAULTS
     wanted = DEFAULTS.get(role.code, set())
-    permissions = Permission.query.filter(Permission.code.in_(wanted)).all()
+    permissions = Permission.query.filter(
+        Permission.code.in_(wanted), Permission.code.in_(REGISTRY_PERMISSION_CODES)
+    ).all()
     if len(permissions) != len(wanted) or not can_manage_role_permissions(current_user, role, permissions):
         abort(403)
     old = {item.permission_id for item in role.role_permissions}
@@ -786,7 +792,7 @@ def _requested_permissions():
     permissions = Permission.query.filter(Permission.id.in_(permission_ids)).all() if permission_ids else []
     if len(permissions) != len(permission_ids):
         abort(400)
-    return permissions
+    return [permission for permission in permissions if permission.code in REGISTRY_PERMISSION_CODES]
 
 
 def _require_can_view_categories(project_id):

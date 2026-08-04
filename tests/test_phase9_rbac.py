@@ -163,3 +163,49 @@ def test_super_admin_role_permissions_do_not_offer_dead_security_audit_permissio
     assert response.status_code == 200
     assert b"security.audit" not in response.data
     assert "Xem nhật ký bảo mật".encode() not in response.data
+
+
+def test_role_permission_ui_and_save_ignore_legacy_database_permissions(client, app):
+    with app.app_context():
+        legacy = Permission(
+            code="legacy.dead_permission",
+            name="Legacy dangerous permission",
+            description="Legacy dangerous permission",
+            module="legacy",
+            group_name="Legacy",
+            action="dead_permission",
+            resource="legacy",
+            is_dangerous=True,
+        )
+        target_role = Role(code="LEGACY_PERMISSION_TARGET", name="Legacy permission target", is_system=False)
+        db.session.add_all((legacy, target_role))
+        db.session.flush()
+        users_view = Permission.query.filter_by(code="users.view").one()
+        db.session.add(RolePermission(role_id=target_role.id, permission_id=legacy.id))
+        db.session.commit()
+        target_role_id = target_role.id
+        legacy_id = legacy.id
+        users_view_id = users_view.id
+
+    _login_as(client, 1)
+    response = client.get(f"/admin/roles/{target_role_id}/permissions")
+
+    assert response.status_code == 200
+    assert b"legacy.dead_permission" not in response.data
+    assert b"Legacy dangerous permission" not in response.data
+    assert "Xem người dùng".encode() in response.data
+
+    saved = client.post(
+        f"/admin/roles/{target_role_id}/permissions",
+        data={"permission_ids": [str(users_view_id), str(legacy_id)]},
+    )
+
+    assert saved.status_code == 302
+    with app.app_context():
+        granted_codes = {
+            permission.code
+            for permission in Permission.query.join(RolePermission).filter(
+                RolePermission.role_id == target_role_id
+            ).all()
+        }
+        assert granted_codes == {"users.view"}
