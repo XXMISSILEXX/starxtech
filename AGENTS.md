@@ -36,7 +36,7 @@ Core modules:
 - Report categories / đầu mục báo cáo theo project.
 - Daily report.
 - Daily report sections.
-- Attachments, tối đa 3 ảnh/section.
+- Attachments, tối đa 10 ảnh/section.
 - Persistent issues / vấn đề xuyên suốt.
 - Dashboard tổng.
 - Dashboard project.
@@ -61,7 +61,7 @@ Important rules:
 - Reporter chỉ thấy project được gán trong `project_users`.
 - VIEWER_ADMIN không được write bất kỳ dữ liệu nào.
 - Attachment không được public trực tiếp; phải serve qua `/attachments/<id>` và kiểm tra quyền.
-- Mỗi section tối đa 3 ảnh.
+- Mỗi section tối đa 10 ảnh.
 - Chỉ nhận jpg, jpeg, png, webp.
 - Dùng UUID cho stored filename.
 - Resize ảnh lớn về max width 1920px.

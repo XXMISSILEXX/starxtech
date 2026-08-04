@@ -1,3 +1,4 @@
+# REPORTS-007 was closed on 2026-08-04 by accepting the fixed 10-image contract.
 """Regression proof for REPORTS-007 (read-only, intentionally fails at HEAD).
 
 Run:

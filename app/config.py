@@ -60,9 +60,6 @@ class Config:
     TMP_ROOT = os.getenv("TMP_ROOT", str(BASE_DIR / "tmp"))
     MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "10"))
     MAX_CONTENT_LENGTH = MAX_UPLOAD_MB * 1024 * 1024
-    # Kept only for legacy callers outside Daily Reports.  Daily Reports use
-    # app.reports.constants.MAX_ATTACHMENTS_PER_REPORT_SECTION directly.
-    MAX_IMAGES_PER_SECTION = int(os.getenv("MAX_IMAGES_PER_SECTION", "10"))
     MAX_FORM_PARTS = int(os.getenv("MAX_FORM_PARTS", "1000"))
     DAILY_REPORT_DIRECT_UPLOAD_ENABLED = os.getenv("DAILY_REPORT_DIRECT_UPLOAD_ENABLED", "true").lower() == "true"
     DAILY_REPORT_MAX_FILES = int(os.getenv("DAILY_REPORT_MAX_FILES", "30"))

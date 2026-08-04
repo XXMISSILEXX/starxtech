@@ -9,10 +9,12 @@ commits, 111 files, +7,685/−303 lines.  All newly changed files were assigned
 in `PHASE11-DELTA-SCOPE.md`; changed endpoints are recorded in
 `ENDPOINTS-g5.md`.  Existing Phase 10 records were preserved unchanged.
 
-The audit found one open Medium product-contract regression, two Low
+The audit originally found one open Medium product-contract regression, two Low
 documentation/operations defects, and three explicitly classified deployment/operations
-conditions.  It found no new Critical/High finding and no confirmed regression of an
-existing Phase 10 finding.
+conditions.  REPORTS-007 and CONFIG-OP-001 were closed on 2026-08-04 after the project
+owner confirmed the 10-image contract, the documentation was aligned, and the dead setting
+was removed.  It found no new Critical/High finding and no confirmed regression of an existing
+Phase 10 finding.
 
 ## Deliverables
 
@@ -28,11 +30,10 @@ existing Phase 10 finding.
 
 ## Release disposition
 
-**Not ready for production under the currently retained AGENTS/master contract** until
-the product owner resolves **REPORTS-007**.  The code currently permits ten images per
-Daily Report section while the governing contract says three.  This is not cleared by
-the fact that a new test accepts ten; it requires an explicit product decision and
-consistent specification/configuration/test alignment.
+**REPORTS-007 and CONFIG-OP-001 no longer block production.** On 2026-08-04, the project
+owner confirmed the fixed contract of ten images per Daily Report section; `AGENTS.md` was
+aligned and the misleading dead environment setting was removed from both configuration and
+the environment template.
 
 After that decision, the remaining release evidence is operational rather than a source
 patch:
