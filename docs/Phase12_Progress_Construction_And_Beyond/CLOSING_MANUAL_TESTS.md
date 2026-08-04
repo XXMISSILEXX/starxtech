@@ -187,20 +187,31 @@ Cùng một sự thật hiện ở bốn chỗ. Lệch nhau nghĩa là một ch�
 
 ---
 
-## Điều kiện đóng phase
+## Hai cửa khác nhau — đừng gộp
 
-Đóng được khi:
+### Cửa 1: đóng phase
+
+Đóng được khi đủ ba điều này, và **chỉ ba điều này**:
 
 - Ba lệnh tự động ở đầu tài liệu đều xanh.
 - Bảy mục A đến G ở trên đã làm và không còn lỗi chặn.
 - Đã chạy lại script bất biến sau mục A và D.
 
-Và hai điều kiện an toàn nằm ngoài mô đun, ghi ở mục 11 của
+Không có điều kiện nào khác. Phase là phạm vi công việc của mô đun, không phải phạm vi
+vận hành của cả hệ thống.
+
+### Cửa 2: cấp quyền xoá cứng cho người thứ hai
+
+Đây là quyết định **sau khi** đóng phase, và nó cần thêm hai điều kiện ghi ở mục 11 của
 `PHASE12_1_UX_AND_HARD_DELETE.md`:
 
 - **Đã thử restore backup ít nhất một lần** trên server thật.
 - **Có trang xem audit log** trong phần quản trị.
 
-Chưa đủ hai điều kiện đó thì mô đun vẫn dùng được, nhưng **chỉ nên để chính bạn dùng** —
-vì xoá cứng không hoàn tác được và hiện chưa ai ngoài người truy cập được SQL đọc được
-audit log để biết ai đã xoá gì.
+Lý do: xoá cứng không hoàn tác được, và hiện chưa ai ngoài người truy cập được SQL đọc
+được audit log để biết ai đã xoá gì. Khi chỉ chủ dự án dùng mô đun thì rủi ro đó nằm
+trong tầm kiểm soát — người xoá biết mình vừa xoá gì. Khi có người thứ hai thì không còn
+như vậy.
+
+Nên chưa đủ hai điều kiện này **không chặn việc đóng phase**, chỉ chặn việc cấp
+`can_manage_progress_structure` cho tài khoản khác.

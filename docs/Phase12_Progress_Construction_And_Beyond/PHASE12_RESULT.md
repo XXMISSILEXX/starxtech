@@ -624,3 +624,60 @@ npm test
 - Suite vẫn dùng SQLite in-memory; không chứng minh hành vi PostgreSQL đồng thời.
 - Mô đun tiến độ chưa có test tranh chấp PostgreSQL riêng cho phiếu trùng ngày hoặc `recalculate_item_completed()`.
 - Test HTML/JS bảo vệ hợp đồng và màu đã resolve, nhưng không tự chứng minh được chất lượng thẩm mỹ; cổng nghiệm thu thực vẫn là kiểm tra bằng mắt ở cả hai theme.
+
+## 14. Đóng phase tiến độ thi công (2026-08-04)
+
+### Hai commit sau mục 13
+
+| Commit | Nội dung |
+|---|---|
+| `0dcc4b7` | `fix(progress): give structure a stable display order` — thêm `order_by (display_order, id)` cho `ProgressType.groups` và `ProgressGroup.items`; gán `display_order` từ chỉ số dòng trong hai đường batch |
+| `8625c40` | `test(progress): add data invariant checker and closing manual test guide` — `scripts/verify_progress_module.py` và `CLOSING_MANUAL_TESTS.md` |
+
+### Lỗi thứ tự — vì sao nó tồn tại và ai tìm ra
+
+Hai quan hệ cấu trúc không có `order_by`, nên thứ tự do PostgreSQL trả về tuỳ ý và **đổi
+mỗi khi một hàng bị UPDATE** (bản cũ bị đánh dấu chết, bản mới ghi vào chỗ khác). Cột
+`display_order` đã tồn tại trên cả ba bảng từ Phase 12 nhưng chưa bao giờ được gán — mọi
+hàng đều là 0, tức một cột chết.
+
+Lỗi chỉ lộ ra khi chủ dự án làm **mục A của checklist test tay**: tạo một khu vực với 15
+hạng mục. Ở quy mô 6 hạng mục thì thứ tự heap tình cờ trùng thứ tự tạo nên không ai thấy.
+
+Quyết định kèm theo: **không** sắp theo phần trăm hoàn thành. Tab Tổng quan là bảng cấu
+trúc để tìm hạng mục theo tên; sắp theo phần trăm sẽ khiến mọi dòng nhảy chỗ mỗi lần có
+phiếu mới. "Cái gì đang chậm" đã có ba chỗ trả lời: ô Hạng mục quá hạn trên dashboard,
+biểu đồ cột theo khu vực, và Gantt. Một nút chuyển "Sắp theo tiến độ" là việc của vòng sau.
+
+### Bằng chứng đóng phase
+
+- `pytest`: **624 passed, 3 skipped** (404s).
+- `npm test`: 36 test JS, pass.
+- `scripts/verify_progress_module.py`: **mọi bất biến đúng**, chạy trên PostgreSQL
+  development sau khi đã tạo 15 hạng mục, tạo phiếu, rồi xoá cứng cả khu vực. Đây là bằng
+  chứng cho đường phá dữ liệu mà unit test không lấy được.
+- Checklist test tay bảy mục A–G: đã thực hiện. Mục A tìm ra lỗi thứ tự nói trên; mục D
+  xác nhận hộp thoại xoá cứng đếm đúng và dữ liệu test đã được dọn sạch.
+
+### Điều kiện còn lại — KHÔNG chặn đóng phase
+
+Hai điều kiện ở mục 11 của `PHASE12_1_UX_AND_HARD_DELETE.md` (thử restore backup, và có
+trang xem audit log) là điều kiện để **cấp `can_manage_progress_structure` cho tài khoản
+thứ hai**, không phải điều kiện đóng phase. Khi chỉ chủ dự án dùng mô đun, rủi ro của xoá
+cứng nằm trong tầm kiểm soát vì người xoá biết mình vừa xoá gì.
+
+`CLOSING_MANUAL_TESTS.md` đã được sửa để tách rõ hai cửa này, vì bản đầu gộp chúng lại và
+gây hiểu lầm rằng phase chưa đóng được.
+
+### Việc mở, ghi lại để không mất
+
+- Trang xem audit log trong phần quản trị — dùng chung toàn hệ thống, và là điều kiện của
+  cửa 2 ở trên.
+- Thử restore backup một lần trên server thật.
+- `REPORTS-007` — finding OPEN cuối trong hồ sơ audit.
+- Test đồng thời PostgreSQL cho mô đun tiến độ; lệnh dựng môi trường ở mục 9.5.
+- Tạo một hạng mục cho nhiều khu vực cùng lúc — cần nếu đưa cả 5 giai đoạn WBS lên hệ
+  thống, vì đó là 80–120 hạng mục nhập tay.
+- Tiến độ tổng của dự án; chờ chốt trọng số, khuyến nghị theo số ngày.
+
+**Phase tiến độ thi công: ĐÓNG.**
