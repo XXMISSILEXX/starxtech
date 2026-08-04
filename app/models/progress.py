@@ -27,7 +27,11 @@ class ProgressType(TimestampMixin, db.Model):
     updated_by_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=True)
 
     project = db.relationship("Project", back_populates="progress_types")
-    groups = db.relationship("ProgressGroup", back_populates="progress_type")
+    groups = db.relationship(
+        "ProgressGroup",
+        back_populates="progress_type",
+        order_by=lambda: (ProgressGroup.display_order, ProgressGroup.id),
+    )
     created_by = db.relationship("User", foreign_keys=[created_by_id])
     updated_by = db.relationship("User", foreign_keys=[updated_by_id])
 
@@ -59,7 +63,11 @@ class ProgressGroup(TimestampMixin, db.Model):
 
     project = db.relationship("Project")
     progress_type = db.relationship("ProgressType", back_populates="groups")
-    items = db.relationship("ProgressItem", back_populates="progress_group")
+    items = db.relationship(
+        "ProgressItem",
+        back_populates="progress_group",
+        order_by=lambda: (ProgressItem.display_order, ProgressItem.id),
+    )
     created_by = db.relationship("User", foreign_keys=[created_by_id])
     updated_by = db.relationship("User", foreign_keys=[updated_by_id])
 

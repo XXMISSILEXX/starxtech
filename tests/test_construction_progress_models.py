@@ -105,6 +105,69 @@ def test_progress_structure_models_have_no_archive_state():
     assert "is_active" not in ProgressItem.__table__.columns
 
 
+def test_existing_zero_order_items_keep_creation_order_after_an_update(app):
+    """SQLite cannot reproduce PostgreSQL heap order, so assert the ORM ordering contract."""
+    with app.app_context():
+        _, group, first_item = _progress_tree()
+        second_item = ProgressItem(
+            project_id=1,
+            progress_group_id=group.id,
+            name="Hạng mục thứ hai",
+            unit="mét",
+            created_by_id=1,
+        )
+        third_item = ProgressItem(
+            project_id=1,
+            progress_group_id=group.id,
+            name="Hạng mục thứ ba",
+            unit="mét",
+            created_by_id=1,
+        )
+        db.session.add_all((second_item, third_item))
+        db.session.commit()
+        expected_ids = [first_item.id, second_item.id, third_item.id]
+
+        assert [item.display_order for item in group.items] == [0, 0, 0]
+        assert [item.id for item in group.items] == expected_ids
+
+        second_item.planned_quantity = 200
+        db.session.commit()
+        db.session.expire_all()
+
+        reloaded_group = db.session.get(ProgressGroup, group.id)
+        assert [item.id for item in reloaded_group.items] == expected_ids
+
+
+def test_existing_zero_order_groups_keep_creation_order_after_an_update(app):
+    with app.app_context():
+        progress_type, first_group, _ = _progress_tree()
+        second_group = ProgressGroup(
+            project_id=1,
+            progress_type_id=progress_type.id,
+            name="Khu vực thứ hai",
+            created_by_id=1,
+        )
+        third_group = ProgressGroup(
+            project_id=1,
+            progress_type_id=progress_type.id,
+            name="Khu vực thứ ba",
+            created_by_id=1,
+        )
+        db.session.add_all((second_group, third_group))
+        db.session.commit()
+        expected_ids = [first_group.id, second_group.id, third_group.id]
+
+        assert [group.display_order for group in progress_type.groups] == [0, 0, 0]
+        assert [group.id for group in progress_type.groups] == expected_ids
+
+        second_group.note = "Đã cập nhật"
+        db.session.commit()
+        db.session.expire_all()
+
+        reloaded_type = db.session.get(ProgressType, progress_type.id)
+        assert [group.id for group in reloaded_type.groups] == expected_ids
+
+
 @pytest.mark.parametrize("decimal_places", [-1, 4])
 def test_progress_item_decimal_places_must_be_between_zero_and_three(app, decimal_places):
     with app.app_context():

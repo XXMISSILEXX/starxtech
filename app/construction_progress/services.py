@@ -666,7 +666,7 @@ def create_group_batch(*, progress_type, name, rows, actor_id=None):
         with db.session.begin_nested():
             group = create_group(progress_type=progress_type, name=name, actor_id=actor_id)
             for row in prepared:
-                create_item(group=group, name=row["name"], unit=row["unit"], decimal_places=row["decimal_places"], planned_quantity=row["planned_quantity"], opening_quantity=row["opening_quantity"], planned_start_date=row["planned_start_date"], planned_end_date=row["planned_end_date"], actual_start_date=row["actual_start_date"], actor_id=actor_id)
+                create_item(group=group, name=row["name"], unit=row["unit"], decimal_places=row["decimal_places"], planned_quantity=row["planned_quantity"], opening_quantity=row["opening_quantity"], planned_start_date=row["planned_start_date"], planned_end_date=row["planned_end_date"], actual_start_date=row["actual_start_date"], display_order=row["position"] - 1, actor_id=actor_id)
     except IntegrityError as exc:
         raise BatchValidationError("Tên khu vực hoặc hạng mục đã tồn tại.") from exc
     return group
@@ -693,9 +693,9 @@ def update_group_batch(*, group, name, rows, confirm_deletions=False, actor_id=N
                 if row["delete"]:
                     _delete_item_without_confirmation(row["item"])
                 elif row["item"] is None:
-                    create_item(group=group, name=row["name"], unit=row["unit"], decimal_places=row["decimal_places"], planned_quantity=row["planned_quantity"], opening_quantity=row["opening_quantity"], planned_start_date=row["planned_start_date"], planned_end_date=row["planned_end_date"], actual_start_date=row["actual_start_date"], actor_id=actor_id)
+                    create_item(group=group, name=row["name"], unit=row["unit"], decimal_places=row["decimal_places"], planned_quantity=row["planned_quantity"], opening_quantity=row["opening_quantity"], planned_start_date=row["planned_start_date"], planned_end_date=row["planned_end_date"], actual_start_date=row["actual_start_date"], display_order=row["position"] - 1, actor_id=actor_id)
                 else:
-                    update_item(row["item"], name=row["name"], unit=row["unit"], decimal_places=row["decimal_places"], planned_quantity=row["planned_quantity"], opening_quantity=row["opening_quantity"], planned_start_date=row["planned_start_date"], planned_end_date=row["planned_end_date"], actual_start_date=row["actual_start_date"], actor_id=actor_id)
+                    update_item(row["item"], name=row["name"], unit=row["unit"], decimal_places=row["decimal_places"], planned_quantity=row["planned_quantity"], opening_quantity=row["opening_quantity"], planned_start_date=row["planned_start_date"], planned_end_date=row["planned_end_date"], actual_start_date=row["actual_start_date"], display_order=row["position"] - 1, actor_id=actor_id)
     except IntegrityError as exc:
         raise BatchValidationError("Tên khu vực hoặc hạng mục đã tồn tại.") from exc
     return group

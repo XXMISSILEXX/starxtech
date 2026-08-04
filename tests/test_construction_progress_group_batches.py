@@ -291,3 +291,55 @@ def test_group_batches_create_and_apply_edit_delete_in_one_save(client, app):
         assert group.name == "Khu đã sửa"
         assert [item.name for item in group.items] == ["Hạng mục thêm"]
         assert ProgressEntry.query.filter_by(progress_item_id=item_id).count() == 0
+
+
+def test_create_group_batch_assigns_item_display_order_from_payload_rows(client, app):
+    with app.app_context():
+        progress_type = ProgressType(project_id=1, name="Tiến độ thứ tự tạo", created_by_id=1)
+        db.session.add(progress_type)
+        db.session.commit()
+        type_id = progress_type.id
+
+    _login(client)
+    response = client.post(
+        f"/projects/1/progress/types/{type_id}/groups/batch",
+        data={
+            "name": "Khu vực thứ tự tạo",
+            **_item_form_row(0, name="HM01"),
+            **_item_form_row(1, name="HM02"),
+            **_item_form_row(2, name="HM03"),
+        },
+    )
+
+    assert response.status_code == 302
+    with app.app_context():
+        group = ProgressGroup.query.filter_by(progress_type_id=type_id).one()
+        assert [(item.name, item.display_order) for item in group.items] == [
+            ("HM01", 0),
+            ("HM02", 1),
+            ("HM03", 2),
+        ]
+
+
+def test_update_group_batch_reassigns_item_display_order_when_payload_rows_are_reordered(client, app):
+    with app.app_context():
+        _, group_id, first_item_id, second_item_id = _structure(with_second_item=True)
+
+    _login(client)
+    response = client.post(
+        f"/projects/1/progress/groups/{group_id}/batch",
+        data={
+            "name": "Khu vực gốc",
+            **_item_form_row(0, item_id=second_item_id, name="Hạng mục hợp lệ"),
+            **_item_form_row(1, item_id=first_item_id, name="Hạng mục mịn"),
+        },
+    )
+
+    assert response.status_code == 302
+    with app.app_context():
+        db.session.expire_all()
+        group = db.session.get(ProgressGroup, group_id)
+        assert [(item.id, item.display_order) for item in group.items] == [
+            (second_item_id, 0),
+            (first_item_id, 1),
+        ]
