@@ -153,3 +153,13 @@ def test_role_permission_ui_groups_phase9_catalogue(client):
         "Dashboard",
     ):
         assert label.encode() in response.data
+
+
+def test_super_admin_role_permissions_do_not_offer_dead_security_audit_permission(client):
+    _login_as(client, 1)
+
+    response = client.get("/admin/roles/1/permissions")
+
+    assert response.status_code == 200
+    assert b"security.audit" not in response.data
+    assert "Xem nhật ký bảo mật".encode() not in response.data

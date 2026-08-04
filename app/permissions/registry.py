@@ -52,7 +52,6 @@ PERMISSIONS = [
     _permission("users.manage", "Quản lý người dùng", dangerous=True),
     _permission("roles.view", "Xem vai trò và phân quyền"),
     _permission("roles.manage", "Quản lý vai trò và phân quyền", dangerous=True),
-    _permission("security.audit", "Xem nhật ký bảo mật", dangerous=True),
     _permission("audit_logs.view", "Xem lịch sử thao tác"),
     _permission("system.settings", "Cấu hình hệ thống", dangerous=True),
     _permission("project_assignments.manage", "Quản lý phân quyền dự án", dangerous=True),
