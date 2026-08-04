@@ -64,6 +64,23 @@ def test_users_view_is_read_only_and_users_manage_allows_admin_mutations(client,
         assert User.query.filter_by(username="managed-user").one().is_active is True
 
 
+def test_super_admin_creates_role_with_audit(client, app):
+    login(client, "super")
+    with app.app_context():
+        before_audits = AuditLog.query.count()
+
+    response = client.post(
+        "/admin/roles/new",
+        data={"code": "AUDIT_ROLE", "name": "Audit role", "description": "Audit retention test"},
+    )
+
+    assert response.status_code == 302
+    with app.app_context():
+        role = Role.query.filter_by(code="AUDIT_ROLE").one()
+        assert AuditLog.query.count() == before_audits + 1
+        assert AuditLog.query.filter_by(action="role.create", entity_id=role.id).count() == 1
+
+
 def test_last_active_super_admin_cannot_be_deactivated_or_reassigned(client, app):
     login(client, "super")
     with app.app_context():

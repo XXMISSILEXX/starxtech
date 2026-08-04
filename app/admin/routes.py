@@ -669,14 +669,12 @@ def _save_project(project=None):
         root = ProjectDocumentFolder(project_id=project.id, name="__ROOT__", is_root=True, root_type="project", created_by_id=current_user.id)
         add_with_sqlite_id(root)
         db.session.flush()
-        audit("document.folder.create", "ProjectDocumentFolder", root.id, new_values={"root": True, "project_id": project.id})
-    audit(
-        "project.create" if is_new else "project.update",
-        "Project",
-        project.id,
-        old_values,
-        _project_snapshot(project),
-    )
+    if is_new:
+        # Retain project.create: Project has created_by_user_id, but this
+        # creation path does not assign it, so audit is the only provenance.
+        audit("project.create", "Project", project.id, old_values, _project_snapshot(project))
+    else:
+        audit("project.update", "Project", project.id, old_values, _project_snapshot(project))
     db.session.commit()
     flash("Đã lưu dự án.", "success")
     return redirect(url_for("admin.projects_index"))
@@ -745,13 +743,11 @@ def _save_category(project, category=None):
     category.is_required = form_bool("is_required")
 
     db.session.flush()
-    audit(
-        "category.create" if is_new else "category.update",
-        "ReportCategory",
-        category.id,
-        old_values,
-        _category_snapshot(category),
-    )
+    if is_new:
+        # Retain category.create: ReportCategory has no creator column.
+        audit("category.create", "ReportCategory", category.id, old_values, _category_snapshot(category))
+    else:
+        audit("category.update", "ReportCategory", category.id, old_values, _category_snapshot(category))
     db.session.commit()
     flash("Đã lưu hạng mục.", "success")
     return redirect(url_for("admin.categories_index", project_id=project.id))

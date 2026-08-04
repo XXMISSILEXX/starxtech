@@ -435,7 +435,6 @@ def create_entry(*, item, report_date, quantity, note=None, actor_id=None):
     except IntegrityError as exc:
         raise DuplicateEntryError(f"Ngày {report_date:%d/%m/%Y} đã có phiếu cho hạng mục này. Hãy mở phiếu đó để sửa.") from exc
     recalculate_item_completed(item)
-    log_audit("construction_progress.entry.create", "ProgressEntry", entry.id, new_values=_entry_values(entry))
     return entry
 
 
@@ -514,12 +513,12 @@ def create_type(*, project, name, value_mode="quantity", description=None, displ
     if value_mode not in {"quantity", "money"}:
         raise ValueError("Chế độ giá trị không hợp lệ.")
     value = ProgressType(project_id=project.id, name=name.strip(), value_mode=value_mode, description=(description or "").strip() or None, display_order=display_order, created_by_id=actor_id, updated_by_id=actor_id)
-    db.session.add(value); db.session.flush(); log_audit("construction_progress.type.create", "ProgressType", value.id, new_values={"name": value.name}); return value
+    db.session.add(value); db.session.flush(); return value
 
 
 def create_group(*, progress_type, name, note=None, display_order=0, actor_id=None):
     value = ProgressGroup(project_id=progress_type.project_id, progress_type_id=progress_type.id, name=name.strip(), note=(note or "").strip() or None, display_order=display_order, created_by_id=actor_id, updated_by_id=actor_id)
-    db.session.add(value); db.session.flush(); log_audit("construction_progress.group.create", "ProgressGroup", value.id, new_values={"name": value.name}); return value
+    db.session.add(value); db.session.flush(); return value
 
 
 def create_item(*, group, name, unit, planned_quantity=0, opening_quantity=0, planned_start_date=None, planned_end_date=None, actual_start_date=None, decimal_places=0, assignee_user_id=None, note=None, display_order=0, actor_id=None):
@@ -528,7 +527,7 @@ def create_item(*, group, name, unit, planned_quantity=0, opening_quantity=0, pl
     _validate_decimal_precision(planned, decimal_places, "Khối lượng kế hoạch")
     _validate_decimal_precision(opening, decimal_places, "Khối lượng mang sang")
     value = ProgressItem(project_id=group.project_id, progress_group_id=group.id, name=name.strip(), unit="VNĐ" if group.progress_type.value_mode == "money" else unit.strip(), decimal_places=decimal_places, planned_quantity=planned, opening_quantity=opening, planned_start_date=planned_start_date, planned_end_date=planned_end_date, actual_start_date=actual_start_date, assignee_user_id=assignee_user_id, note=(note or "").strip() or None, display_order=display_order, created_by_id=actor_id, updated_by_id=actor_id)
-    db.session.add(value); db.session.flush(); recalculate_item_completed(value); log_audit("construction_progress.item.create", "ProgressItem", value.id, new_values={"name": value.name}); return value
+    db.session.add(value); db.session.flush(); recalculate_item_completed(value); return value
 
 
 class ItemDateValidationError(ValueError):

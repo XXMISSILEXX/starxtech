@@ -61,6 +61,7 @@ def new():
     if request.method == "POST":
         try:
             field = save_field_definition(request.form)
+            # Retain this definition audit: PartnerFieldDefinition has no creator column.
             audit("partner_field.create", "PartnerFieldDefinition", field.id, new_values=_snapshot(field))
             db.session.commit()
         except PartnerValidationError as exc:

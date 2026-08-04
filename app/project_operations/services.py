@@ -154,13 +154,14 @@ def create_or_update_contractor(contractor, *, name, short_name=None, descriptio
     contractor.address = (address or "").strip() or None
     contractor.updated_by_id = actor_id
     db.session.flush()
-    log_audit(
-        "project_contractor.create" if is_new else "project_contractor.update",
-        "ProjectContractor",
-        contractor.id,
-        old_values=old_values,
-        new_values=contractor_snapshot(contractor),
-    )
+    if not is_new:
+        log_audit(
+            "project_contractor.update",
+            "ProjectContractor",
+            contractor.id,
+            old_values=old_values,
+            new_values=contractor_snapshot(contractor),
+        )
     return contractor
 
 
@@ -224,7 +225,6 @@ def assign_contractor(*, project, contractor, role, status, started_on=None, not
     )
     db.session.add(assignment)
     db.session.flush()
-    log_audit("project_contractor_assignment.create", "ProjectContractorAssignment", assignment.id, new_values=assignment_snapshot(assignment))
     return assignment
 
 
@@ -318,7 +318,6 @@ def create_project_update(*, project, assignment=None, update_type, title, conte
                            created_by_id=actor_id)
     db.session.add(update)
     db.session.flush()
-    log_audit("project_update.create", "ProjectUpdate", update.id, new_values=update_snapshot(update))
     return update
 
 

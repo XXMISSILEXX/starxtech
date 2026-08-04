@@ -97,6 +97,7 @@ def manage_company(company_id):
         errors, form_data = _relationship_form_data(company, partners)
         if not errors:
             _save_relationship(relationship, company, form_data)
+            # Retain this relationship audit: PartnerRelationship has no creator column.
             audit("partner_relationship.create", "PartnerRelationship", relationship.id, new_values=_snapshot(relationship))
             db.session.commit()
             flash("Đã thêm quan hệ.", "success")

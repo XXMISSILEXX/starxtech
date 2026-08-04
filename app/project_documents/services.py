@@ -183,7 +183,6 @@ def provision_project_root_folder(project, user=None):
         created_by_id=user.id)
     db.session.add(root)
     db.session.flush()
-    audit("document.folder.create", "ProjectDocumentFolder", root.id, new_values={"root": True, "project_id": project.id})
     db.session.commit()
     return root, True
 
@@ -221,7 +220,7 @@ def create_custom_root_folder(user, name, description=None, is_restricted=False)
         raise DocumentValidationError("Đã có mục hồ sơ cùng tên.")
     root = ProjectDocumentFolder(project_id=None, name=name, description=(description or "").strip() or None,
         is_root=True, root_type="custom", is_restricted=is_restricted, created_by_id=user.id)
-    db.session.add(root); db.session.flush(); audit("document.custom_root.create", "ProjectDocumentFolder", root.id, new_values={"name": name})
+    db.session.add(root); db.session.flush()
     db.session.commit(); return root
 
 
@@ -308,7 +307,6 @@ def create_project_document_file_from_storage_object(user, folder, storage_objec
     document_file = ProjectDocumentFile(project_id=folder.project_id, folder_id=folder.id, storage_object_id=storage_object.id,
         display_name=_display_name(storage_object.original_filename), created_by_id=user.id, updated_by_id=user.id)
     db.session.add(document_file); db.session.flush()
-    audit("document.file.create", "ProjectDocumentFile", document_file.id, new_values={"folder_id": folder.id, "storage_object_id": storage_object.id})
     db.session.commit()
     return document_file
 
@@ -577,7 +575,6 @@ def create_folder(user, parent_folder, name, description=None, is_restricted=Fal
     folder = ProjectDocumentFolder(project_id=parent_folder.project_id, parent_id=parent_folder.id, name=name, description=(description or "").strip() or None,
         is_restricted=bool(is_restricted), created_by_id=user.id, updated_by_id=user.id)
     db.session.add(folder); db.session.flush()
-    audit("document.folder.create", "ProjectDocumentFolder", folder.id, new_values={"parent_id": folder.parent_id, "name": folder.name, "restricted": folder.is_restricted})
     db.session.commit()
     return folder
 

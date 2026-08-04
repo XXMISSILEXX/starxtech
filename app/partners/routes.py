@@ -147,7 +147,6 @@ def new():
         photo_result = None
         try:
             partner = save_partner(request.form)
-            audit("partner.create", "Partner", partner.id, new_values=_partner_snapshot(partner))
             db.session.commit()
             if request.files.get("photo") and request.files["photo"].filename:
                 from app.partner_photos import replace_photo

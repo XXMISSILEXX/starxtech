@@ -197,7 +197,7 @@ def files(user,album,status="active",q=""):
 def create_album(user,name,description="",restricted=False):
     name=_name(name)
     if CompanyMediaAlbum.query.filter(func.lower(CompanyMediaAlbum.name)==name.lower(),CompanyMediaAlbum.is_active.is_(True),CompanyMediaAlbum.deleted_at.is_(None)).first(): raise CompanyMediaError("Đã có album cùng tên.")
-    a=CompanyMediaAlbum(name=name,description=(description or "").strip() or None,is_restricted=restricted,created_by_id=user.id);db.session.add(a);db.session.flush();audit("company_media.album.create","CompanyMediaAlbum",a.id);db.session.commit();return a
+    a=CompanyMediaAlbum(name=name,description=(description or "").strip() or None,is_restricted=restricted,created_by_id=user.id);db.session.add(a);db.session.flush();db.session.commit();return a
 def rename_album(user,a,name): a.name=_name(name);a.updated_by_id=user.id;audit("company_media.album.rename","CompanyMediaAlbum",a.id);db.session.commit()
 def archive_album(user, a):
     snapshot = _album_audit_snapshot(a)
@@ -236,7 +236,6 @@ def complete(user,a,item_id,payload):
                 )
                 db.session.add(media)
                 db.session.flush()
-                audit("company_media.file.create", "CompanyMediaFile", media.id)
         except IntegrityError:
             media = CompanyMediaFile.query.filter_by(storage_object_id=obj.id).first()
             if media is None:

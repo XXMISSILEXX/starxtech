@@ -217,11 +217,9 @@ def finalize_daily_report_create_v2(*, project, user, payload):
                 item = by_id[row["upload_item_id"]]; section = section_by_client[row["client_section_id"]]
                 attachment = ReportAttachment(daily_report_section_id=section.id, original_filename=item.original_filename, storage_object_id=item.storage_object_id, mime_type=item.mime_type, file_size=item.file_size, uploaded_by_user_id=user.id)
                 add_with_sqlite_id(attachment); item.storage_object.upload_status = "active"; item.finalized_at = datetime.utcnow(); jobs_objects.append(item.storage_object)
-                audit("attachment.create", "ReportAttachment", attachment.id, new_values={"daily_report_section_id": section.id})
             if attachments: finalize_session(session)
             from app.media_processing.services import stage_media_processing_jobs
             job_ids = stage_media_processing_jobs(jobs_objects)
-            audit("report.create", "DailyReport", report.id, new_values=report_snapshot(report))
         db.session.commit()
     except DailyReportCreateV2Error:
         db.session.rollback(); raise
@@ -360,7 +358,6 @@ def create_report(project, form, files=None):
     _replace_sections(report, section_inputs)
     db.session.flush()
     job_ids = _attach_direct_uploads(report, section_inputs, prepared_upload)
-    audit("report.create", "DailyReport", report.id, new_values=report_snapshot(report))
     try:
         db.session.commit()
     except IntegrityError as exc:
@@ -784,12 +781,6 @@ def _save_section_uploads(report, files):
         for upload in uploads:
             attachment = _store_attachment(report, section, upload)
             db.session.flush()
-            audit(
-                "attachment.create",
-                "ReportAttachment",
-                attachment.id,
-                new_values={"daily_report_section_id": section.id},
-            )
 
 
 def _prepare_direct_uploads(project_id, form, section_inputs):
@@ -835,7 +826,6 @@ def _attach_direct_uploads(report, section_inputs, prepared_upload):
         item.storage_object.upload_status = "active"
         objects.append(item.storage_object)
         item.finalized_at = datetime.utcnow()
-        audit("attachment.create", "ReportAttachment", attachment.id, new_values={"daily_report_section_id": section.id})
     finalize_session(session)
     from app.media_processing.services import stage_media_processing_jobs
     return stage_media_processing_jobs(objects)

@@ -3,7 +3,7 @@ import pytest
 from app.company_media import permissions as album_permissions
 from app.company_media.services import CompanyMediaError, set_permission
 from app.extensions import db
-from app.models import (CompanyMediaAlbum, CompanyMediaAlbumPermission, CompanyMediaFile,
+from app.models import (AuditLog, CompanyMediaAlbum, CompanyMediaAlbumPermission, CompanyMediaFile,
                         Permission, Role, RolePermission, StorageObject, User)
 from app.storage.providers import FakeStorageProvider
 from app.storage.exceptions import StorageUploadContractError, StorageValidationError
@@ -216,6 +216,7 @@ def test_company_media_batch_keeps_client_ids_and_finalizes_partial_success(app,
         first = by_id["same-name-a"]
         storage = db.session.get(StorageObject, first["storage_object_id"])
         provider.register_object(storage.bucket, storage.object_key, 5, "image/jpeg")
+        before_audits = AuditLog.query.count()
         enqueued = []
         monkeypatch.setattr("app.media_processing.services.enqueue_media_processing_for_storage_object", enqueued.append)
         complete = media_services.complete(admin, album, first["upload_batch_item_id"], {})
@@ -228,6 +229,7 @@ def test_company_media_batch_keeps_client_ids_and_finalizes_partial_success(app,
         )
         assert result["succeeded_files"] == 1 and result["failed_files"] == 2
         assert CompanyMediaFile.query.filter_by(album_id=album.id).count() == 1
+        assert AuditLog.query.count() == before_audits
 
 
 def test_company_media_does_not_enqueue_derivative_when_head_validation_fails(app, monkeypatch):
