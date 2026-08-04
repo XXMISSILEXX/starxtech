@@ -51,10 +51,23 @@ AUDIT_ACTION_GROUPS = {
     "company_media.file.download": AUDIT_GROUP_DISCLOSURE,
     "attachment.download": AUDIT_GROUP_DISCLOSURE,
     "bulk_download.create": AUDIT_GROUP_DISCLOSURE,
-    # Legacy content-create records remain classified, even though new ones
-    # are no longer emitted.  They must not silently fall into the fallback.
-    "attachment.create": AUDIT_GROUP_MUTATION,
+    # Still emitted.  Kept because their destination table cannot answer "who
+    # created this": ReportCategory, Company, CompanyDepartment,
+    # PartnerFieldDefinition, PartnerFieldCollection and PartnerRelationship
+    # have no creator column at all, and Project declares created_by_user_id
+    # but nothing ever assigns it.  For these the audit row is the only
+    # accountability record there is.
     "category.create": AUDIT_GROUP_MUTATION,
+    "partner_company.create": AUDIT_GROUP_MUTATION,
+    "partner_department.create": AUDIT_GROUP_MUTATION,
+    "partner_field.create": AUDIT_GROUP_MUTATION,
+    "partner_field_collection.create": AUDIT_GROUP_MUTATION,
+    "partner_relationship.create": AUDIT_GROUP_MUTATION,
+    "project.create": AUDIT_GROUP_MUTATION,
+    # No longer emitted.  Their tables record created_by, so the row is its own
+    # creation record.  Kept classified only so the historical rows already in
+    # audit_logs do not silently fall into the fallback.
+    "attachment.create": AUDIT_GROUP_MUTATION,
     "company_media.album.create": AUDIT_GROUP_MUTATION,
     "company_media.file.create": AUDIT_GROUP_MUTATION,
     "construction_progress.entry.create": AUDIT_GROUP_MUTATION,
@@ -67,12 +80,6 @@ AUDIT_ACTION_GROUPS = {
     "document.folder.create": AUDIT_GROUP_MUTATION,
     "issue.create": AUDIT_GROUP_MUTATION,
     "partner.create": AUDIT_GROUP_MUTATION,
-    "partner_company.create": AUDIT_GROUP_MUTATION,
-    "partner_department.create": AUDIT_GROUP_MUTATION,
-    "partner_field.create": AUDIT_GROUP_MUTATION,
-    "partner_field_collection.create": AUDIT_GROUP_MUTATION,
-    "partner_relationship.create": AUDIT_GROUP_MUTATION,
-    "project.create": AUDIT_GROUP_MUTATION,
     "project_contractor.create": AUDIT_GROUP_MUTATION,
     "project_contractor_assignment.create": AUDIT_GROUP_MUTATION,
     "project_update.create": AUDIT_GROUP_MUTATION,
