@@ -1,7 +1,7 @@
 from flask import url_for
 
 from app.auth.permissions import (can_access_partners_module, can_access_project_documents_module,
-    can_access_reports_module)
+    can_access_reports_module, can_access_admin_module)
 from app.company_media import permissions as company_media_permissions
 
 
@@ -21,7 +21,7 @@ def get_accessible_modules(user):
         "partners": can_access_partners_module(user),
         "project_documents": can_access_project_documents_module(user),
         "company_media": company_media_permissions.access(user),
-        "admin": any(user.can(code) for code in ("users.view", "roles.view", "projects.view", "storage.dashboard.view", "settings.branding.view")),
+        "admin": can_access_admin_module(user),
     }
     reasons = {
         "company_media": "scoped_acl" if company_media_permissions.has_album_acl(user)

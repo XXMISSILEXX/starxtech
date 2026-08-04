@@ -82,6 +82,17 @@ def can_access_company_media_module(user=None):
     return access(user)
 
 
+def can_access_admin_module(user=None):
+    """Whether a user can enter the System Administration module."""
+    user = user or current_user
+    return bool(user.is_authenticated and user.is_active and any(user.can(code) for code in (
+        "users.view",
+        "roles.view",
+        "storage.dashboard.view",
+        "settings.branding.view",
+    )))
+
+
 def partner_module_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):

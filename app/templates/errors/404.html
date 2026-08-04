@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Không tìm thấy trang{% endblock %}
+{% block page_title %}Không tìm thấy trang{% endblock %}
+
+{% block content %}
+<div class="card"><div class="card-body p-4 p-md-5 text-center">
+  <i class="bi bi-signpost-split fs-1 text-secondary" aria-hidden="true"></i>
+  <h2 class="h4 mt-3">Trang bạn tìm kiếm không tồn tại</h2>
+  <p class="text-muted mb-4">Đường dẫn có thể đã thay đổi hoặc không còn khả dụng.</p>
+  <a class="btn btn-primary" href="{{ url_for('modules.index') }}">Về trang chọn phân hệ</a>
+</div></div>
+{% endblock %}
+
+{% block public_content %}
+<div class="card"><div class="card-body p-4 p-md-5 text-center">
+  <i class="bi bi-signpost-split fs-1 text-secondary" aria-hidden="true"></i>
+  <h1 class="h4 mt-3">Trang bạn tìm kiếm không tồn tại</h1>
+  <p class="text-muted mb-4">Đường dẫn có thể đã thay đổi hoặc không còn khả dụng.</p>
+  <a class="btn btn-primary" href="{{ url_for('modules.index') }}">Về trang chọn phân hệ</a>
+</div></div>
+{% endblock %}

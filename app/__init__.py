@@ -1,4 +1,4 @@
-from flask import Flask, abort, jsonify, redirect, request, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -84,6 +84,7 @@ def create_app(config_class=Config):
     register_trusted_host_guard(app)
     register_auth_guard(app)
     register_security_headers(app)
+    register_error_handlers(app)
     register_upload_error_handlers(app)
     register_template_helpers(app)
     from app.branding import get_current_branding
@@ -252,6 +253,20 @@ def register_security_headers(app):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("X-Frame-Options", "DENY")
+        return response
+
+
+def register_error_handlers(app):
+    @app.errorhandler(403)
+    def forbidden(_error):
+        response = app.make_response((render_template("errors/403.html"), 403))
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.errorhandler(404)
+    def not_found(_error):
+        response = app.make_response((render_template("errors/404.html"), 404))
+        response.headers["Cache-Control"] = "no-store"
         return response
 
 

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Không có quyền truy cập{% endblock %}
+{% block page_title %}Không có quyền truy cập{% endblock %}
+
+{% block content %}
+<div class="card"><div class="card-body p-4 p-md-5 text-center">
+  <i class="bi bi-shield-lock fs-1 text-warning" aria-hidden="true"></i>
+  <h2 class="h4 mt-3">Bạn không có quyền truy cập trang này</h2>
+  <p class="text-muted mb-4">Vui lòng liên hệ quản trị viên nếu bạn cần được hỗ trợ.</p>
+  <a class="btn btn-primary" href="{{ url_for('modules.index') }}">Về trang chọn phân hệ</a>
+</div></div>
+{% endblock %}
+
+{% block public_content %}
+<div class="card"><div class="card-body p-4 p-md-5 text-center">
+  <i class="bi bi-shield-lock fs-1 text-warning" aria-hidden="true"></i>
+  <h1 class="h4 mt-3">Bạn không có quyền truy cập trang này</h1>
+  <p class="text-muted mb-4">Vui lòng liên hệ quản trị viên nếu bạn cần được hỗ trợ.</p>
+  <a class="btn btn-primary" href="{{ url_for('modules.index') }}">Về trang chọn phân hệ</a>
+</div></div>
+{% endblock %}
