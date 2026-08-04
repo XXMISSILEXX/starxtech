@@ -16,6 +16,7 @@ from app.models import (
     ProjectUpdateType,
     Customer,
     DailyReport,
+    ProgressType,
 )
 from app.project_memberships import accessible_project_ids
 from app.project_operations import bp
@@ -105,11 +106,13 @@ def project_workspace(project_id):
         ("issues", "Vấn đề tồn đọng", "Quản lý các vấn đề cần tiếp tục theo dõi.", "bi-exclamation-diamond", "issues.view", url_for("projects.issues", project_id=project.id)),
         ("construction", "Đối tác thi công", "Quản lý các đơn vị thi công đang tham gia dự án.", "bi-cone-striped", "contractor_assignments.view", url_for("project_operations.project_contractors", project_id=project.id, role_path="construction")),
         ("solution", "Đối tác giải pháp", "Quản lý các đơn vị cung cấp giải pháp cho dự án.", "bi-lightbulb", "contractor_assignments.view", url_for("project_operations.project_contractors", project_id=project.id, role_path="solution")),
+        ("progress", "Quản lý tiến độ thi công", "Theo dõi khối lượng và dự toán theo từng khu vực, hạng mục.", "bi-bar-chart-steps", "construction_progress.view", url_for("construction_progress.project_progress", project_id=project.id)),
     ]
     report_count = DailyReport.query.filter_by(project_id=project.id).count()
     update_count = ProjectUpdate.query.filter(ProjectUpdate.project_id == project.id, ProjectUpdate.deleted_at.is_(None)).count()
     assignment_counts = dict(db.session.query(ProjectContractorAssignment.role, func.count(ProjectContractorAssignment.id)).filter(ProjectContractorAssignment.project_id == project.id, ProjectContractorAssignment.status != "ENDED").group_by(ProjectContractorAssignment.role).all())
-    summaries = {"reports": f"{report_count} báo cáo", "updates": f"{update_count} cập nhật", "construction": f"{assignment_counts.get('CONSTRUCTION', 0)} đối tác", "solution": f"{assignment_counts.get('SOLUTION', 0)} đối tác"}
+    progress_types = ProgressType.query.filter_by(project_id=project.id).count()
+    summaries = {"reports": f"{report_count} báo cáo", "updates": f"{update_count} cập nhật", "construction": f"{assignment_counts.get('CONSTRUCTION', 0)} đối tác", "solution": f"{assignment_counts.get('SOLUTION', 0)} đối tác", "progress": f"{progress_types} loại tiến độ" if progress_types else "Chưa cấu hình"}
     visible_cards = [(*card, summaries.get(card[0], "")) for card in cards if current_user.can(card[4])]
     return render_template("project_operations/workspace.html", project=project, cards=visible_cards)
 

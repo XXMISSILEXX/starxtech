@@ -26,6 +26,7 @@ from app.models.partner import (
 from app.models.project import Project, ProjectUser, ReportCategory
 from app.models.project_contractor import ProjectContractor, ProjectContractorAssignment
 from app.models.project_update import ProjectUpdate
+from app.models.progress import ProgressEntry, ProgressGroup, ProgressItem, ProgressType
 from app.models.rbac import Permission, Role, RolePermission
 from app.models.user import User
 from app.models.storage import StorageObject, UploadBatch, UploadBatchItem, UploadSelectionSession, DownloadEvent
@@ -58,6 +59,10 @@ __all__ = [
     "ProjectContractorAssignmentStatus",
     "ProjectContractorRole",
     "ProjectUpdate",
+    "ProgressEntry",
+    "ProgressGroup",
+    "ProgressItem",
+    "ProgressType",
     "ProjectUpdateType",
     "ProjectStatus",
     "ProjectUser",

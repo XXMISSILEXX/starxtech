@@ -11,6 +11,7 @@ from app.dashboard.services import (
     contractor_dashboard_payload,
     contractor_is_visible,
     parse_contractor_dashboard_filters,
+    progress_dashboard_context,
     project_section_status_payload,
 )
 from app.auth.permissions import can_access_reports_module
@@ -61,6 +62,22 @@ def contractor_dashboard(contractor_id):
         abort(404, str(exc))
     context["dashboard_kind"] = "contractor"
     return render_template("dashboard/contractor.html", **context, **dashboard_navigation_context("contractor", contractor_id=contractor.id))
+
+
+@bp.get("/progress")
+def progress_dashboard():
+    if not can_access_reports_module(current_user) or not current_user.can("dashboards.progress.view"):
+        abort(403)
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except ValueError:
+        abort(400, "page phải là số nguyên dương")
+    return render_template(
+        "dashboard/progress.html",
+        dashboard_kind="progress",
+        **progress_dashboard_context(page=page, selected_type_id=request.args.get("type_id")),
+        **dashboard_navigation_context("progress"),
+    )
 
 
 @api_bp.get("/projects/<int:project_id>/section-status")
@@ -136,6 +153,7 @@ def dashboard_navigation_context(kind, *, customer_id=None, project_id=None, con
     can_customer = current_user.can("dashboards.customer.view") and current_user.can("projects.scope_all")
     can_project = current_user.can("dashboards.project.view")
     can_contractor = current_user.can("dashboards.contractor.view")
+    can_progress = current_user.can("dashboards.progress.view")
     visible_project_ids = DashboardScope.system().projects_query().with_entities(Project.id)
     customers = (
         Customer.query.join(Project, Project.customer_id == Customer.id)
@@ -158,6 +176,7 @@ def dashboard_navigation_context(kind, *, customer_id=None, project_id=None, con
         {"kind": "customer", "label": "Dashboard khách hàng", "description": "Theo dõi các dự án theo từng khách hàng.", "icon": "bi-people", "href": url_for("dashboard.customer_dashboard", customer_id=customers[0].id) if customers else None, "enabled": bool(customers)},
         {"kind": "project", "label": "Dashboard dự án", "description": "Xem số liệu và tiến độ của một dự án.", "icon": "bi-kanban", "href": url_for("projects.dashboard", project_id=projects[0].id) if projects else None, "enabled": bool(projects)},
         {"kind": "contractor", "label": "Dashboard đối tác", "description": "Theo dõi đối tác trong phạm vi dự án được cấp quyền.", "icon": "bi-buildings", "href": url_for("dashboard.contractor_dashboard", contractor_id=contractors[0].id) if contractors else None, "enabled": bool(contractors)},
+        *([{"kind": "progress", "label": "Dashboard tiến độ thi công", "description": "Theo dõi các giai đoạn thi công trong dự án được cấp quyền.", "icon": "bi-bar-chart-steps", "href": url_for("dashboard.progress_dashboard"), "enabled": True}] if can_progress else []),
     ]
     return {
         "dashboard_navigation": cards,
@@ -170,4 +189,5 @@ def dashboard_navigation_context(kind, *, customer_id=None, project_id=None, con
         "can_customer_dashboard": can_customer,
         "can_project_dashboard": can_project,
         "can_contractor_dashboard": can_contractor,
+        "can_progress_dashboard": can_progress,
     }

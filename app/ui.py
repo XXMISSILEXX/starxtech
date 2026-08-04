@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from markupsafe import Markup, escape
 
@@ -166,6 +167,23 @@ def vn_datetime(value):
     return value.strftime("%d/%m/%Y lúc %H:%M") if value else "—"
 
 
+def vn_number(value, places=0):
+    """Format Decimal-compatible values using Vietnamese separators."""
+    if value is None:
+        return "—"
+    try:
+        places = int(places)
+        if not 0 <= places <= 3:
+            raise ValueError
+        amount = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("Số chữ số thập phân phải từ 0 đến 3.") from exc
+
+    quantized = amount.quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)
+    formatted = f"{quantized:,.{places}f}"
+    return formatted.replace(",", "\u0000").replace(".", ",").replace("\u0000", ".")
+
+
 def status_icon(value):
     return STATUS_ICON_KEYS.get(value, "info-circle-fill")
 
@@ -223,6 +241,7 @@ def register_template_helpers(app):
     app.jinja_env.filters["contractor_role_label"] = contractor_role_label
     app.jinja_env.filters["assignment_status_label"] = assignment_status_label
     app.jinja_env.filters["vn_datetime"] = vn_datetime
+    app.jinja_env.filters["vn_number"] = vn_number
     app.jinja_env.filters["status_icon"] = status_icon
     app.jinja_env.filters["status_tone"] = status_tone
     app.jinja_env.filters["issue_severity_label"] = issue_severity_label

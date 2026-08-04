@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard tiến độ thi công - StarX Daily Report{% endblock %}
+{% block page_title %}Dashboard tiến độ thi công{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
+  <p class="text-muted mb-0">Theo dõi các giai đoạn thi công trong những dự án bạn được cấp quyền xem tiến độ.</p>
+  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('modules.index') }}"><i class="bi bi-arrow-left me-1"></i>Đổi phân hệ</a>
+</div>
+
+{% include "dashboard/_type_navigation.html" %}
+
+<section data-progress-dashboard>
+  {% if selector_types %}
+  <div class="row g-3 mb-4" data-progress-dashboard-stats>
+    <div class="col-md-3"><div class="stat-card" data-progress-dashboard-projects><div><div class="stat-label">Dự án có tiến độ</div><div class="stat-value">{{ cards.projects_with_progress }}</div></div></div></div>
+    <div class="col-md-3"><div class="stat-card" data-progress-dashboard-overdue-types><div><div class="stat-label">Giai đoạn quá hạn</div><div class="stat-value">{{ cards.overdue_types }}</div></div></div></div>
+    <div class="col-md-3"><div class="stat-card" data-progress-dashboard-overdue-items><div><div class="stat-label">Hạng mục quá hạn</div><div class="stat-value">{{ cards.overdue_items }}</div></div></div></div>
+    <div class="col-md-3"><div class="stat-card" data-progress-dashboard-stale-projects><div><div class="stat-label">Không cập nhật quá 7 ngày</div><div class="stat-value">{{ cards.stale_projects }}</div></div></div></div>
+  </div>
+
+  <section class="card mb-4" data-progress-dashboard-chart-selection>
+    <div class="card-body">
+      <form method="get" data-progress-dashboard-type-form>
+        <label class="form-label" for="progress-dashboard-type">Giai đoạn</label>
+        <select class="form-select" id="progress-dashboard-type" name="type_id" data-progress-dashboard-type-select onchange="this.form.submit()">
+          {% for progress_type in selector_types %}
+          <option value="{{ progress_type.id }}" {% if progress_type.id == selected_type.id %}selected{% endif %}>{{ progress_type.project.code }} · {{ progress_type.project.name }} — {{ progress_type.name }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      {% if selected_type.groups %}
+      <div class="mt-3" data-progress-dashboard-chart data-chart-url="{{ url_for('construction_progress.chart_data', project_id=selected_type.project_id, type_id=selected_type.id) }}">
+        <div style="height: 320px; position: relative;">
+          <canvas data-progress-dashboard-chart-canvas role="img" aria-label="Biểu đồ phần trăm hoàn thành theo khu vực của {{ selected_type.name }}">Biểu đồ phần trăm hoàn thành theo khu vực.</canvas>
+        </div>
+        <p class="small text-muted mt-2 mb-0" data-progress-dashboard-chart-summary></p>
+      </div>
+      {% else %}
+      <p class="text-muted mt-3 mb-0" data-progress-dashboard-chart-empty>Giai đoạn này chưa có khu vực nào.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  {% set status_labels = {'not_started': 'Chưa bắt đầu', 'in_progress': 'Đang triển khai', 'overdue': 'Quá hạn', 'done': 'Hoàn thành'} %}
+  {% set status_tones = {'not_started': 'text-bg-secondary', 'in_progress': 'text-bg-primary', 'overdue': 'text-bg-danger', 'done': 'text-bg-success'} %}
+  <div class="card">
+    <div class="card-header"><h2 class="h6 mb-0">Giai đoạn thi công</h2></div>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0" data-progress-dashboard-table>
+        <thead><tr><th>Dự án</th><th>Giai đoạn</th><th>Kế hoạch</th><th>Số ngày</th><th>Hoàn thành</th><th>Trạng thái</th><th></th></tr></thead>
+        <tbody>
+          {% for summary in summaries %}
+          <tr data-progress-dashboard-status="{{ summary.status }}">
+            <td>{{ summary.progress_type.project.code }} · {{ summary.progress_type.project.name }}</td>
+            <td>{{ summary.progress_type.name }}</td>
+            <td data-progress-dashboard-planned>{% if summary.planned_start %}{{ summary.planned_start|vn_date }} → {{ summary.planned_end|vn_date }}{% endif %}</td>
+            <td data-progress-dashboard-days>{% if summary.days is not none %}{{ summary.days }}{% endif %}</td>
+            <td><div class="d-flex align-items-center gap-2"><div class="progress flex-grow-1" role="progressbar" aria-label="Hoàn thành {{ summary.progress_type.name }}" aria-valuenow="{{ [summary.percent or 0, 100]|min }}" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar" style="width: {{ [summary.percent or 0, 100]|min }}%"></div></div><span class="small text-nowrap">{{ summary.percent|vn_number(places=1) }}{% if summary.percent is not none %}%{% endif %}</span></div></td>
+            <td><span class="badge {{ status_tones[summary.status] }}">{{ status_labels[summary.status] }}</span></td>
+            <td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('construction_progress.type_detail', project_id=summary.progress_type.project_id, type_id=summary.progress_type.id) }}">Xem tiến độ</a></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-muted">Chưa có giai đoạn tiến độ trong phạm vi được cấp quyền.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if has_previous or has_next %}
+    <div class="card-footer d-flex justify-content-between align-items-center"><span class="small text-muted">{{ total_rows }} giai đoạn</span><div class="btn-group">{% if has_previous %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dashboard.progress_dashboard', page=page - 1, type_id=selected_type.id) }}">Trước</a>{% endif %}{% if has_next %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dashboard.progress_dashboard', page=page + 1, type_id=selected_type.id) }}">Sau</a>{% endif %}</div></div>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="text-muted mb-0" data-progress-dashboard-no-types>Chưa có giai đoạn tiến độ trong phạm vi được cấp quyền.</p>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/progress-dashboard-chart.js', v=static_asset_version) }}"></script>
+{% endblock %}

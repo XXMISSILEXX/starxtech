@@ -63,6 +63,7 @@ class Project(TimestampMixin, SoftDeleteMixin, db.Model):
         back_populates="project",
     )
     updates = db.relationship("ProjectUpdate", back_populates="project")
+    progress_types = db.relationship("ProgressType", back_populates="project")
 
 
 class ProjectUser(TimestampMixin, db.Model):
@@ -113,6 +114,10 @@ class ProjectUser(TimestampMixin, db.Model):
     can_share_documents = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
     can_archive_documents = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
     can_restore_documents = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_view_progress = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_create_progress_entries = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_edit_all_progress_entries = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    can_manage_progress_structure = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
 
     project = db.relationship("Project", back_populates="user_assignments")
     user = db.relationship("User", back_populates="project_assignments")

@@ -1,4 +1,4 @@
-from flask import Flask, abort, jsonify, redirect, request, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -84,6 +84,7 @@ def create_app(config_class=Config):
     register_trusted_host_guard(app)
     register_auth_guard(app)
     register_security_headers(app)
+    register_error_handlers(app)
     register_upload_error_handlers(app)
     register_template_helpers(app)
     from app.branding import get_current_branding
@@ -123,6 +124,7 @@ def register_blueprints(app):
     from app.reports import bp as reports_bp
     from app.reports.create_v2 import bp as daily_report_create_v2_bp
     from app.users import bp as users_bp
+    from app.construction_progress import bp as construction_progress_bp
 
     app.register_blueprint(admin_bp)
     from app.branding import logo as branding_logo
@@ -150,6 +152,7 @@ def register_blueprints(app):
     app.register_blueprint(partner_fields_bp)
     app.register_blueprint(partner_field_collections_bp)
     app.register_blueprint(partner_relations_bp)
+    app.register_blueprint(construction_progress_bp)
 
 
 def register_health_route(app):
@@ -193,7 +196,7 @@ def register_auth_guard(app):
         if not current_user.is_authenticated:
             return None
         endpoint = request.endpoint or ""
-        report_endpoints = ("dashboard.", "dashboard_api.", "projects.", "reports.", "issues.", "attachments.", "customers.", "project_operations.")
+        report_endpoints = ("dashboard.", "dashboard_api.", "projects.", "reports.", "issues.", "attachments.", "customers.", "project_operations.", "construction_progress.")
         is_report_admin = endpoint in {
             "admin.projects_index", "admin.projects_new", "admin.projects_edit",
             "admin.projects_archive", "admin.projects_reporters", "admin.projects_memberships", "admin.categories_index",
@@ -250,6 +253,20 @@ def register_security_headers(app):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("X-Frame-Options", "DENY")
+        return response
+
+
+def register_error_handlers(app):
+    @app.errorhandler(403)
+    def forbidden(_error):
+        response = app.make_response((render_template("errors/403.html"), 403))
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.errorhandler(404)
+    def not_found(_error):
+        response = app.make_response((render_template("errors/404.html"), 404))
+        response.headers["Cache-Control"] = "no-store"
         return response
 
 

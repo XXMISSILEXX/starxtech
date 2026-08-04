@@ -82,6 +82,17 @@ def can_access_company_media_module(user=None):
     return access(user)
 
 
+def can_access_admin_module(user=None):
+    """Whether a user can enter the System Administration module."""
+    user = user or current_user
+    return bool(user.is_authenticated and user.is_active and any(user.can(code) for code in (
+        "users.view",
+        "roles.view",
+        "storage.dashboard.view",
+        "settings.branding.view",
+    )))
+
+
 def partner_module_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -230,6 +241,33 @@ def can_view_categories_for_project(project_id, user=None):
     return user_has_project_capability(_user_or_current(user), project_id, "can_view_project")
 
 
+def can_view_project_progress(project_id, user=None):
+    return user_has_project_capability(_user_or_current(user), project_id, "can_view_progress")
+
+
+def can_create_progress_entry(project_id, user=None):
+    return user_has_project_capability(_user_or_current(user), project_id, "can_create_progress_entries")
+
+
+def can_manage_progress_structure(project_id, user=None):
+    return user_has_project_capability(_user_or_current(user), project_id, "can_manage_progress_structure")
+
+
+def can_edit_progress_entry(entry, user=None):
+    user = _user_or_current(user)
+    return bool(
+        entry
+        and (
+            is_project_admin(user)
+            or user_has_project_capability(user, entry.project_id, "can_edit_all_progress_entries")
+            or (
+                entry.created_by_id == user.id
+                and user_has_project_capability(user, entry.project_id, "can_create_progress_entries")
+            )
+        )
+    )
+
+
 # Compatibility adapters retained for older templates and integrations.
 def can_write_project(project_id):
     return user_has_project_capability(current_user, project_id, "can_edit_all_reports")
@@ -264,6 +302,18 @@ def project_write_required(project_id_arg="project_id"):
 
 def project_manage_required(project_id_arg="project_id"):
     return _project_permission_required(can_manage_project, project_id_arg)
+
+
+def progress_read_required(project_id_arg="project_id"):
+    return _project_permission_required(can_view_project_progress, project_id_arg)
+
+
+def progress_entry_required(project_id_arg="project_id"):
+    return _project_permission_required(can_create_progress_entry, project_id_arg)
+
+
+def progress_structure_required(project_id_arg="project_id"):
+    return _project_permission_required(can_manage_progress_structure, project_id_arg)
 
 
 def _project_permission_required(checker, project_id_arg):
