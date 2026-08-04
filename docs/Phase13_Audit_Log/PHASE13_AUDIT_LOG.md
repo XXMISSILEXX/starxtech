@@ -280,6 +280,24 @@ Che giá trị của mọi khoá khớp danh sách chặn: `password`, `pass`, `
 So khớp **không phân biệt hoa thường** và trên **khoá lồng**, không chỉ cấp một. Giá trị bị
 che hiện `••• đã che •••`, giữ nguyên tên khoá để người đọc biết trường đó tồn tại.
 
+**Danh sách cho phép, ưu tiên cao hơn danh sách chặn.** Một số khoá hợp lệ chứa chuỗi nằm
+trong danh sách chặn và **không được che**:
+
+| Khoá | Vì sao không che |
+|---|---|
+| `object_key` | Đường dẫn object trong bucket. Đây là trường dùng để tìm lại và khôi phục file bị xoá — che nó là làm snapshot vô dụng. Biết object key không cấp quyền truy cập; truy cập cần presigned URL hoặc credential |
+| `storage_object_id` | Chỉ là khoá ngoại số |
+
+Cách làm: kiểm danh sách cho phép **trước**, nếu khớp thì giữ nguyên; chỉ khi không khớp mới
+xét danh sách chặn. Khi thêm khoá mới vào snapshot, người thêm phải kiểm nó có bị danh sách
+chặn bắt oan không.
+
+Phát hiện này đến từ snapshot thật của `company_media.file.delete` ở Bước 2a: nó chứa
+`object_key`, và quy tắc so khớp chứa-chuỗi ban đầu sẽ che chính trường quan trọng nhất.
+
+Test bắt buộc: một snapshot chứa cả `object_key` và `password_hash` → `object_key` **hiện
+nguyên**, `password_hash` **bị che**.
+
 Dữ liệu hiện sạch — đã kiểm 892 bản ghi có JSON dạng object, không khoá nào khớp danh sách
 trên. Đây là bảo hiểm cho lời gọi `log_audit` sau này.
 
