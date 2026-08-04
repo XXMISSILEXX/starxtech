@@ -2,16 +2,18 @@ from datetime import datetime
 from pathlib import Path
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload
 from flask import current_app
 from app.audit import audit
 from app.extensions import db
 from app.models import (CompanyMediaAlbum, CompanyMediaAlbumPermission, CompanyMediaFile, Role,
-    StorageDerivative, UploadBatchItem, User, UserRole)
+    StorageDerivative, StorageObject, UploadBatchItem, User, UserRole)
 from app.storage.services import create_upload_batch_presign, complete_upload_item
 from app.storage.company_media_errors import upload_error
 
 class CompanyMediaError(ValueError): pass
 ALBUM_PERMISSION_FLAGS = ("can_view", "can_upload", "can_edit", "can_delete", "can_download", "can_share")
+AUDIT_SNAPSHOT_FILE_LIMIT = 50
 _TRUE_VALUES = {True, 1, "1", "true", "on", "yes"}
 _FALSE_VALUES = {False, 0, "0", "false", "off", "no", ""}
 
@@ -147,6 +149,41 @@ def _active(query, model, status):
     if status=="active": return query.filter(model.is_active.is_(True), model.deleted_at.is_(None))
     if status=="archived": return query.filter((model.is_active.is_(False)) | model.deleted_at.is_not(None))
     return query
+
+
+def _media_file_audit_snapshot(media):
+    storage = media.storage_object
+    return {
+        "file_name": media.display_name,
+        "original_filename": storage.original_filename if storage else None,
+        "created_by_id": media.created_by_id,
+        "created_at": media.created_at.isoformat() if media.created_at else None,
+        "file_size": storage.file_size if storage else None,
+        "storage_object_id": media.storage_object_id,
+        "object_key": storage.object_key if storage else None,
+        "album_id": media.album_id,
+    }
+
+
+def _album_audit_snapshot(album):
+    file_query = CompanyMediaFile.query.filter_by(album_id=album.id).order_by(CompanyMediaFile.id)
+    file_count = file_query.count()
+    total_size_bytes = db.session.query(
+        func.coalesce(func.sum(StorageObject.file_size), 0)
+    ).select_from(CompanyMediaFile).join(
+        StorageObject, StorageObject.id == CompanyMediaFile.storage_object_id
+    ).filter(CompanyMediaFile.album_id == album.id).scalar()
+    files = file_query.options(joinedload(CompanyMediaFile.storage_object)).limit(AUDIT_SNAPSHOT_FILE_LIMIT).all()
+    return {
+        "album_id": album.id,
+        "album_name": album.name,
+        "created_by_id": album.created_by_id,
+        "created_at": album.created_at.isoformat() if album.created_at else None,
+        "file_count": file_count,
+        "total_size_bytes": int(total_size_bytes or 0),
+        "files": [_media_file_audit_snapshot(media) for media in files],
+        "truncated_file_count": file_count - len(files),
+    }
 def albums(user,status="active",q=""):
     from app.company_media.permissions import view_album
     query=_active(CompanyMediaAlbum.query,status and CompanyMediaAlbum,status)
@@ -162,8 +199,22 @@ def create_album(user,name,description="",restricted=False):
     if CompanyMediaAlbum.query.filter(func.lower(CompanyMediaAlbum.name)==name.lower(),CompanyMediaAlbum.is_active.is_(True),CompanyMediaAlbum.deleted_at.is_(None)).first(): raise CompanyMediaError("Đã có album cùng tên.")
     a=CompanyMediaAlbum(name=name,description=(description or "").strip() or None,is_restricted=restricted,created_by_id=user.id);db.session.add(a);db.session.flush();audit("company_media.album.create","CompanyMediaAlbum",a.id);db.session.commit();return a
 def rename_album(user,a,name): a.name=_name(name);a.updated_by_id=user.id;audit("company_media.album.rename","CompanyMediaAlbum",a.id);db.session.commit()
-def archive_album(user,a): a.is_active=False;a.deleted_at=datetime.utcnow();a.updated_by_id=user.id;audit("company_media.album.archive","CompanyMediaAlbum",a.id);db.session.commit()
-def restore_album(user,a): a.is_active=True;a.deleted_at=None;a.updated_by_id=user.id;audit("company_media.album.restore","CompanyMediaAlbum",a.id);db.session.commit()
+def archive_album(user, a):
+    snapshot = _album_audit_snapshot(a)
+    a.is_active = False
+    a.deleted_at = datetime.utcnow()
+    a.updated_by_id = user.id
+    audit("company_media.album.archive", "CompanyMediaAlbum", a.id, old_values=snapshot, new_values={"archived": True})
+    db.session.commit()
+
+
+def restore_album(user, a):
+    snapshot = _album_audit_snapshot(a)
+    a.is_active = True
+    a.deleted_at = None
+    a.updated_by_id = user.id
+    audit("company_media.album.restore", "CompanyMediaAlbum", a.id, old_values=snapshot, new_values={"restored": True})
+    db.session.commit()
 def presign(user,a,items,selection_session_id=None): return create_upload_batch_presign(user=user,module_type="company_media",target_type="album",target_id=a.id,files=items,selection_session_id=selection_session_id)
 def complete(user,a,item_id,payload):
     item=db.session.get(UploadBatchItem,item_id)

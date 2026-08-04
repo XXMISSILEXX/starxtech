@@ -17,8 +17,83 @@ class DocumentValidationError(ValueError):
 
 
 FOLDER_PERMISSION_FLAGS = ("can_view", "can_upload", "can_edit", "can_delete", "can_share")
+AUDIT_SNAPSHOT_CHILD_LIMIT = 50
 _TRUE_VALUES = {True, 1, "1", "true", "on", "yes"}
 _FALSE_VALUES = {False, 0, "0", "false", "off", "no", ""}
+
+
+def _project_audit_snapshot(project):
+    if project is None:
+        return None
+    return {"id": project.id, "code": project.code, "name": project.name}
+
+
+def _document_file_audit_snapshot(document_file):
+    storage = document_file.storage_object
+    folder = document_file.folder
+    return {
+        "file_name": document_file.display_name,
+        "original_filename": storage.original_filename if storage else None,
+        "created_by_id": document_file.created_by_id,
+        "created_at": document_file.created_at.isoformat() if document_file.created_at else None,
+        "file_size": storage.file_size if storage else None,
+        "storage_object_id": document_file.storage_object_id,
+        "object_key": storage.object_key if storage else None,
+        "folder": {"id": folder.id, "name": folder.name} if folder else None,
+        "project": _project_audit_snapshot(document_file.project or (folder.project if folder else None)),
+    }
+
+
+def _folder_parent_path(folder):
+    path = []
+    node = folder.parent
+    while node is not None:
+        path.append({"id": node.id, "name": node.name})
+        node = node.parent
+    return list(reversed(path))
+
+
+def _folder_descendant_summary(folder):
+    """Summarize all descendants hidden by a parent-folder archive without unbounded JSON."""
+    pending_ids = [folder.id]
+    child_count = file_count = folder_count = 0
+    children = []
+    while pending_ids:
+        current_ids, pending_ids = pending_ids, []
+        files = ProjectDocumentFile.query.filter(
+            ProjectDocumentFile.folder_id.in_(current_ids)
+        ).order_by(ProjectDocumentFile.id).all()
+        folders = ProjectDocumentFolder.query.filter(
+            ProjectDocumentFolder.parent_id.in_(current_ids)
+        ).order_by(ProjectDocumentFolder.id).all()
+        for document_file in files:
+            child_count += 1
+            file_count += 1
+            if len(children) < AUDIT_SNAPSHOT_CHILD_LIMIT:
+                children.append({"type": "file", "id": document_file.id, "name": document_file.display_name})
+        for child_folder in folders:
+            child_count += 1
+            folder_count += 1
+            if len(children) < AUDIT_SNAPSHOT_CHILD_LIMIT:
+                children.append({"type": "folder", "id": child_folder.id, "name": child_folder.name})
+            pending_ids.append(child_folder.id)
+    return {
+        "child_count": child_count,
+        "file_count": file_count,
+        "folder_count": folder_count,
+        "children": children,
+        "truncated_child_count": child_count - len(children),
+    }
+
+
+def _folder_audit_snapshot(folder):
+    return {
+        "folder_id": folder.id,
+        "folder_name": folder.name,
+        "project": _project_audit_snapshot(folder.project),
+        "parent_path": _folder_parent_path(folder),
+        **_folder_descendant_summary(folder),
+    }
 
 
 def _permission_principal_id(value):
@@ -371,16 +446,18 @@ def rename_file(user, document_file, display_name):
 def archive_file(user, document_file):
     from app.project_documents.permissions import can_delete_project_document_file
     if not can_delete_project_document_file(user, document_file): raise DocumentValidationError("Bạn không có quyền lưu trữ tệp này.")
+    snapshot = _document_file_audit_snapshot(document_file)
     document_file.is_active = False; document_file.deleted_at = datetime.utcnow(); document_file.updated_by_id = user.id
-    audit("document.file.archive", "ProjectDocumentFile", document_file.id); db.session.commit(); return document_file
+    audit("document.file.archive", "ProjectDocumentFile", document_file.id, old_values=snapshot, new_values={"archived": True}); db.session.commit(); return document_file
 
 
 def restore_file(user, document_file):
     from app.project_documents.permissions import can_restore_project_document_file
     if not can_restore_project_document_file(user, document_file): raise DocumentValidationError("Bạn không có quyền khôi phục tệp này.")
     if not document_file.folder.is_active or document_file.folder.deleted_at: raise DocumentValidationError("Hãy khôi phục thư mục cha trước.")
+    snapshot = _document_file_audit_snapshot(document_file)
     document_file.is_active = True; document_file.deleted_at = None; document_file.updated_by_id = user.id
-    audit("document.file.restore", "ProjectDocumentFile", document_file.id); db.session.commit(); return document_file
+    audit("document.file.restore", "ProjectDocumentFile", document_file.id, old_values=snapshot, new_values={"restored": True}); db.session.commit(); return document_file
 
 
 def _normalize_file_ids(file_ids):
@@ -416,10 +493,11 @@ def bulk_archive_files(user, folder, file_ids):
         elif not can_delete_project_document_file(user, document_file):
             summary["forbidden"] += 1
         else:
+            snapshot = _document_file_audit_snapshot(document_file)
             document_file.is_active = False
             document_file.deleted_at = datetime.utcnow()
             document_file.updated_by_id = user.id
-            audit("document.file.archive", "ProjectDocumentFile", document_file.id)
+            audit("document.file.archive", "ProjectDocumentFile", document_file.id, old_values=snapshot, new_values={"archived": True})
             summary["archived"] += 1
     db.session.commit()
     return summary
@@ -437,10 +515,11 @@ def bulk_restore_files(user, folder, file_ids):
         elif not folder.is_active or folder.deleted_at:
             summary["skipped"] += 1
         else:
+            snapshot = _document_file_audit_snapshot(document_file)
             document_file.is_active = True
             document_file.deleted_at = None
             document_file.updated_by_id = user.id
-            audit("document.file.restore", "ProjectDocumentFile", document_file.id)
+            audit("document.file.restore", "ProjectDocumentFile", document_file.id, old_values=snapshot, new_values={"restored": True})
             summary["restored"] += 1
     db.session.commit()
     return summary
@@ -531,16 +610,18 @@ def move_folder(user, folder, new_parent):
 
 def archive_folder(user, folder):
     if folder.is_root: raise DocumentValidationError("Không thể lưu trữ thư mục gốc.")
+    snapshot = _folder_audit_snapshot(folder)
     folder.is_active = False; folder.deleted_at = datetime.utcnow(); folder.updated_by_id = user.id
-    audit("document.folder.archive", "ProjectDocumentFolder", folder.id); db.session.commit(); return folder
+    audit("document.folder.archive", "ProjectDocumentFolder", folder.id, old_values=snapshot, new_values={"archived": True}); db.session.commit(); return folder
 
 
 def restore_folder(user, folder):
     if folder.is_root: raise DocumentValidationError("Thư mục gốc không thể được khôi phục.")
     if not folder.parent or not folder.parent.is_active or folder.parent.deleted_at: raise DocumentValidationError("Hãy khôi phục thư mục cha trước.")
     _ensure_sibling_name(folder.project_id, folder.parent_id, folder.name, folder.id)
+    snapshot = _folder_audit_snapshot(folder)
     folder.is_active = True; folder.deleted_at = None; folder.updated_by_id = user.id
-    audit("document.folder.restore", "ProjectDocumentFolder", folder.id); db.session.commit(); return folder
+    audit("document.folder.restore", "ProjectDocumentFolder", folder.id, old_values=snapshot, new_values={"restored": True}); db.session.commit(); return folder
 
 
 def set_folder_permission(user, folder, principal_type, principal_id, flags):
