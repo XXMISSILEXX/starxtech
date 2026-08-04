@@ -1,5 +1,5 @@
 from app.extensions import db
-from app.models import AuditLog, CompanyMediaAlbum, CompanyMediaFile, StorageObject, User
+from app.models import AuditLog, CompanyMediaAlbum, CompanyMediaFile, DownloadEvent, StorageObject, User
 from app.storage.providers import FakeStorageProvider
 
 
@@ -77,7 +77,7 @@ def test_bulk_media_archive_records_once_and_sets_each_updater(client, app):
     response = client.post(f"/company-media/albums/{album_id}/files/bulk-archive", json={"file_ids": file_ids})
 
     assert response.status_code == 200
-    assert response.get_json()["archived"] == 3
+    assert response.get_json() == {"ok": True, "archived": 3, "skipped": 0, "forbidden": 0}
     with app.app_context():
         records = AuditLog.query.filter_by(action="company_media.file.delete").all()
         assert len(records) == 1
@@ -96,8 +96,10 @@ def test_media_restore_records_for_individual_and_bulk(client, app):
     _login(client, "admin")
     assert client.post(f"/company-media/files/{file_ids[0]}/archive").status_code == 302
     assert client.post(f"/company-media/files/{file_ids[0]}/restore").status_code == 302
-    assert client.post(f"/company-media/albums/{album_id}/files/bulk-archive", json={"file_ids": file_ids[1:]}).status_code == 200
-    assert client.post(f"/company-media/albums/{album_id}/files/bulk-restore", json={"file_ids": file_ids[1:]}).status_code == 200
+    archived = client.post(f"/company-media/albums/{album_id}/files/bulk-archive", json={"file_ids": file_ids[1:]})
+    restored = client.post(f"/company-media/albums/{album_id}/files/bulk-restore", json={"file_ids": file_ids[1:]})
+    assert archived.status_code == 200 and archived.get_json() == {"ok": True, "archived": 2, "skipped": 0, "forbidden": 0}
+    assert restored.status_code == 200 and restored.get_json() == {"ok": True, "restored": 2, "skipped": 0, "forbidden": 0}
 
     with app.app_context():
         restores = AuditLog.query.filter_by(action="company_media.file.restore").order_by(AuditLog.id).all()
@@ -126,11 +128,51 @@ def test_bulk_media_download_records_once(client, app, tmp_path):
     with app.app_context():
         records = AuditLog.query.filter_by(action="bulk_download.create").all()
         assert len(records) == 1
+        assert records[0].entity_type == "CompanyMediaAlbum"
+        assert records[0].entity_id == album_id
         snapshot = records[0].new_values_json
-        assert snapshot["album_id"] == album_id
+        assert snapshot["module"] == "company-media"
+        assert snapshot["object_type"] == "CompanyMediaFile"
         assert snapshot["file_count"] == 3
         assert snapshot["total_size_bytes"] == 18
         assert len(snapshot["files"]) == 3
+
+
+def test_single_media_download_records_file_disclosure_without_bulk_audit(client, app):
+    album_id, (file_id,) = _album_with_files(app)
+    _login(client, "admin")
+    with app.app_context():
+        before_events = DownloadEvent.query.count()
+
+    response = client.post(f"/company-media/albums/{album_id}/files/bulk-signed-download", json={"file_ids": [file_id]})
+
+    assert response.status_code == 200
+    with app.app_context():
+        records = AuditLog.query.filter_by(action="company_media.file.download").all()
+        assert len(records) == 1
+        assert records[0].entity_type == "CompanyMediaFile"
+        assert records[0].entity_id == file_id
+        assert records[0].new_values_json["file_name"] == "display-0.jpg"
+        assert AuditLog.query.filter_by(action="bulk_download.create").count() == 0
+        assert DownloadEvent.query.count() == before_events + 1
+
+
+def test_denied_media_download_records_neither_audit_nor_download_event(client, app):
+    album_id, (file_id,) = _album_with_files(app)
+    with app.app_context():
+        album = db.session.get(CompanyMediaAlbum, album_id)
+        album.is_restricted = True
+        db.session.commit()
+        before_audits = AuditLog.query.count()
+        before_events = DownloadEvent.query.count()
+    _login(client, "reporter")
+
+    response = client.post(f"/company-media/albums/{album_id}/files/bulk-signed-download", json={"file_ids": [file_id]})
+
+    assert response.status_code == 403
+    with app.app_context():
+        assert AuditLog.query.count() == before_audits
+        assert DownloadEvent.query.count() == before_events
 
 
 def test_denied_media_archive_changes_nothing_and_records_nothing(client, app):

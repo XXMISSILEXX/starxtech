@@ -3,7 +3,7 @@ from io import BytesIO
 import zipfile
 
 from app.extensions import db
-from app.models import MediaProcessingJob, Project, ProjectDocumentFile, StorageDerivative, StorageObject, User
+from app.models import AuditLog, MediaProcessingJob, Project, ProjectDocumentFile, StorageDerivative, StorageObject, User
 from app.media_processing.services import retry_media_jobs
 from app.project_documents.services import (archive_file, complete_folder_upload_item, create_file_download_url,
     create_file_preview_url, get_or_create_project_root_folder, list_folder_files, presign_folder_upload_batch,
@@ -48,6 +48,13 @@ def test_presign_complete_creates_metadata_idempotently_and_downloads(app):
         event = DownloadEvent.query.one()
         assert event.source_type == "original" and event.module == "document-library"
         assert event.estimated_storage_egress_bytes == 5 and event.estimated_client_egress_bytes == 5
+        audit = AuditLog.query.filter_by(action="document.file.download").one()
+        assert audit.entity_type == "ProjectDocumentFile"
+        assert audit.entity_id == ProjectDocumentFile.query.one().id
+        assert audit.new_values_json == {
+            "file_name": "contract.pdf", "storage_object_id": storage.id,
+            "file_size": 5, "module": "document-library",
+        }
 
 
 def test_complete_route_rejects_missing_item_id_and_accepts_valid_id(client, app):

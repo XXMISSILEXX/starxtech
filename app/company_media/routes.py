@@ -256,19 +256,17 @@ def _bulk(album_id, action):
     if not p.view_album(current_user,a):abort(403)
     try: ids=parse_file_ids(request)
     except BulkDownloadError as exc: return jsonify(error=str(exc)),400
-    items=CompanyMediaFile.query.filter(CompanyMediaFile.album_id==a.id,CompanyMediaFile.id.in_(ids)).order_by(CompanyMediaFile.id).all(); result={action:[] if action=="downloads" else 0,"skipped":0,"forbidden":0}; snapshots=[]
+    items=CompanyMediaFile.query.filter(CompanyMediaFile.album_id==a.id,CompanyMediaFile.id.in_(ids)).order_by(CompanyMediaFile.id).all(); result={action:0,"skipped":0,"forbidden":0}; snapshots=[]
     for f in items:
-        allowed={"archived":p.delete_file(current_user,f),"restored":p.restore_file(current_user,f) and a.is_active,"downloads":p.download_file(current_user,f)}[action]
+        allowed={"archived":p.delete_file(current_user,f),"restored":p.restore_file(current_user,f) and a.is_active}[action]
         if not allowed:result["forbidden"]+=1;continue
         snapshot=_file_audit_snapshot(f)
         if action=="archived": f.is_active=False;f.deleted_at=__import__('datetime').datetime.utcnow();f.updated_by_id=current_user.id;snapshots.append(snapshot);result[action]+=1
         elif action=="restored": f.is_active=True;f.deleted_at=None;f.updated_by_id=current_user.id;snapshots.append(snapshot);result[action]+=1
-        else: result["downloads"].append({"id":f.id,**s.signed_download(f)});snapshots.append(snapshot)
     if snapshots:
         batch_snapshot=_file_batch_audit_snapshot(a,snapshots)
         if action=="archived": audit("company_media.file.delete","CompanyMediaFile",old_values=batch_snapshot,new_values={"archived":True,"bulk":True})
         elif action=="restored": audit("company_media.file.restore","CompanyMediaFile",old_values=batch_snapshot,new_values={"restored":True,"bulk":True})
-        else: audit("bulk_download.create","CompanyMediaAlbum",a.id,new_values=batch_snapshot)
     s.db.session.commit();return jsonify(ok=True,**result)
 @bp.post("/albums/<int:album_id>/files/bulk-archive")
 def bulk_archive(album_id): return _bulk(album_id,"archived")
@@ -281,11 +279,6 @@ def bulk_download(album_id):
     try:
         file_ids = parse_file_ids(request)
         result = request_media_download(current_user, a, file_ids)
-        files = CompanyMediaFile.query.filter(CompanyMediaFile.album_id == a.id,
-            CompanyMediaFile.id.in_(file_ids)).order_by(CompanyMediaFile.id).all()
-        audit("bulk_download.create", "CompanyMediaAlbum", a.id,
-              new_values=_file_batch_audit_snapshot(a, [_file_audit_snapshot(file) for file in files]))
-        db.session.commit()
         return stream_zip_download(current_user, result) if result["kind"] == "zip" else jsonify(ok=True, **result)
     except PermissionError:
         abort(403)

@@ -359,10 +359,15 @@ def create_file_download_url(user, document_file, provider=None):
         except Exception as exc:
             raise signing_unavailable_error("provider_configuration") from exc
     result = create_attachment_download(provider, storage_object, document_file.display_name)
-    audit("document.file.download", "ProjectDocumentFile", document_file.id)
     record_download(user, kind="original", source_type="original", module="document-library",
         estimated_bytes=storage_object.file_size, storage_object_id=storage_object.id,
         estimated_storage_egress_bytes=storage_object.file_size, estimated_client_egress_bytes=storage_object.file_size)
+    audit("document.file.download", "ProjectDocumentFile", document_file.id, new_values={
+        "file_name": document_file.display_name,
+        "storage_object_id": storage_object.id,
+        "file_size": storage_object.file_size,
+        "module": "document-library",
+    })
     db.session.commit()
     return result
 

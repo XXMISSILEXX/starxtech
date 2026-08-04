@@ -7,6 +7,7 @@ from pathlib import Path
 
 from flask import current_app, send_file
 
+from app.audit import audit
 from app.extensions import db
 from app.models import BulkDownloadJob, CompanyMediaAlbum, CompanyMediaFile, ProjectDocumentFile, ProjectDocumentFolder, User
 from app.storage.keys import (STORAGE_MODULE_COMPANY_MEDIA, STORAGE_MODULE_DOCUMENT_LIBRARY,
@@ -16,6 +17,10 @@ from app.storage.providers import get_storage_provider
 
 class BulkDownloadError(ValueError):
     pass
+
+
+# Keep bounded disclosure snapshots consistent with project document archives.
+AUDIT_SNAPSHOT_CHILD_LIMIT = 50
 
 
 def parse_file_ids(request):
@@ -58,7 +63,11 @@ def request_document_download(user, folder, file_ids):
     files = _select_document_files(user, folder, file_ids)
     if len(files) == 1:
         return {"kind": "direct", "download": create_file_download_url(user, files[0])}
-    return {"kind": "zip", "files": files, "filename": f"ho-so-tai-lieu-{_now():%Y%m%d-%H%M}.zip", "module": STORAGE_MODULE_DOCUMENT_LIBRARY}
+    return {
+        "kind": "zip", "files": files, "filename": f"ho-so-tai-lieu-{_now():%Y%m%d-%H%M}.zip",
+        "module": STORAGE_MODULE_DOCUMENT_LIBRARY, "entity_type": "ProjectDocumentFolder",
+        "entity_id": folder.id, "object_type": "ProjectDocumentFile",
+    }
 
 
 def request_media_download(user, album, file_ids):
@@ -66,7 +75,32 @@ def request_media_download(user, album, file_ids):
     files = _select_media_files(user, album, file_ids)
     if len(files) == 1:
         return {"kind": "direct", "download": signed_download(files[0], user)}
-    return {"kind": "zip", "files": files, "filename": f"album-{safe_storage_filename(album.name, 'media')}-{_now():%Y%m%d-%H%M}.zip", "module": STORAGE_MODULE_COMPANY_MEDIA}
+    return {
+        "kind": "zip", "files": files, "filename": f"album-{safe_storage_filename(album.name, 'media')}-{_now():%Y%m%d-%H%M}.zip",
+        "module": STORAGE_MODULE_COMPANY_MEDIA, "entity_type": "CompanyMediaAlbum",
+        "entity_id": album.id, "object_type": "CompanyMediaFile",
+    }
+
+
+def _bulk_download_audit_snapshot(selection, files, total_size):
+    visible_files = files[:AUDIT_SNAPSHOT_CHILD_LIMIT]
+    return {
+        "module": selection["module"],
+        "object_type": selection["object_type"],
+        "file_count": len(files),
+        "total_size_bytes": total_size,
+        "file_ids": [item.id for item in visible_files],
+        "truncated_file_count": len(files) - len(visible_files),
+        "files": [
+            {
+                "id": item.id,
+                "file_name": item.display_name,
+                "storage_object_id": item.storage_object_id,
+                "file_size": item.storage_object.file_size,
+            }
+            for item in visible_files
+        ],
+    }
 
 
 def stream_zip_download(user, selection):
@@ -102,6 +136,12 @@ def stream_zip_download(user, selection):
         record_download(user, kind="zip_stream", source_type="zip_stream", module=selection["module"],
             estimated_bytes=total_size, estimated_storage_egress_bytes=total_size,
             estimated_client_egress_bytes=zip_size)
+        audit(
+            "bulk_download.create",
+            selection["entity_type"],
+            selection["entity_id"],
+            new_values=_bulk_download_audit_snapshot(selection, files, total_size),
+        )
         db.session.commit()
         response = send_file(zip_path, mimetype="application/zip", as_attachment=True,
             download_name=selection["filename"], conditional=False, max_age=0)

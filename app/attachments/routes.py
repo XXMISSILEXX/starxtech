@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from flask import abort, current_app, flash, jsonify, redirect, request, url_for
 from flask_login import current_user
 
+from app.audit import audit
 from app.attachments import bp
 from app.auth.permissions import (can_delete_report_attachment, can_view_report,
                                   project_accepts_report_mutation)
@@ -97,6 +98,12 @@ def download(attachment_id):
     record_download(current_user, kind="original", source_type="original", module="daily-reports",
         estimated_bytes=obj.file_size, storage_object_id=obj.id, estimated_storage_egress_bytes=obj.file_size,
         estimated_client_egress_bytes=obj.file_size)
+    audit("attachment.download", "ReportAttachment", attachment.id, new_values={
+        "file_name": attachment.original_filename,
+        "storage_object_id": obj.id,
+        "file_size": obj.file_size,
+        "module": "daily-reports",
+    })
     db.session.commit()
     return redirect(get_storage_provider().create_presigned_download(obj.bucket, obj.object_key,
         current_app.config["STORAGE_DOWNLOAD_URL_TTL_SECONDS"], "attachment", obj.original_filename)["url"])

@@ -300,7 +300,7 @@ def signed_download(f, user=None):
     except Exception as exc:
         raise signing_unavailable_error("provider_configuration") from exc
     result = create_attachment_download(provider, obj, f.display_name)
-    record_download(user,kind="original",source_type="original",module="company-media",estimated_bytes=obj.file_size,storage_object_id=obj.id,estimated_storage_egress_bytes=obj.file_size,estimated_client_egress_bytes=obj.file_size);db.session.commit()
+    record_download(user,kind="original",source_type="original",module="company-media",estimated_bytes=obj.file_size,storage_object_id=obj.id,estimated_storage_egress_bytes=obj.file_size,estimated_client_egress_bytes=obj.file_size);audit("company_media.file.download", "CompanyMediaFile", f.id, new_values={"file_name": f.display_name, "storage_object_id": obj.id, "file_size": obj.file_size, "module": "company-media"});db.session.commit()
     return result
 def set_cover(user,a,media_id):
     f=db.session.get(CompanyMediaFile,media_id)

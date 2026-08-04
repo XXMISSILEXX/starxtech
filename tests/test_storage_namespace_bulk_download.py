@@ -7,7 +7,7 @@ from app.bulk_downloads.services import (BulkDownloadError, cleanup_expired_jobs
                                          request_media_download, run_job, stream_zip_download)
 from app.extensions import db
 from app.models import (BulkDownloadJob, CompanyMediaAlbum, CompanyMediaFile, Project, ProjectDocumentFile,
-                        DownloadEvent, StorageObject, User)
+                        AuditLog, DownloadEvent, StorageObject, User)
 from app.project_documents.services import get_or_create_project_root_folder
 from app.company_media.services import presign
 from app.storage.keys import build_bulk_zip_key, build_derivative_key, build_original_key, safe_storage_filename
@@ -56,6 +56,12 @@ def test_document_bulk_zip_stream_uses_existing_object_keys_without_s3_zip(app, 
         event = DownloadEvent.query.one()
         assert event.source_type == "zip_stream" and event.module == "document-library"
         assert event.estimated_storage_egress_bytes == 6 and event.estimated_client_egress_bytes > 0
+        audit = AuditLog.query.filter_by(action="bulk_download.create").one()
+        assert audit.entity_type == "ProjectDocumentFolder" and audit.entity_id == root.id
+        assert audit.new_values_json["module"] == "document-library"
+        assert audit.new_values_json["object_type"] == "ProjectDocumentFile"
+        assert audit.new_values_json["file_count"] == 2
+        assert audit.new_values_json["file_ids"] == [item.id for item in files]
 
 
 def test_media_bulk_download_requires_album_download_acl_and_single_is_direct(app):
@@ -89,6 +95,9 @@ def test_media_bulk_zip_stream_does_not_create_s3_zip_or_job(app):
                 assert archive.namelist() == ["same.jpg", "same (2).jpg"]
             response.close()
         assert not any("bulk-downloads/" in key for _, key in provider.objects)
+        records = AuditLog.query.filter_by(action="bulk_download.create").all()
+        assert len(records) == 1
+        assert records[0].entity_type == "CompanyMediaAlbum" and records[0].entity_id == album.id
 
 
 def test_zip_stream_rejects_limit_and_missing_source_before_response(app):
