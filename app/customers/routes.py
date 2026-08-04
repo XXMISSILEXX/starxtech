@@ -46,6 +46,8 @@ def _customer_snapshot(customer):
         "description": customer.description,
         "is_active": customer.is_active,
         "archived_at": customer.archived_at.isoformat() if customer.archived_at else None,
+        "created_by_id": customer.created_by_id,
+        "created_at": customer.created_at.isoformat() if customer.created_at else None,
     }
 
 

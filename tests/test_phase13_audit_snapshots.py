@@ -1,8 +1,8 @@
 """Phase 13 destructive audit snapshots; SQLite does not prove PostgreSQL concurrency behavior."""
 
 from app.extensions import db
-from app.models import (AuditLog, CompanyMediaAlbum, CompanyMediaFile, Project, ProjectDocumentFile,
-    ProjectDocumentFolder, StorageObject, User)
+from app.models import (AuditLog, Company, CompanyMediaAlbum, CompanyMediaFile, Customer, Partner,
+    Project, ProjectDocumentFile, ProjectDocumentFolder, StorageObject, User)
 from app.project_documents.services import create_folder, get_or_create_project_root_folder
 
 
@@ -201,4 +201,63 @@ def test_denied_folder_and_album_archives_change_nothing_and_record_nothing(clie
     with app.app_context():
         assert db.session.get(ProjectDocumentFolder, document_data["folder_id"]).is_active is True
         assert db.session.get(CompanyMediaAlbum, album_id).is_active is True
+        assert AuditLog.query.count() == before
+
+
+def test_company_and_partner_lifecycle_snapshots_include_creation_metadata(client, app):
+    with app.app_context():
+        super_admin = db.session.get(User, 1)
+        company = Company(id=9901, name="Công ty snapshot lifecycle")
+        partner = Partner(id=9902, full_name="Đối tác snapshot lifecycle", created_by_user_id=super_admin.id)
+        db.session.add_all((company, partner))
+        db.session.commit()
+        company_id, partner_id = company.id, partner.id
+
+    _login(client, "super")
+    assert client.post(f"/partner-companies/{company_id}/archive").status_code == 302
+    assert client.post(f"/partner-companies/{company_id}/restore").status_code == 302
+    assert client.post(f"/partners/{partner_id}/archive").status_code == 302
+    assert client.post(f"/partners/{partner_id}/restore").status_code == 302
+
+    with app.app_context():
+        company_archive = AuditLog.query.filter_by(action="company.archive", entity_id=company_id).one()
+        company_restore = AuditLog.query.filter_by(action="company.restore", entity_id=company_id).one()
+        assert company_archive.old_values_json["created_at"]
+        assert company_restore.old_values_json["created_at"]
+        partner_archive = AuditLog.query.filter_by(action="partner.archive", entity_id=partner_id).one()
+        partner_restore = AuditLog.query.filter_by(action="partner.restore", entity_id=partner_id).one()
+        assert partner_archive.old_values_json["created_by_id"] == 1
+        assert partner_archive.old_values_json["created_at"]
+        assert partner_restore.old_values_json["created_by_id"] == 1
+        assert partner_restore.old_values_json["created_at"]
+
+
+def test_denied_project_and_customer_archives_change_nothing_and_record_nothing(client, app):
+    with app.app_context():
+        super_admin = db.session.get(User, 1)
+        project = Project(
+            id=9903,
+            code="P-AUDIT-DENIED",
+            name="Dự án không được archive",
+            status="active",
+            created_by_user_id=super_admin.id,
+        )
+        customer = Customer(
+            id=9904,
+            name="Khách hàng không được archive",
+            normalized_name="khách hàng không được archive",
+            created_by_id=super_admin.id,
+        )
+        db.session.add_all((project, customer))
+        db.session.commit()
+        project_id, customer_id = project.id, customer.id
+        before = AuditLog.query.count()
+
+    _login(client, "viewer")
+    assert client.post(f"/admin/projects/{project_id}/archive").status_code == 403
+    assert client.post(f"/customers/{customer_id}/archive").status_code == 403
+
+    with app.app_context():
+        assert db.session.get(Project, project_id).status == "active"
+        assert db.session.get(Customer, customer_id).is_active is True
         assert AuditLog.query.count() == before

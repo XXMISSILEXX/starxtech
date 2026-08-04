@@ -372,8 +372,16 @@ def test_attachment_delete_hard_deletes_storage_and_audits(client, app):
     direct_report(client, app)
 
     with app.app_context():
-        attachment_id = ReportAttachment.query.one().id
-        storage = db.session.get(StorageObject, ReportAttachment.query.one().storage_object_id)
+        attachment = ReportAttachment.query.one()
+        attachment_id = attachment.id
+        report_id = attachment.section.daily_report_id
+        section_id = attachment.daily_report_section_id
+        original_filename = attachment.original_filename
+        uploaded_by_id = attachment.uploaded_by_user_id
+        created_at = attachment.created_at
+        file_size = attachment.file_size
+        storage = db.session.get(StorageObject, attachment.storage_object_id)
+        storage_bucket, storage_key = storage.bucket, storage.object_key
         derivative = StorageDerivative(storage_object_id=storage.id, derivative_type="preview", bucket=storage.bucket,
             object_key="daily-reports/derivatives/delete-preview.webp", mime_type="image/webp", file_ext="webp", file_size=1)
         job = MediaProcessingJob.query.filter_by(storage_object_id=storage.id, job_type="image_derivatives").one()
@@ -390,9 +398,16 @@ def test_attachment_delete_hard_deletes_storage_and_audits(client, app):
         assert db.session.get(StorageDerivative, derivative_id) is None
         assert db.session.get(MediaProcessingJob, job_id) is None
         assert db.session.get(StorageObject, storage_id) is None
-        assert (storage.bucket, storage.object_key) in provider.deleted
+        assert (storage_bucket, storage_key) in provider.deleted
         assert (derivative.bucket, derivative.object_key) in provider.deleted
-        assert AuditLog.query.filter_by(action="attachment.delete", entity_id=attachment_id).count() == 1
+        audit = AuditLog.query.filter_by(action="attachment.delete", entity_id=attachment_id).one()
+        assert audit.old_values_json["daily_report_section_id"] == section_id
+        assert audit.old_values_json["file_name"] == original_filename
+        assert audit.old_values_json["created_by_id"] == uploaded_by_id
+        assert audit.old_values_json["created_at"] == created_at.isoformat()
+        assert audit.old_values_json["file_size"] == file_size
+        assert audit.old_values_json["object_key"] == storage_key
+        assert audit.old_values_json["report_id"] == report_id
 
 
 def test_reporter_cannot_delete_attachment_from_another_reporter(client, app):
@@ -453,7 +468,9 @@ def test_report_update_and_delete_write_audit_rows(client, app):
     with app.app_context():
         assert db.session.get(DailyReport, report_id) is None
         assert AuditLog.query.filter_by(action="report.update", entity_id=report_id).count() == 1
-        assert AuditLog.query.filter_by(action="report.delete", entity_id=report_id).count() == 1
+        deleted_audit = AuditLog.query.filter_by(action="report.delete", entity_id=report_id).one()
+        assert deleted_audit.old_values_json["created_by_id"] == 1
+        assert deleted_audit.old_values_json["created_at"]
 
 
 def test_report_delete_hard_deletes_attachments_storage_and_allows_same_date(client, app):

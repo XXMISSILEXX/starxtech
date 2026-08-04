@@ -1,5 +1,5 @@
 from app.extensions import db
-from app.models import AuditLog, Project, ProjectStatus, ProjectUser, ReportCategory, Role, User, UserRole
+from app.models import AuditLog, Customer, Project, ProjectStatus, ProjectUser, ReportCategory, Role, User, UserRole
 
 
 def login(client, username_or_email, password="password123"):
@@ -135,6 +135,12 @@ def test_super_admin_creates_user_and_duplicate_validation_fails(client, app):
 
 
 def test_super_admin_creates_and_archives_project(client, app):
+    with app.app_context():
+        customer = Customer(id=9905, name="Snapshot Customer", normalized_name="snapshot customer")
+        db.session.add(customer)
+        db.session.commit()
+        customer_id = customer.id
+
     login(client, "super")
 
     created = client.post(
@@ -146,6 +152,7 @@ def test_super_admin_creates_and_archives_project(client, app):
             "status": ProjectStatus.ACTIVE.value,
             "start_date": "2026-07-01",
             "expected_end_date": "2026-08-01",
+            "customer_id": str(customer_id),
         },
     )
 
@@ -160,7 +167,12 @@ def test_super_admin_creates_and_archives_project(client, app):
     with app.app_context():
         archived_project = db.session.get(Project, project.id)
         assert archived_project.status == ProjectStatus.ARCHIVED.value
-        assert AuditLog.query.filter_by(action="project.archive", entity_id=project.id).count() == 1
+        audit = AuditLog.query.filter_by(action="project.archive", entity_id=project.id).one()
+        assert audit.old_values_json["code"] == "P003"
+        assert audit.old_values_json["name"] == "New Project"
+        assert audit.old_values_json["customer"] == {"id": customer_id, "name": "Snapshot Customer"}
+        assert audit.old_values_json["created_by_id"] is None
+        assert audit.old_values_json["created_at"]
 
 
 def test_super_admin_assigns_and_removes_project_reporters(client, app):

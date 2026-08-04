@@ -303,7 +303,7 @@ def recalculate_item_completed(item):
 
 
 def _entry_values(entry):
-    return {"report_date": entry.report_date.isoformat(), "quantity": str(entry.quantity), "note": entry.note, "created_by": _user_values(entry.created_by)}
+    return {"report_date": entry.report_date.isoformat(), "quantity": str(entry.quantity), "note": entry.note, "created_by": _user_values(entry.created_by), "created_at": entry.created_at.isoformat() if entry.created_at else None}
 
 
 def _report_date(value):

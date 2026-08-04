@@ -286,6 +286,8 @@ def update_snapshot(update):
         "content": update.content,
         "update_date": update.update_date.isoformat(),
         "deleted_at": update.deleted_at.isoformat() if update.deleted_at else None,
+        "created_by_id": update.created_by_id,
+        "created_at": update.created_at.isoformat() if update.created_at else None,
     }
 
 

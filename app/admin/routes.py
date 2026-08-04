@@ -252,7 +252,7 @@ def projects_edit(project_id):
 @permission_required("projects.manage")
 def projects_archive(project_id):
     project = db.get_or_404(Project, project_id)
-    old_values = {"status": project.status}
+    old_values = _project_snapshot(project)
     project.status = ProjectStatus.ARCHIVED.value
     audit("project.archive", "Project", project.id, old_values, {"status": project.status})
     db.session.commit()
@@ -851,6 +851,12 @@ def _project_snapshot(project):
         if project.expected_end_date
         else None,
         "customer_id": project.customer_id,
+        "customer": None if project.customer is None else {
+            "id": project.customer.id,
+            "name": project.customer.name,
+        },
+        "created_by_id": project.created_by_user_id,
+        "created_at": project.created_at.isoformat() if project.created_at else None,
     }
 
 

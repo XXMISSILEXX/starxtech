@@ -442,12 +442,14 @@ def _can(code):
 
 
 def _company_snapshot(company):
-    return {"name": company.name, "industry": company.industry, "is_active": company.is_active}
+    return {"name": company.name, "industry": company.industry, "is_active": company.is_active,
+            "created_at": company.created_at.isoformat() if company.created_at else None}
 
 
 def _lifecycle_snapshot(company):
     return {"id": company.id, "type": "company", "name": company.name, "is_active": company.is_active,
-            "deleted_at": company.deleted_at is not None}
+            "deleted_at": company.deleted_at is not None,
+            "created_at": company.created_at.isoformat() if company.created_at else None}
 
 
 def _department_snapshot(department):

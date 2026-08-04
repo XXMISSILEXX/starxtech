@@ -340,9 +340,13 @@ def _require_head_permission_if_changed(partner):
 def _partner_snapshot(partner):
     return {"full_name": partner.full_name, "company_id": partner.company_id,
             "department_id": partner.department_id, "position": partner.position,
-            "is_department_head": partner.is_department_head, "is_active": partner.is_active}
+            "is_department_head": partner.is_department_head, "is_active": partner.is_active,
+            "created_by_id": partner.created_by_user_id,
+            "created_at": partner.created_at.isoformat() if partner.created_at else None}
 
 
 def _lifecycle_snapshot(partner):
     return {"id": partner.id, "type": "partner", "full_name": partner.full_name, "is_active": partner.is_active,
-            "deleted_at": partner.deleted_at is not None}
+            "deleted_at": partner.deleted_at is not None,
+            "created_by_id": partner.created_by_user_id,
+            "created_at": partner.created_at.isoformat() if partner.created_at else None}
