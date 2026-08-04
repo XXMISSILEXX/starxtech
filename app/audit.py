@@ -16,6 +16,31 @@ AUDIT_GROUP_SECURITY = "security"
 AUDIT_GROUP_DISCLOSURE = "disclosure"
 AUDIT_GROUP_RETAIN_FOREVER = "retain_forever"
 
+# Emitters removed in Phase 13 step 3 because their table records created_by,
+# so the row is its own creation record. Historical rows remain in audit_logs
+# and the reader hides them by default; nothing emits these any more. The
+# create actions above are intentionally absent: their destination table cannot
+# identify the creator, so their audit rows remain the accountability record.
+LEGACY_CONTENT_CREATE_ACTIONS = frozenset({
+    "attachment.create",
+    "company_media.album.create",
+    "company_media.file.create",
+    "construction_progress.entry.create",
+    "construction_progress.group.create",
+    "construction_progress.item.create",
+    "construction_progress.type.create",
+    "customer.create",
+    "document.custom_root.create",
+    "document.file.create",
+    "document.folder.create",
+    "issue.create",
+    "partner.create",
+    "project_contractor.create",
+    "project_contractor_assignment.create",
+    "project_update.create",
+    "report.create",
+})
+
 
 AUDIT_ACTION_GROUPS = {
     # Authority exceptions must precede suffix rules.
@@ -64,26 +89,9 @@ AUDIT_ACTION_GROUPS = {
     "partner_field_collection.create": AUDIT_GROUP_MUTATION,
     "partner_relationship.create": AUDIT_GROUP_MUTATION,
     "project.create": AUDIT_GROUP_MUTATION,
-    # No longer emitted.  Their tables record created_by, so the row is its own
-    # creation record.  Kept classified only so the historical rows already in
-    # audit_logs do not silently fall into the fallback.
-    "attachment.create": AUDIT_GROUP_MUTATION,
-    "company_media.album.create": AUDIT_GROUP_MUTATION,
-    "company_media.file.create": AUDIT_GROUP_MUTATION,
-    "construction_progress.entry.create": AUDIT_GROUP_MUTATION,
-    "construction_progress.group.create": AUDIT_GROUP_MUTATION,
-    "construction_progress.item.create": AUDIT_GROUP_MUTATION,
-    "construction_progress.type.create": AUDIT_GROUP_MUTATION,
-    "customer.create": AUDIT_GROUP_MUTATION,
-    "document.custom_root.create": AUDIT_GROUP_MUTATION,
-    "document.file.create": AUDIT_GROUP_MUTATION,
-    "document.folder.create": AUDIT_GROUP_MUTATION,
-    "issue.create": AUDIT_GROUP_MUTATION,
-    "partner.create": AUDIT_GROUP_MUTATION,
-    "project_contractor.create": AUDIT_GROUP_MUTATION,
-    "project_contractor_assignment.create": AUDIT_GROUP_MUTATION,
-    "project_update.create": AUDIT_GROUP_MUTATION,
-    "report.create": AUDIT_GROUP_MUTATION,
+    # Kept classified so the historical rows do not silently fall into the
+    # fallback; their emitters are gone (see LEGACY_CONTENT_CREATE_ACTIONS).
+    **{action: AUDIT_GROUP_MUTATION for action in LEGACY_CONTENT_CREATE_ACTIONS},
     # Historical action: no emitter produces this anymore.  The compatibility
     # /partners/<id>/deactivate route delegates to archive(), which emits
     # partner.archive, so do not search for a separate deactivate emitter.

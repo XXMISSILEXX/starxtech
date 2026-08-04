@@ -45,4 +45,6 @@ def select_admin():
         return redirect(url_for("admin_storage.index"))
     if current_user.can("settings.branding.view"):
         return redirect(url_for("admin.branding"))
+    if current_user.can("audit_logs.view"):
+        return redirect(url_for("audit_log.index"))
     abort(403)

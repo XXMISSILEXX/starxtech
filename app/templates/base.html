@@ -26,6 +26,7 @@
     {% set can_view_admin_users = current_user.can('users.view') %}
     {% set can_view_roles = current_user.can('roles.view') %}
     {% set can_view_storage_dashboard = current_user.can('storage.dashboard.view') %}
+    {% set can_view_audit_logs = current_user.can('audit_logs.view') %}
     <div class="app-shell min-vh-100">
       <aside class="sidebar d-none d-lg-flex">
         <a class="brand text-decoration-none" href="{{ url_for('modules.index') }}" aria-label="Mở chọn phân hệ">
@@ -59,6 +60,7 @@
           {% if active_module == 'admin' %}
             {% if can_view_admin_users %}<a class="nav-link" href="{{ url_for('admin.users_index') }}"><i class="bi bi-people"></i><span>Người dùng</span></a>{% endif %}
             {% if can_view_storage_dashboard %}<a class="nav-link" href="{{ url_for('admin_storage.index') }}"><i class="bi bi-device-ssd"></i><span>Dung lượng & băng thông</span></a>{% endif %}
+            {% if can_view_audit_logs %}<a class="nav-link {% if endpoint.startswith('audit_log.') %}active{% endif %}" href="{{ url_for('audit_log.index') }}"><i class="bi bi-journal-text"></i><span>Lịch sử thao tác</span></a>{% endif %}
             {% if can_view_roles %}<a class="nav-link {% if request.path.startswith('/admin/roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>{% endif %}
             {% if current_user.can('settings.branding.view') %}<a class="nav-link" href="{{ url_for('admin.branding') }}"><i class="bi bi-palette"></i><span>Nhận diện hệ thống</span></a>{% endif %}
           {% endif %}
@@ -109,10 +111,11 @@
               {% if can_access_company_media_module() %}<a class="nav-link active" href="{{ url_for('company_media.index') }}"><i class="bi bi-images"></i><span>Thư viện ảnh/video công ty</span></a>{% endif %}
             {% endif %}
             {% if active_module == 'admin' %}
-              {% if can_view_admin_users or can_view_roles or can_view_storage_dashboard %}
+              {% if can_view_admin_users or can_view_roles or can_view_storage_dashboard or can_view_audit_logs %}
                 <div class="nav-section">Quản trị</div>
                 {% if can_view_admin_users %}<a class="nav-link {% if endpoint.startswith('admin.users') %}active{% endif %}" href="{{ url_for('admin.users_index') }}"><i class="bi bi-people"></i><span>Người dùng</span></a>{% endif %}
                 {% if can_view_storage_dashboard %}<a class="nav-link {% if endpoint.startswith('admin_storage.') %}active{% endif %}" href="{{ url_for('admin_storage.index') }}"><i class="bi bi-device-ssd"></i><span>Dung lượng & băng thông</span></a>{% endif %}
+                {% if can_view_audit_logs %}<a class="nav-link {% if endpoint.startswith('audit_log.') %}active{% endif %}" href="{{ url_for('audit_log.index') }}"><i class="bi bi-journal-text"></i><span>Lịch sử thao tác</span></a>{% endif %}
                 {% if can_view_roles %}<a class="nav-link {% if request.path.startswith('/admin/roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>{% endif %}
               {% endif %}
             {% endif %}

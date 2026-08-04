@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "partials/_pagination.html" import pagination %}
+{% block title %}Lịch sử thao tác · StarX{% endblock %}
+{% block page_title %}Lịch sử thao tác{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="card-header bg-body">
+    <form class="row g-2 align-items-end" method="get">
+      <div class="col-md-3"><label class="form-label" for="audit-group">Nhóm</label><select class="form-select" id="audit-group" name="group"><option value="">Bốn nhóm quan trọng</option>{% for value, label in audit_groups %}<option value="{{ value }}" {% if audit_state.group == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><label class="form-label" for="audit-date-from">Từ ngày</label><input class="form-control" id="audit-date-from" type="date" name="date_from" value="{{ audit_state.date_from }}"></div>
+      <div class="col-md-2"><label class="form-label" for="audit-date-to">Đến ngày</label><input class="form-control" id="audit-date-to" type="date" name="date_to" value="{{ audit_state.date_to }}"></div>
+      <div class="col-md-2"><label class="form-label" for="audit-action">Hành động</label><select class="form-select" id="audit-action" name="action"><option value="">Tất cả hành động</option>{% for action in audit_state.actions %}<option value="{{ action }}" {% if audit_state.action == action %}selected{% endif %}>{{ action }}</option>{% endfor %}</select></div>
+      <div class="col-md-3"><label class="form-label" for="audit-entity">Loại đối tượng</label><select class="form-select" id="audit-entity" name="entity_type"><option value="">Tất cả loại đối tượng</option>{% for entity_type in audit_state.entity_types %}<option value="{{ entity_type }}" {% if audit_state.entity_type == entity_type %}selected{% endif %}>{{ entity_type }}</option>{% endfor %}</select></div>
+      <div class="col-md-3"><label class="form-label" for="audit-actor">Người thực hiện</label><select class="form-select" id="audit-actor" name="actor_user_id"><option value="">Tất cả người thực hiện</option>{% for actor in audit_state.actors %}<option value="{{ actor.id }}" {% if audit_state.actor_user_id_value == actor.id %}selected{% endif %}>{{ actor.full_name or actor.username }}</option>{% endfor %}</select></div>
+      <div class="col-md-4"><div class="form-check pt-2"><input class="form-check-input" id="hide-legacy-content-creates" type="checkbox" name="hide_legacy_content_creates" value="1" {% if audit_state.hide_legacy_content_creates %}checked{% endif %}><label class="form-check-label" for="hide-legacy-content-creates">Ẩn bản ghi tạo nội dung (dữ liệu lịch sử)</label><input type="hidden" name="hide_legacy_content_creates" value="0"></div></div>
+      <div class="col-md-2"><button class="btn btn-outline-primary">Lọc</button></div>
+    </form>
+  </div>
+  <div class="card-body p-0">
+    {% if audit_state.errors %}<div class="alert alert-danger m-3">{{ audit_state.errors|join(' ') }}</div>
+    {% elif audit_state.group == 'disclosure' %}<div class="alert alert-info m-3 mb-0">Lịch sử tải file trước đây nằm ở màn hình Dung lượng &amp; băng thông; nhóm này chỉ có dữ liệu audit mới.</div>{% endif %}
+    {% if not audit_state.errors and audit_state.hide_legacy_content_creates %}<p class="text-muted small m-3 mb-0">Đang ẩn {{ audit_legacy_hidden_total }} bản ghi tạo nội dung lịch sử vì bảng đích đã lưu người tạo.</p>{% endif %}
+    {% if not audit_state.errors and audit_logs %}
+      <p class="text-muted small m-3 mb-0">Tổng {{ audit_total }} bản ghi.</p>
+      <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Thời điểm</th><th>Người thực hiện</th><th>Hành động</th><th>Nhóm</th><th>Loại đối tượng</th><th>Mã đối tượng</th><th>Địa chỉ IP</th></tr></thead><tbody>{% for record in audit_logs %}<tr><td><a href="{{ url_for('audit_log.detail', audit_log_id=record.id) }}" class="text-decoration-none">{{ record.created_at.strftime('%d/%m/%Y %H:%M:%S') if record.created_at else '—' }}</a></td><td>{{ (record.actor.full_name or record.actor.username) if record.actor else 'Hệ thống / đã xoá' }}</td><td><a href="{{ url_for('audit_log.detail', audit_log_id=record.id) }}">{{ record.action }}</a></td><td>{{ audit_group_for_action(record.action) }}</td><td>{{ record.entity_type }}</td><td>{{ record.entity_id if record.entity_id is not none else '—' }}</td><td>{{ record.ip_address or '—' }}</td></tr>{% endfor %}</tbody></table></div>
+      {{ pagination(audit_state.page, audit_total, audit_page_size, page_url) }}
+    {% elif not audit_state.errors and audit_state.has_explicit_filters %}<p class="text-muted m-3">Không có lịch sử thao tác nào khớp bộ lọc.</p>
+    {% elif not audit_state.errors %}<p class="text-muted m-3">Chưa có lịch sử thao tác nào.</p>{% endif %}
+  </div>
+</section>
+{% endblock %}

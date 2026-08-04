@@ -34,7 +34,7 @@ def get_active_module():
         "partners": "partners", "partner_companies": "partners", "partner_fields": "partners",
         "partner_field_collections": "partners", "partner_relations": "partners",
         "project_documents": "project_documents", "company_media": "company_media",
-        "admin": "admin", "admin_storage": "admin", "account": "account",
+        "admin": "admin", "admin_storage": "admin", "audit_log": "admin", "account": "account",
         "dashboard": "reports", "dashboard_api": "reports", "projects": "reports", "reports": "reports",
         "issues": "reports", "attachments": "reports", "customers": "reports", "project_operations": "reports", "construction_progress": "reports",
     }

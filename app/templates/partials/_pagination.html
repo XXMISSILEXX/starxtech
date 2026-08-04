@@ -1,0 +1,24 @@
+{% macro pagination(current_page, total_rows, per_page, page_url) -%}
+  {% set total_pages = (total_rows / per_page)|round(0, 'ceil')|int %}
+  {% if total_pages > 1 %}
+    {% set pages = namespace(last=0) %}
+    <nav class="p-3" aria-label="Phân trang">
+      <ul class="pagination mb-0">
+        <li class="page-item {% if current_page == 1 %}disabled{% endif %}">
+          {% if current_page == 1 %}<span class="page-link" aria-label="Trang trước" aria-disabled="true">« Trước</span>{% else %}<a class="page-link" aria-label="Trang trước" href="{{ page_url(current_page - 1) }}">« Trước</a>{% endif %}
+        </li>
+        {% for number in range(1, total_pages + 1) %}
+          {% set show_page = number == 1 or number == total_pages or (number >= current_page - 2 and number <= current_page + 2) %}
+          {% if show_page %}
+            {% if pages.last and number > pages.last + 1 %}<li class="page-item disabled" aria-hidden="true"><span class="page-link">…</span></li>{% endif %}
+            <li class="page-item {% if number == current_page %}active{% endif %}">{% if number == current_page %}<span class="page-link" aria-current="page">{{ number }}</span>{% else %}<a class="page-link" href="{{ page_url(number) }}">{{ number }}</a>{% endif %}</li>
+            {% set pages.last = number %}
+          {% endif %}
+        {% endfor %}
+        <li class="page-item {% if current_page == total_pages %}disabled{% endif %}">
+          {% if current_page == total_pages %}<span class="page-link" aria-label="Trang sau" aria-disabled="true">Sau »</span>{% else %}<a class="page-link" aria-label="Trang sau" href="{{ page_url(current_page + 1) }}">Sau »</a>{% endif %}
+        </li>
+      </ul>
+    </nav>
+  {% endif %}
+{%- endmacro %}
