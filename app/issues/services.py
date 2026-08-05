@@ -6,7 +6,15 @@ from flask_login import current_user
 from app.admin.services import add_with_sqlite_id, audit
 from app.date_utils import local_today, parse_iso_date
 from app.extensions import db
-from app.models import IssueSeverity, IssueStatus, PersistentIssue, Project, ProjectUser, User
+from app.models import (
+    IssueSeverity,
+    IssueStatus,
+    PersistentIssue,
+    PersistentIssueSection,
+    Project,
+    ProjectUser,
+    User,
+)
 from app.project_memberships import accessible_project_ids
 
 
@@ -14,6 +22,53 @@ class IssueValidationError(ValueError):
     def __init__(self, message, errors=None):
         super().__init__(message)
         self.errors = errors or {}
+
+
+def recalculate_issue_rollup(issue):
+    """Recalculate the stored rollup fields from active issue sections.
+
+    The caller owns the surrounding transaction and commits it when appropriate.
+    PostgreSQL locks the issue row so concurrent edits to separate sections do not
+    overwrite each other's rollup calculation.
+    """
+    if db.engine.dialect.name == "postgresql":
+        issue = PersistentIssue.query.filter_by(id=issue.id).with_for_update().one()
+
+    sections = (
+        PersistentIssueSection.query.filter(
+            PersistentIssueSection.persistent_issue_id == issue.id,
+            PersistentIssueSection.deleted_at.is_(None),
+        )
+        .order_by(PersistentIssueSection.sort_order, PersistentIssueSection.id)
+        .all()
+    )
+    statuses = {section.status for section in sections}
+    completed_statuses = {IssueStatus.RESOLVED.value, IssueStatus.CLOSED.value}
+    open_statuses = {IssueStatus.OPEN.value, IssueStatus.PROCESSING.value}
+
+    if not sections:
+        issue.status = IssueStatus.OPEN.value
+    elif statuses <= completed_statuses:
+        issue.status = IssueStatus.CLOSED.value
+    elif IssueStatus.PROCESSING.value in statuses:
+        issue.status = IssueStatus.PROCESSING.value
+    else:
+        issue.status = IssueStatus.OPEN.value
+
+    due_dates = [
+        section.due_date
+        for section in sections
+        if section.status in open_statuses and section.due_date is not None
+    ]
+    issue.due_date = min(due_dates) if due_dates else None
+
+    if issue.status == IssueStatus.CLOSED.value:
+        if issue.closed_date is None:
+            issue.closed_date = local_today()
+    else:
+        issue.closed_date = None
+
+    return issue
 
 
 def project_issues_query(project_id):
