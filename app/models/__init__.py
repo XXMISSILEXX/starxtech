@@ -12,7 +12,7 @@ from app.models.enums import (
     SectionStatus,
     UserRole,
 )
-from app.models.issue import PersistentIssue
+from app.models.issue import PersistentIssue, PersistentIssueSection
 from app.models.partner import (
     Company,
     CompanyDepartment,
@@ -47,6 +47,7 @@ __all__ = [
     "IssueSeverity",
     "IssueStatus",
     "PersistentIssue",
+    "PersistentIssueSection",
     "Partner",
     "PartnerFieldCollection",
     "PartnerFieldCollectionItem",
