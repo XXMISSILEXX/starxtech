@@ -192,7 +192,7 @@ def test_issue_section_form_exposes_localized_options_and_category_icon_to_js(cl
     assert response.status_code == 200
     for label in (
         "🟢 Thấp", "🟡 Trung bình", "🟠 Cao", "🔴 Nghiêm trọng",
-        "🟡 Đang mở", "🔵 Đang xử lý", "✅ Đã xử lý", "✅ Đã đóng",
+        "🟡 Đang mở", "🔵 Đang xử lý", "☑️ Đã xử lý", "✅ Đã đóng",
     ):
         assert label.encode() in response.data
     assert b'data-severity-options=' in response.data

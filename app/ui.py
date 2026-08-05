@@ -102,7 +102,7 @@ ISSUE_SEVERITY_LABELS = {
 ISSUE_STATUS_ICONS = {
     IssueStatus.OPEN.value: "🟡",
     IssueStatus.PROCESSING.value: "🔵",
-    IssueStatus.RESOLVED.value: "✅",
+    IssueStatus.RESOLVED.value: "☑️",
     IssueStatus.CLOSED.value: "✅",
 }
 

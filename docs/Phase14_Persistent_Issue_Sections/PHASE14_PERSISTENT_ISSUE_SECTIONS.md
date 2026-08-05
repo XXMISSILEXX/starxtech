@@ -136,11 +136,14 @@ Gọi tập hạng mục "đang mở" là các hạng mục có `deleted_at IS N
 ### 2.1. `status`
 
 - Nếu **không có** hạng mục nào (mới tạo vấn đề, chưa thêm hạng mục) → `OPEN`.
-- Nếu **mọi** hạng mục chưa xoá đều có `status` thuộc `{RESOLVED, CLOSED}` → `CLOSED`.
-- Ngược lại, nếu có bất kỳ hạng mục `PROCESSING` → `PROCESSING`.
+- Nếu **mọi** hạng mục chưa xoá đều `CLOSED` → `CLOSED`.
+- Nếu **mọi** hạng mục chưa xoá đều thuộc `{RESOLVED, CLOSED}` → `RESOLVED`.
+- Nếu có bất kỳ hạng mục `PROCESSING` → `PROCESSING`.
 - Còn lại → `OPEN`.
 
-Thứ tự kiểm là bắt buộc: kiểm "tất cả đã xong" **trước** khi kiểm "có cái đang xử lý".
+Thứ tự năm nhánh là bắt buộc: nhánh "mọi cái đều `CLOSED`" phải đứng **trước** nhánh "mọi cái
+đều thuộc `{RESOLVED, CLOSED}`", vì tập đầu là tập con của tập sau. Đảo hai nhánh này thì sẽ
+không bao giờ ra `CLOSED`.
 
 Đây là quy tắc an toàn theo hướng "vẫn mở": sai theo hướng vẫn mở thì việc còn tồn đọng vẫn nằm
 trong danh sách; sai theo hướng đã đóng thì nó biến khỏi tầm mắt.
@@ -152,10 +155,9 @@ Hạn **sớm nhất** trong các hạng mục đang mở có `due_date` khác r
 
 ### 2.3. `closed_date`
 
-Khi `status` chuyển thành `CLOSED` và `closed_date` đang rỗng → đặt bằng ngày hôm nay (dùng
-`local_today()` như `app/issues/services.py` đang dùng).
-
-Khi `status` rời khỏi `CLOSED` → xoá `closed_date` về `NULL`.
+Chỉ khi `status == CLOSED`, nếu `closed_date` đang rỗng thì đặt bằng ngày hôm nay (dùng
+`local_today()` như `app/issues/services.py` đang dùng). Với mọi trạng thái khác, kể cả
+`RESOLVED`, `closed_date` là `NULL`.
 
 ### 2.4. `severity` — KHÔNG tính
 
@@ -217,20 +219,31 @@ Báo cáo ngày; ghi lại để không ai bất ngờ.
 
 Bỏ cột `PHỤ TRÁCH` theo §0.4. Bỏ nút `Đóng` theo §0.3.
 
-Giữ các cột `TIÊU ĐỀ`, `DỰ ÁN`, `MỨC ĐỘ`, `TRẠNG THÁI`, `NGÀY MỞ`, `HẠN XỬ LÝ`. Ba cột sau đọc
-từ giá trị lưu sẵn theo §0.6.
+Giữ các cột `TIÊU ĐỀ`, `DỰ ÁN`, `MỨC ĐỘ`, `TRẠNG THÁI`, `NGÀY MỞ`, `HẠN XỬ LÝ`, `NGÀY ĐÓNG`.
+Các giá trị tự tính đọc từ giá trị lưu sẵn theo §0.6; `NGÀY ĐÓNG` chỉ có giá trị khi vấn đề
+`CLOSED`, còn lại hiện dấu gạch.
 
 Thêm một cột hoặc một chỉ dấu cho **số hạng mục**, ví dụ "3 hạng mục" — vì bây giờ hai vấn đề
 cùng mức độ có thể khác nhau rất nhiều về khối lượng.
 
-### 3.4. Trang chi tiết
+### 3.4. Biểu mẫu sửa cũng là màn xem
 
-Khối tổng quan ở trên, danh sách hạng mục ở dưới, xếp theo `sort_order` rồi `id`.
+Không có, và không dựng, một template trang chi tiết riêng. Biểu mẫu sửa hiện có đóng luôn vai
+trò màn xem thông qua `can_write`; dựng màn thứ hai sẽ nhân đôi toàn bộ render hạng mục.
+
+Khối tổng quan ở trên, danh sách hạng mục ở dưới, xếp theo `sort_order` rồi `id`. Khi đang sửa
+một vấn đề, khối tổng quan hiện chỉ đọc Trạng thái, Hạn xử lý và, chỉ khi `CLOSED`, Ngày đóng.
 
 Mỗi hạng mục hiện đủ Mức độ, Trạng thái, Hạn xử lý, Người phụ trách, Mô tả vấn đề, Đề xuất giải
 pháp.
 
 Hạng mục đã đóng nên phân biệt được bằng mắt với hạng mục đang mở.
+
+### 3.5. Bốn bề mặt của mô đun vấn đề
+
+Mọi thay đổi ở cấp vấn đề phải kiểm cả bốn bề mặt: danh sách toàn hệ thống, danh sách theo dự án,
+biểu mẫu tạo/sửa qua hai lối vào, và dashboard dự án. Dashboard dự án là bề mặt chỉ đọc đã được
+bảo vệ riêng; chỉ sửa đúng trường bị thay đổi, không nới truy vấn, phân quyền hoặc phạm vi dữ liệu.
 
 ---
 
@@ -314,10 +327,13 @@ Sau đó bỏ cột `owner_user_id` khỏi `persistent_issues`, và tính lại 
 `downgrade` phải: tạo lại cột `owner_user_id`, điền lại từ hạng mục tương ứng, rồi xoá bảng mới.
 Với 3 hàng thì kiểm được cả hai chiều bằng mắt — **hãy kiểm thật**, đừng chỉ viết.
 
-### 5.1. Xác minh trên PostgreSQL thật, vì test không chạy migration
+### 5.1. Xác minh trên cả PostgreSQL và SQLite
 
-Test dựng schema bằng `db.create_all()` nên **không chạy migration**. Phải tự chạy đủ vòng này
-trên database development và dán kết quả vào phần trả lời:
+Phần lớn test dựng schema bằng `db.create_all()`, nhưng nhận định "test không chạy migration" là
+**sai**. `tests/test_security_hardening.py::test_reset_local_dev_runs_migrations_and_seeds_admin`
+chạy toàn bộ chuỗi migration trên SQLite và bắt buộc phải chạy với mọi migration. Tuy vậy, test
+SQLite không thay thế xác minh PostgreSQL: vẫn phải tự chạy đủ vòng này trên database development
+và dán kết quả vào phần trả lời:
 
 ```
 flask db upgrade
@@ -334,32 +350,35 @@ chỉ phát hiện ra lúc cần rollback production.
 Kiểm chuỗi migration: `down_revision` trỏ đúng head hiện tại, và sau khi thêm còn **đúng một
 head**. Chạy `flask db heads` để xác nhận.
 
+### 5.2. Quyền đóng/mở lại đặt ở cấp hạng mục
+
+Giữ nguyên cờ capability theo dự án `can_close_reopen_issues`, permission code `issues.close` và
+helper `can_close_persistent_issue()`. Chúng không còn gác route đóng ở cấp vấn đề mà gác việc đổi
+trạng thái một hạng mục **vào hoặc ra** `CLOSED`. Mọi chuyển trạng thái khác, kể cả sang
+`RESOLVED`, chỉ cần quyền sửa vấn đề; người thi công phải có thể đánh dấu việc là đã xử lý trước
+khi người quản lý kiểm tra và đóng.
+
 ---
 
 ## 6. Dọn bộ lọc vấn đề
 
-Hiện trạng đã xác minh:
+Hai blueprint danh sách dùng một hàm lọc và một hàm dựng state URL trong `app/issues/services.py`.
+Mọi tiêu chí kết hợp bằng AND: mức độ tổng, trạng thái tổng, khoảng ngày mở, loại hạng mục và
+người phụ trách hạng mục. Dropdown lấy giá trị thật trong phạm vi dự án người dùng được xem; ở
+danh sách toàn hệ thống, loại hạng mục kèm mã dự án để không nhầm các danh mục trùng tên.
 
-- Có **hai** hàm `_apply_issue_filters` gần trùng nhau: `app/issues/routes.py:195` và
-  `app/projects/routes.py:316`. Chúng cho kết quả **giống nhau** hôm nay (một bên dùng chuỗi
-  `"CRITICAL"`, một bên dùng `DailyReportStatus.CRITICAL.value`, mà giá trị enum trùng chuỗi).
-- **Không có ô lọc nào** trên màn hình danh sách vấn đề, và **không có link lọc nào** trên
-  dashboard dự án. Bộ lọc chỉ chạy khi có người tự gõ tham số vào URL.
+Hai tiêu chí cấp hạng mục chỉ khớp hạng mục chưa xoá có trạng thái `{OPEN, PROCESSING}`. Vì đây là
+truy vấn qua bảng con, dùng `EXISTS`, không join thẳng, để một vấn đề có nhiều hạng mục khớp vẫn
+chỉ xuất hiện một lần.
 
-Việc cần làm:
+Mọi tiêu chí, cờ hiện vấn đề đã đóng và trang đều nằm trong URL; input không hợp lệ có thông báo
+tiếng Việt. Mặc định ẩn riêng vấn đề `CLOSED`, không ẩn `RESOLVED`, và luôn báo số vấn đề đóng đang
+ẩn. Trạng thái rỗng và trạng thái không có kết quả lọc là hai thông báo khác nhau.
 
-**Gộp hai hàm thành một**, đặt ở nơi cả hai chỗ dùng được. Sửa một bên mà quên bên kia sẽ làm hai
-màn hình lệch nhau âm thầm — và Phase 14 chính là lần sửa đó.
-
-**Thêm ô lọc thật** trên màn hình danh sách vấn đề, vì code lọc đang tồn tại mà không ai dùng
-được. Các tiêu chí nên có sau Phase 14: mức độ, trạng thái, khoảng ngày mở, và **loại hạng mục** —
-tiêu chí cuối là năng lực mới mà hạng mục mở ra, cho phép hỏi "những vấn đề nào có mặt An toàn".
-
-Lọc theo loại hạng mục là truy vấn qua bảng con, nên phải dùng `EXISTS` hoặc join có
-`DISTINCT` — cẩn thận không nhân bản dòng khi một vấn đề có nhiều hạng mục khớp.
-
-Mọi tiêu chí lọc nằm trong URL để chia sẻ được và bấm Back đúng, giống cách
-`app/construction_progress/routes.py` làm với `_entry_list_state()`.
+Cả hai danh sách phân trang **20 dòng mỗi trang**, dùng macro chung
+`app/templates/partials/_pagination.html`. Đếm tổng dùng truy vấn không `ORDER BY`; dữ liệu trang
+sắp `opened_date DESC, id DESC` để thứ tự ổn định. Số hạng mục chỉ được tổng hợp cho các vấn đề
+trên trang hiện tại, tránh N+1 và tránh tính cho toàn bộ tập kết quả.
 
 ---
 
@@ -388,10 +407,10 @@ Test bắt buộc: người dùng có quyền trên dự án 1 gửi `section_id
 | 2 | Hàm tổng hợp §2 cộng script kiểm bất biến §2.5 | Quy tắc tính là trái tim của phase, phải kiểm được trước khi UI phụ thuộc vào nó |
 | **CỔNG 1** | Chạy script kiểm bất biến trên dữ liệu thật. Dán kết quả | Sai quy tắc tính thì mọi thứ phía trên sai theo |
 | 3 | Biểu mẫu tạo và sửa §3.1, gồm nút thêm hạng mục | |
-| 4 | Trang chi tiết §3.4 và màn danh sách §3.3 | |
+| 4 | Bổ sung giá trị tự tính chỉ đọc vào biểu mẫu sửa §3.4 và dọn màn danh sách §3.3 | |
 | **CỔNG 2** | Chủ dự án tự tạo một vấn đề có 3 hạng mục, đổi trạng thái từng cái, xem trạng thái tổng có tự đóng đúng lúc | Không test tay thì không biết quy tắc §2.1 có khớp cảm nhận thật hay không |
 | 5 | Bỏ nút đóng và sửa audit §4 | Sau khi luồng mới đã chạy được |
-| 6 | Dọn bộ lọc §6 | |
+| 6 | Dọn bộ lọc và phân trang §6 | |
 | 7 | Chốt: `PHASE14_RESULT.md`, gồm các giới hạn đã biết và việc còn tồn | |
 
 Mỗi bước chạy `pytest` đầy đủ và cấp **ít nhất 20 phút** — bộ test mất khoảng 7 phút, timeout ngắn
