@@ -40,15 +40,9 @@ class PersistentIssue(TimestampMixin, SoftDeleteMixin, db.Model):
     opened_date = db.Column(db.Date, nullable=False)
     due_date = db.Column(db.Date, nullable=True)
     closed_date = db.Column(db.Date, nullable=True)
-    owner_user_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=True)
     created_by_user_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=False)
 
     project = db.relationship("Project", back_populates="persistent_issues")
-    owner = db.relationship(
-        "User",
-        back_populates="owned_issues",
-        foreign_keys=[owner_user_id],
-    )
     created_by = db.relationship(
         "User",
         back_populates="created_issues",

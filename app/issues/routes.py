@@ -17,6 +17,7 @@ from app.issues.services import (
     create_issue,
     delete_issue,
     issue_form_context,
+    issue_list_context,
     issue_sections,
     reopen_issue,
     issue_viewable_projects_query,
@@ -48,15 +49,12 @@ def index():
     can_create = can_create_persistent_issue()
     return render_template(
         "issues/index.html",
-        issues=issues,
-        project=None,
-        can_write=False,
-        can_delete=False,
-        can_create=can_create,
-        create_url=url_for("issues.new") if can_create else None,
-        can_edit_by_issue={issue.id: can_edit_persistent_issue(issue) for issue in issues},
-        can_close_by_issue={issue.id: can_close_persistent_issue(issue) for issue in issues},
-        can_delete_by_issue={issue.id: can_delete_persistent_issue(issue) for issue in issues},
+        **issue_list_context(
+            issues,
+            project=None,
+            can_create=can_create,
+            create_url=url_for("issues.new") if can_create else None,
+        ),
     )
 
 
@@ -119,6 +117,9 @@ def edit(issue_id):
             form_issue = build_issue_form_data(request.form, issue.project_id)
             form_issue.id = issue.id
             form_issue.project = issue.project
+            form_issue.status = issue.status
+            form_issue.due_date = issue.due_date
+            form_issue.closed_date = issue.closed_date
             return _render_form(form_issue, form_errors=exc.errors), 400
         flash("Đã lưu vấn đề tồn đọng.", "success")
         return redirect(url_for("projects.issues", project_id=issue.project_id))

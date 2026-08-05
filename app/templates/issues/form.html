@@ -43,6 +43,17 @@
       <textarea class="form-control" id="description" name="description" rows="4" {% if not can_write %}disabled{% endif %}>{{ issue.description or '' }}</textarea>
     </div>
     <div class="col-12"><p class="text-muted mb-0">Trạng thái và hạn xử lý được tính tự động từ các hạng mục bên dưới.</p></div>
+    {% if issue.id %}
+      <div class="col-12">
+        <section class="border rounded p-3 bg-light" data-issue-rollup>
+          <div class="row g-3">
+            <div class="col-md-4"><span class="d-block text-muted small">Trạng thái</span><span class="badge status-badge status-{{ issue.status|lower }}">{{ issue.status|issue_status_label }}</span></div>
+            <div class="col-md-4"><span class="d-block text-muted small">Hạn xử lý</span><span>{{ issue.due_date|vn_date or '-' }}</span></div>
+            {% if issue.status == 'CLOSED' %}<div class="col-md-4"><span class="d-block text-muted small">Ngày đóng</span><span>{{ issue.closed_date|vn_date or '-' }}</span></div>{% endif %}
+          </div>
+        </section>
+      </div>
+    {% endif %}
   </div>
 
   <hr class="my-4">

@@ -3,11 +3,8 @@ from flask_login import current_user
 
 from app.auth.permissions import (
     can_create_persistent_issue,
-    can_close_persistent_issue,
-    can_delete_persistent_issue,
     can_delete_report,
     can_edit_report,
-    can_edit_persistent_issue,
     can_create_report,
     can_read_project,
     can_access_reports_module,
@@ -23,6 +20,7 @@ from app.issues.services import (
     build_issue_form_data,
     create_issue,
     issue_form_context,
+    issue_list_context,
     issue_sections,
     project_issues_query,
 )
@@ -219,15 +217,12 @@ def issues(project_id):
     can_create = can_create_persistent_issue(project.id)
     return render_template(
         "issues/index.html",
-        project=project,
-        issues=issues,
-        can_write=False,
-        can_delete=False,
-        can_create=can_create,
-        create_url=url_for("projects.issues_create", project_id=project.id) if can_create else None,
-        can_edit_by_issue={issue.id: can_edit_persistent_issue(issue) for issue in issues},
-        can_close_by_issue={issue.id: can_close_persistent_issue(issue, current_user) for issue in issues},
-        can_delete_by_issue={issue.id: can_delete_persistent_issue(issue, current_user) for issue in issues},
+        **issue_list_context(
+            issues,
+            project=project,
+            can_create=can_create,
+            create_url=url_for("projects.issues_create", project_id=project.id) if can_create else None,
+        ),
     )
 
 

@@ -53,7 +53,6 @@ def seed_dashboard_data():
                 status="OPEN",
                 opened_date=date(2026, 7, 1),
                 created_by_user_id=3,
-                owner_user_id=3,
             ),
             PersistentIssue(
                 id=202,
@@ -118,6 +117,18 @@ def test_project_dashboard_uses_project_context_issue_wording(client, app):
     assert response.status_code == 200
     assert "Vấn đề tồn đọng".encode() in response.data
     assert "Vấn đề đang mở".encode() not in response.data
+
+
+def test_project_dashboard_renders_without_issue_owner_column(client, app):
+    with app.app_context():
+        seed_dashboard_data()
+    login(client, "viewer")
+
+    response = client.get("/reports/projects/1/dashboard")
+
+    assert response.status_code == 200
+    assert b"Assigned open issue" in response.data
+    assert b"<th>Ph\xe1\xbb\xa5 tr\xc3\xa1ch</th>" not in response.data
 
 
 def _seed_project_progress_dashboard_data():

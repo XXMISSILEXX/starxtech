@@ -57,7 +57,6 @@ def test_reporter_does_not_see_delete_issue_button(client, app):
                 status="OPEN",
                 opened_date=date(2026, 7, 8),
                 created_by_user_id=3,
-                owner_user_id=3,
             )
         )
         db.session.commit()

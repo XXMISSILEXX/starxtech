@@ -66,11 +66,6 @@ class User(UserMixin, TimestampMixin, SoftDeleteMixin, db.Model):
         back_populates="uploaded_by",
         foreign_keys="ReportAttachment.uploaded_by_user_id",
     )
-    owned_issues = db.relationship(
-        "PersistentIssue",
-        back_populates="owner",
-        foreign_keys="PersistentIssue.owner_user_id",
-    )
     created_issues = db.relationship(
         "PersistentIssue",
         back_populates="created_by",

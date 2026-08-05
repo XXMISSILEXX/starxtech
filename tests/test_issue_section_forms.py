@@ -182,6 +182,132 @@ def test_issue_form_has_no_overview_status_due_date_or_owner_fields(client):
         assert response.data.index(b'data-issue-sections') < response.data.index(b'persistent-issue-sections.js')
 
 
+def _issue_with_sections(*, issue_id, status, due_date=None, closed_date=None, section_count=1):
+    issue = PersistentIssue(
+        id=issue_id,
+        project_id=1,
+        title=f"Vấn đề #{issue_id}",
+        severity="HIGH",
+        status=status,
+        opened_date=date(2026, 8, 1),
+        due_date=due_date,
+        closed_date=closed_date,
+        created_by_user_id=1,
+    )
+    db.session.add(issue)
+    for sort_order in range(section_count):
+        category_id = sort_order + 1
+        if category_id > 2:
+            category_id += 10
+            db.session.add(
+                ReportCategory(
+                    id=category_id,
+                    project_id=1,
+                    name=f"Hạng mục {sort_order + 1}",
+                    sort_order=sort_order + 1,
+                    is_active=True,
+                )
+            )
+        db.session.add(
+            PersistentIssueSection(
+                persistent_issue_id=issue_id,
+                report_category_id=category_id,
+                severity="HIGH",
+                status=status,
+                due_date=due_date,
+                sort_order=sort_order,
+                created_by_id=1,
+            )
+        )
+    db.session.commit()
+    return issue
+
+
+def test_closed_issue_edit_form_displays_read_only_rollup_values(client, app):
+    with app.app_context():
+        _issue_with_sections(
+            issue_id=3201,
+            status="CLOSED",
+            due_date=date(2026, 8, 4),
+            closed_date=date(2026, 8, 5),
+        )
+    login(client, "super")
+
+    response = client.get("/reports/issues/3201/edit")
+    rollup = response.data.split(b"data-issue-rollup", 1)[1].split(b"</section>", 1)[0]
+
+    assert response.status_code == 200
+    assert b"Tr\xe1\xba\xa1ng th\xc3\xa1i" in rollup
+    assert b"\xc4\x90\xc3\xa3 \xc4\x91\xc3\xb3ng" in rollup
+    assert b"H\xe1\xba\xa1n x\xe1\xbb\xad l\xc3\xbd" in rollup
+    assert b"Ng\xc3\xa0y \xc4\x91\xc3\xb3ng" in rollup
+    assert b"05/08/2026" in rollup
+    assert b"<input" not in rollup
+    assert b"<select" not in rollup
+    assert b"name=" not in rollup
+
+
+def test_open_issue_edit_form_omits_closed_date(client, app):
+    with app.app_context():
+        _issue_with_sections(issue_id=3202, status="OPEN", due_date=date(2026, 8, 9))
+    login(client, "super")
+
+    response = client.get("/reports/issues/3202/edit")
+    rollup = response.data.split(b"data-issue-rollup", 1)[1].split(b"</section>", 1)[0]
+
+    assert response.status_code == 200
+    assert b"Ng\xc3\xa0y \xc4\x91\xc3\xb3ng" not in rollup
+
+
+def test_invalid_issue_edit_keeps_read_only_rollup_values(client, app):
+    with app.app_context():
+        _issue_with_sections(
+            issue_id=3204,
+            status="CLOSED",
+            closed_date=date(2026, 8, 5),
+        )
+    login(client, "super")
+
+    response = client.post(
+        "/reports/issues/3204/edit",
+        data={"title": "", "severity": "HIGH", "opened_date": "2026-08-01"},
+    )
+
+    assert response.status_code == 400
+    assert b"data-issue-rollup" in response.data
+    assert b"Ng\xc3\xa0y \xc4\x91\xc3\xb3ng" in response.data
+
+
+def test_new_issue_form_omits_read_only_rollup_section(client):
+    login(client, "super")
+
+    for url in ("/reports/issues/new?project_id=1", "/reports/projects/1/issues/create"):
+        response = client.get(url)
+
+        assert response.status_code == 200
+        assert b"data-issue-rollup" not in response.data
+
+
+def test_both_issue_lists_show_closed_date_and_section_count(client, app):
+    with app.app_context():
+        _issue_with_sections(
+            issue_id=3203,
+            status="CLOSED",
+            closed_date=date(2026, 8, 5),
+            section_count=5,
+        )
+    login(client, "super")
+
+    for url in ("/reports/issues", "/reports/projects/1/issues"):
+        response = client.get(url)
+
+        assert response.status_code == 200
+        assert b"<th>Ph\xe1\xbb\xa5 tr\xc3\xa1ch</th>" not in response.data
+        assert b"<th>Ng\xc3\xa0y \xc4\x91\xc3\xb3ng</th>" in response.data
+        assert b"05/08/2026" in response.data
+        assert b"5 h\xe1\xba\xa1ng m\xe1\xbb\xa5c" in response.data
+
+
 def test_unauthorized_create_does_not_create_issue_or_sections(client, app):
     login(client, "reporter")
     with app.app_context():

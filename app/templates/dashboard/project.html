@@ -160,7 +160,6 @@
             <th>Trạng thái</th>
             <th>Mức độ</th>
             <th>Hạn xử lý</th>
-            <th>Phụ trách</th>
           </tr>
         </thead>
         <tbody>
@@ -170,10 +169,9 @@
               <td><span class="badge status-badge status-{{ issue.status|lower }}">{{ issue.status|status_label }}</span></td>
               <td><span class="badge status-badge severity-{{ issue.severity|lower }}">{{ issue.severity|issue_severity_label }}</span></td>
             <td>{{ issue.due_date|vn_date or '—' }}</td>
-            <td>{{ issue.owner.full_name if issue.owner else '-' }}</td>
           </tr>
         {% else %}
-            <tr><td colspan="5"><div class="empty-state"><i class="bi bi-check2-circle"></i>Không có vấn đề tồn đọng.</div></td></tr>
+            <tr><td colspan="4"><div class="empty-state"><i class="bi bi-check2-circle"></i>Không có vấn đề tồn đọng.</div></td></tr>
         {% endfor %}
       </tbody>
     </table>
