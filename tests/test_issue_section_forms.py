@@ -182,6 +182,26 @@ def test_issue_form_has_no_overview_status_due_date_or_owner_fields(client):
         assert response.data.index(b'data-issue-sections') < response.data.index(b'persistent-issue-sections.js')
 
 
+def test_issue_section_form_exposes_localized_options_and_category_icon_to_js(client, app):
+    with app.app_context():
+        _issue_with_sections(issue_id=3102, status="OPEN")
+    login(client, "super")
+
+    response = client.get("/reports/issues/3102/edit")
+
+    assert response.status_code == 200
+    for label in (
+        "🟢 Thấp", "🟡 Trung bình", "🟠 Cao", "🔴 Nghiêm trọng",
+        "🟡 Đang mở", "🔵 Đang xử lý", "✅ Đã xử lý", "✅ Đã đóng",
+    ):
+        assert label.encode() in response.data
+    assert b'data-severity-options=' in response.data
+    assert b'data-status-options=' in response.data
+    assert b'<i class="bi bi-tools"></i>' in response.data
+    assert response.data.index(b'data-severity-options=') < response.data.index(b'persistent-issue-sections.js')
+    assert response.data.index(b'data-status-options=') < response.data.index(b'persistent-issue-sections.js')
+
+
 def _issue_with_sections(*, issue_id, status, due_date=None, closed_date=None, section_count=1):
     issue = PersistentIssue(
         id=issue_id,
@@ -298,7 +318,7 @@ def test_both_issue_lists_show_closed_date_and_section_count(client, app):
         )
     login(client, "super")
 
-    for url in ("/reports/issues", "/reports/projects/1/issues"):
+    for url in ("/reports/issues?show_closed=1", "/reports/projects/1/issues?show_closed=1"):
         response = client.get(url)
 
         assert response.status_code == 200

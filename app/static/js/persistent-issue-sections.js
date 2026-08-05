@@ -7,8 +7,8 @@
     const addButton = document.querySelector("[data-add-issue-section]");
     const categories = JSON.parse(container.dataset.categories || "[]");
     const owners = JSON.parse(container.dataset.owners || "[]");
-    const severityOptions = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
-    const statusOptions = ["OPEN", "PROCESSING", "RESOLVED", "CLOSED"];
+    const severityOptions = JSON.parse(container.dataset.severityOptions || "[]");
+    const statusOptions = JSON.parse(container.dataset.statusOptions || "[]");
 
     const rows = () => [...container.querySelectorAll("[data-issue-section-row]")];
     const indexes = () => rows().flatMap((row) => [...row.querySelectorAll("[name^='sections-']")])
@@ -26,8 +26,21 @@
       .filter(Boolean));
 
     const updateNumbers = () => rows().forEach((row, index) => {
-      row.querySelector("[data-issue-section-title]").textContent = `Hạng mục ${index + 1}`;
+      row.querySelector("[data-issue-section-title-text]").textContent = `Hạng mục ${index + 1}`;
     });
+
+    const setTitleIcon = (row, categoryId) => {
+      const icon = row.querySelector("[data-issue-section-title-icon]");
+      const category = categories.find((item) => String(item.id) === String(categoryId));
+      if (!category && categoryId) return;
+      icon.replaceChildren();
+      if (!category) {
+        icon.hidden = true;
+        return;
+      }
+      icon.innerHTML = category.icon || "";
+      icon.hidden = false;
+    };
 
     const setDetailsVisible = (row, visible) => {
       const details = row.querySelector("[data-issue-section-details]");
@@ -51,6 +64,7 @@
         select.append(option(selected, selectedLabel, true));
       }
       setDetailsVisible(row, Boolean(selected));
+      setTitleIcon(row, selected);
     });
 
     const field = (tag, name, value = "") => {
@@ -65,9 +79,9 @@
       const caption = document.createElement("label"); caption.className = "form-label"; caption.textContent = label;
       wrap.append(caption, control); return wrap;
     };
-    const selectField = (name, values, selected, labels = {}) => {
+    const selectField = (name, values, selected) => {
       const select = field("select", name); select.className = "form-select"; select.required = true;
-      values.forEach((value) => select.append(option(value, labels[value] || value, value === selected)));
+      values.forEach((item) => select.append(option(item.value, item.label, item.value === selected)));
       return select;
     };
     const createRow = () => {
@@ -76,6 +90,9 @@
       row.className = "border rounded p-3 mb-3"; row.dataset.issueSectionRow = "";
       const heading = document.createElement("div"); heading.className = "d-flex justify-content-between align-items-center gap-2 mb-3";
       const title = document.createElement("h3"); title.className = "h6 mb-0"; title.dataset.issueSectionTitle = "";
+      const titleIcon = document.createElement("span"); titleIcon.className = "me-1"; titleIcon.dataset.issueSectionTitleIcon = ""; titleIcon.hidden = true;
+      const titleText = document.createElement("span"); titleText.dataset.issueSectionTitleText = "";
+      title.append(titleIcon, titleText);
       const remove = document.createElement("button"); remove.type = "button"; remove.className = "btn btn-outline-danger btn-sm"; remove.dataset.removeIssueSection = ""; remove.textContent = "Xóa hạng mục";
       heading.append(title, remove);
       const sectionId = field("input", `sections-${index}-section-id`); sectionId.type = "hidden";

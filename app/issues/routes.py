@@ -3,7 +3,6 @@ from flask_login import current_user
 
 from app.auth.permissions import (
     can_create_persistent_issue,
-    can_close_persistent_issue,
     can_delete_persistent_issue,
     can_edit_persistent_issue,
     can_view_issue,
@@ -11,15 +10,16 @@ from app.auth.permissions import (
 from app.extensions import db
 from app.issues import bp
 from app.issues.services import (
+    ISSUE_LIST_PER_PAGE,
     IssueValidationError,
+    filtered_issue_list,
     build_issue_form_data,
-    close_issue,
     create_issue,
     delete_issue,
     issue_form_context,
     issue_list_context,
+    issue_list_state,
     issue_sections,
-    reopen_issue,
     issue_viewable_projects_query,
     update_issue,
 )
@@ -35,17 +35,12 @@ def index():
     # Generic project visibility is not issue visibility.  Scope rows, filters
     # and every derived count from the same capability-aware project set.
     project_ids = [project.id for project in issue_viewable_projects_query().all()]
-    issues = []
-    if project_ids:
-        query = (
-            PersistentIssue.query.filter(
-                PersistentIssue.project_id.in_(project_ids),
-                PersistentIssue.deleted_at.is_(None),
-            )
-        )
-        issues = _apply_issue_filters(query).order_by(
-            PersistentIssue.opened_date.desc(), PersistentIssue.id.desc()
-        ).all()
+    query = PersistentIssue.query.filter(
+        PersistentIssue.project_id.in_(project_ids),
+        PersistentIssue.deleted_at.is_(None),
+    )
+    state = issue_list_state(project_ids, request.args)
+    issues, total, hidden_closed_total = filtered_issue_list(query, state)
     can_create = can_create_persistent_issue()
     return render_template(
         "issues/index.html",
@@ -55,6 +50,10 @@ def index():
             can_create=can_create,
             create_url=url_for("issues.new") if can_create else None,
         ),
+        issue_filter_state=state,
+        issue_total=total,
+        issue_per_page=ISSUE_LIST_PER_PAGE,
+        hidden_closed_total=hidden_closed_total,
     )
 
 
@@ -127,26 +126,6 @@ def edit(issue_id):
     return _render_form(issue)
 
 
-@bp.post("/<int:issue_id>/close")
-def close(issue_id):
-    issue = _issue_or_404(issue_id)
-    if not can_close_persistent_issue(issue):
-        abort(403)
-    close_issue(issue)
-    flash("Đã đóng vấn đề tồn đọng.", "success")
-    return redirect(url_for("projects.issues", project_id=issue.project_id))
-
-
-@bp.post("/<int:issue_id>/reopen")
-def reopen(issue_id):
-    issue = _issue_or_404(issue_id)
-    if not can_close_persistent_issue(issue):
-        abort(403)
-    reopen_issue(issue)
-    flash("Đã mở lại vấn đề tồn đọng.", "success")
-    return redirect(url_for("projects.issues", project_id=issue.project_id))
-
-
 @bp.post("/<int:issue_id>/delete")
 def delete(issue_id):
     issue = _issue_or_404(issue_id)
@@ -195,25 +174,6 @@ def _issue_or_404(issue_id):
         PersistentIssue.id == issue_id,
         PersistentIssue.deleted_at.is_(None),
     ).first_or_404()
-
-
-def _apply_issue_filters(query):
-    status = request.args.get("status", "").strip()
-    date_from = request.args.get("date_from", "").strip()
-    date_to = request.args.get("date_to", "").strip()
-
-    if status == "CRITICAL":
-        query = query.filter(PersistentIssue.severity == IssueSeverity.CRITICAL.value)
-    elif status == "ATTENTION":
-        query = query.filter(PersistentIssue.severity == IssueSeverity.HIGH.value)
-    elif status == "PROCESSING":
-        query = query.filter(PersistentIssue.status == IssueStatus.PROCESSING.value)
-
-    if date_from:
-        query = query.filter(PersistentIssue.opened_date >= date_from)
-    if date_to:
-        query = query.filter(PersistentIssue.opened_date <= date_to)
-    return query
 
 
 def _selected_project_from_request(projects):

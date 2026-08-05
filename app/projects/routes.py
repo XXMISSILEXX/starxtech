@@ -16,16 +16,19 @@ from app.date_utils import local_today
 from app.dashboard.services import project_dashboard_context
 from app.extensions import db
 from app.issues.services import (
+    ISSUE_LIST_PER_PAGE,
     IssueValidationError,
     build_issue_form_data,
     create_issue,
+    filtered_issue_list,
     issue_form_context,
     issue_list_context,
+    issue_list_state,
     issue_sections,
     project_issues_query,
 )
 from app.models import DailyReport, DailyReportStatus, Project, SectionStatus
-from app.models import IssueSeverity, IssueStatus, PersistentIssue
+from app.models import PersistentIssue
 from app.projects import bp
 from app.reports.services import (
     ReportValidationError,
@@ -213,7 +216,10 @@ def issues(project_id):
     project = _project_or_404(project_id)
     if not can_read_project(project.id) or not can_view_issue(current_user, PersistentIssue(project_id=project.id)):
         abort(403)
-    issues = _apply_issue_filters(project_issues_query(project.id)).all()
+    state = issue_list_state([project.id], request.args)
+    issues, total, hidden_closed_total = filtered_issue_list(
+        project_issues_query(project.id), state
+    )
     can_create = can_create_persistent_issue(project.id)
     return render_template(
         "issues/index.html",
@@ -223,6 +229,10 @@ def issues(project_id):
             can_create=can_create,
             create_url=url_for("projects.issues_create", project_id=project.id) if can_create else None,
         ),
+        issue_filter_state=state,
+        issue_total=total,
+        issue_per_page=ISSUE_LIST_PER_PAGE,
+        hidden_closed_total=hidden_closed_total,
     )
 
 
@@ -308,25 +318,6 @@ def _project_or_404(project_id):
         Project.id == project_id,
         Project.deleted_at.is_(None),
     ).first_or_404()
-
-
-def _apply_issue_filters(query):
-    status = request.args.get("status", "").strip()
-    date_from = request.args.get("date_from", "").strip()
-    date_to = request.args.get("date_to", "").strip()
-
-    if status == DailyReportStatus.CRITICAL.value:
-        query = query.filter(PersistentIssue.severity == IssueSeverity.CRITICAL.value)
-    elif status == DailyReportStatus.ATTENTION.value:
-        query = query.filter(PersistentIssue.severity == IssueSeverity.HIGH.value)
-    elif status == DailyReportStatus.PROCESSING.value:
-        query = query.filter(PersistentIssue.status == IssueStatus.PROCESSING.value)
-
-    if date_from:
-        query = query.filter(PersistentIssue.opened_date >= date_from)
-    if date_to:
-        query = query.filter(PersistentIssue.opened_date <= date_to)
-    return query
 
 
 def _flash_reselect_images_if_needed(files):

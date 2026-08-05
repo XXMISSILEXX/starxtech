@@ -254,15 +254,15 @@ def _issue(app, *, project_id=1, title="Phase 10 issue"):
         return issue.id
 
 
-def test_issue_delete_requires_dangerous_permission_but_not_edit_or_reopen(client, app):
+def test_issue_delete_requires_dangerous_permission_but_not_edit(client, app):
     issue_id = _issue(app)
     assert login(client, "pm").status_code == 302
     assert client.post(f"/reports/issues/{issue_id}/edit", data={
         "title": "Edited without delete grant", "description": "x", "severity": "HIGH",
         "status": "OPEN", "opened_date": "2026-07-28", "due_date": "",
     }).status_code == 302
-    assert client.post(f"/reports/issues/{issue_id}/close").status_code == 302
-    assert client.post(f"/reports/issues/{issue_id}/reopen").status_code == 302
+    assert client.post(f"/reports/issues/{issue_id}/close").status_code == 404
+    assert client.post(f"/reports/issues/{issue_id}/reopen").status_code == 404
     assert client.post(f"/reports/issues/{issue_id}/delete").status_code == 403
     with app.app_context():
         assert db.session.get(PersistentIssue, issue_id).deleted_at is None

@@ -1,7 +1,9 @@
-from datetime import date, datetime
+from datetime import date
 from types import SimpleNamespace
 
 from flask_login import current_user
+from sqlalchemy import exists
+from sqlalchemy.orm import joinedload
 
 from app.admin.services import add_with_sqlite_id, audit
 from app.date_utils import local_today, parse_iso_date
@@ -17,12 +19,17 @@ from app.models import (
     User,
 )
 from app.project_memberships import accessible_project_ids
+from app.ui import issue_severity_label, issue_status_label
 
 
 class IssueValidationError(ValueError):
     def __init__(self, message, errors=None):
         super().__init__(message)
         self.errors = errors or {}
+
+
+ISSUE_LIST_PER_PAGE = 20
+OPEN_SECTION_STATUSES = (IssueStatus.OPEN.value, IssueStatus.PROCESSING.value)
 
 
 def recalculate_issue_rollup(issue):
@@ -81,10 +88,174 @@ def project_issues_query(project_id):
     ).order_by(PersistentIssue.opened_date.desc(), PersistentIssue.id.desc())
 
 
+def issue_list_state(project_ids, source=None):
+    """Parse URL-backed issue filters and choices scoped to visible projects."""
+    source = source or {}
+    project_ids = list(project_ids)
+    state = {
+        "severity": source.get("severity", ""),
+        "status": source.get("status", ""),
+        "date_from": source.get("date_from", ""),
+        "date_to": source.get("date_to", ""),
+        "category_id": source.get("category_id", ""),
+        "owner_user_id": source.get("owner_user_id", ""),
+        "show_closed": source.get("show_closed", "0") == "1",
+        "page": source.get("page", 1),
+        "errors": [],
+        "severities": [severity.value for severity in IssueSeverity],
+        "statuses": [status.value for status in IssueStatus],
+    }
+    state["categories"] = _issue_filter_categories(project_ids)
+    state["owners"] = _issue_filter_owners(project_ids)
+
+    if state["severity"] and state["severity"] not in state["severities"]:
+        state["errors"].append("Mức độ không hợp lệ.")
+        state["severity_value"] = None
+    else:
+        state["severity_value"] = state["severity"] or None
+    if state["status"] and state["status"] not in state["statuses"]:
+        state["errors"].append("Trạng thái không hợp lệ.")
+        state["status_value"] = None
+    else:
+        state["status_value"] = state["status"] or None
+
+    try:
+        state["date_from_value"] = parse_iso_date(state["date_from"], field_label="Từ ngày")
+        state["date_to_value"] = parse_iso_date(state["date_to"], field_label="Đến ngày")
+    except ValueError as exc:
+        state["errors"].append(str(exc))
+        state["date_from_value"] = state["date_to_value"] = None
+    if state["date_from_value"] and state["date_to_value"] and state["date_from_value"] > state["date_to_value"]:
+        state["errors"].append("Từ ngày không được lớn hơn đến ngày.")
+
+    state["category_id_value"] = _filter_choice_id(
+        state["category_id"],
+        {category.id for category, _project in state["categories"]},
+        "Loại hạng mục không hợp lệ.",
+        state["errors"],
+    )
+    state["owner_user_id_value"] = _filter_choice_id(
+        state["owner_user_id"],
+        {owner.id for owner in state["owners"]},
+        "Người phụ trách hạng mục không hợp lệ.",
+        state["errors"],
+    )
+    try:
+        state["page"] = max(1, int(state["page"]))
+    except ValueError:
+        state["page"] = 1
+    state["has_explicit_filters"] = any(
+        state[key]
+        for key in ("severity", "status", "date_from", "date_to", "category_id", "owner_user_id")
+    )
+    return state
+
+
+def apply_issue_filters(query, state, *, include_closed=False):
+    """Apply one AND-combined filter set without joining issue sections."""
+    if state["severity_value"]:
+        query = query.filter(PersistentIssue.severity == state["severity_value"])
+    if state["status_value"]:
+        query = query.filter(PersistentIssue.status == state["status_value"])
+    if state["date_from_value"]:
+        query = query.filter(PersistentIssue.opened_date >= state["date_from_value"])
+    if state["date_to_value"]:
+        query = query.filter(PersistentIssue.opened_date <= state["date_to_value"])
+    if state["category_id_value"] is not None or state["owner_user_id_value"] is not None:
+        section_query = exists().where(
+            PersistentIssueSection.persistent_issue_id == PersistentIssue.id,
+            PersistentIssueSection.deleted_at.is_(None),
+            PersistentIssueSection.status.in_(OPEN_SECTION_STATUSES),
+        )
+        if state["category_id_value"] is not None:
+            section_query = section_query.where(
+                PersistentIssueSection.report_category_id == state["category_id_value"]
+            )
+        if state["owner_user_id_value"] is not None:
+            section_query = section_query.where(
+                PersistentIssueSection.owner_user_id == state["owner_user_id_value"]
+            )
+        query = query.filter(section_query)
+    if not include_closed and not state["show_closed"]:
+        query = query.filter(PersistentIssue.status != IssueStatus.CLOSED.value)
+    return query
+
+
+def issue_list_page(query, page, per_page=ISSUE_LIST_PER_PAGE):
+    """Count and fetch a stable, project-loaded page of persistent issues."""
+    total = query.order_by(None).count()
+    issues = query.options(joinedload(PersistentIssue.project)).order_by(None).order_by(
+        PersistentIssue.opened_date.desc(),
+        PersistentIssue.id.desc(),
+    ).offset((page - 1) * per_page).limit(per_page).all()
+    return issues, total
+
+
+def filtered_issue_list(query, state):
+    """Return one filtered page and the number of closed rows hidden from it."""
+    if state["errors"]:
+        return [], 0, 0
+
+    query_with_closed = apply_issue_filters(query, state, include_closed=True)
+    hidden_closed_total = 0
+    if not state["show_closed"]:
+        hidden_closed_total = query_with_closed.filter(
+            PersistentIssue.status == IssueStatus.CLOSED.value
+        ).order_by(None).count()
+    visible_query = apply_issue_filters(query, state)
+    issues, total = issue_list_page(visible_query, state["page"])
+    return issues, total, hidden_closed_total
+
+
+def _issue_filter_categories(project_ids):
+    if not project_ids:
+        return []
+    return (
+        db.session.query(ReportCategory, Project)
+        .join(Project, Project.id == ReportCategory.project_id)
+        .filter(
+            ReportCategory.project_id.in_(project_ids),
+            ReportCategory.deleted_at.is_(None),
+        )
+        .order_by(Project.code.asc(), ReportCategory.sort_order.asc(), ReportCategory.id.asc())
+        .all()
+    )
+
+
+def _issue_filter_owners(project_ids):
+    if not project_ids:
+        return []
+    return (
+        User.query.join(PersistentIssueSection, PersistentIssueSection.owner_user_id == User.id)
+        .join(PersistentIssue, PersistentIssue.id == PersistentIssueSection.persistent_issue_id)
+        .filter(
+            PersistentIssue.project_id.in_(project_ids),
+            PersistentIssue.deleted_at.is_(None),
+            PersistentIssueSection.deleted_at.is_(None),
+        )
+        .distinct()
+        .order_by(User.full_name.asc(), User.id.asc())
+        .all()
+    )
+
+
+def _filter_choice_id(raw_value, valid_ids, error_message, errors):
+    if not raw_value:
+        return None
+    try:
+        value = int(raw_value)
+    except ValueError:
+        errors.append(error_message)
+        return None
+    if value not in valid_ids:
+        errors.append(error_message)
+        return None
+    return value
+
+
 def issue_list_context(issues, *, project, can_create, create_url, actor=None):
     """Build shared list-template context without per-issue section queries."""
     from app.auth.permissions import (
-        can_close_persistent_issue,
         can_delete_persistent_issue,
         can_edit_persistent_issue,
     )
@@ -116,7 +287,6 @@ def issue_list_context(issues, *, project, can_create, create_url, actor=None):
         "can_create": can_create,
         "create_url": create_url,
         "can_edit_by_issue": {issue.id: can_edit_persistent_issue(issue, actor) for issue in issues},
-        "can_close_by_issue": {issue.id: can_close_persistent_issue(issue, actor) for issue in issues},
         "can_delete_by_issue": {issue.id: can_delete_persistent_issue(issue, actor) for issue in issues},
     }
 
@@ -169,6 +339,14 @@ def issue_form_context(project_id, issue=None, submitted_sections=None):
         "owners": owner_choices(project_id),
         "severities": [severity.value for severity in IssueSeverity],
         "section_statuses": [status.value for status in IssueStatus],
+        "section_severity_options": [
+            {"value": severity.value, "label": issue_severity_label(severity.value)}
+            for severity in IssueSeverity
+        ],
+        "section_status_options": [
+            {"value": status.value, "label": issue_status_label(status.value)}
+            for status in IssueStatus
+        ],
     }
 
 
@@ -205,25 +383,11 @@ def update_issue(issue, form):
     _assign_issue_fields(issue, form, issue.project_id)
     replace_issue_sections(issue, section_inputs)
     issue = recalculate_issue_rollup(issue)
-    audit("issue.update", "PersistentIssue", issue.id, old_values, issue_snapshot(issue))
+    new_values = issue_snapshot(issue)
+    if _issue_editable_values_changed(old_values, new_values):
+        audit("issue.update", "PersistentIssue", issue.id, old_values, new_values)
     db.session.commit()
     return issue
-
-
-def close_issue(issue):
-    old_values = issue_snapshot(issue)
-    issue.status = IssueStatus.CLOSED.value
-    issue.closed_date = local_today()
-    audit("issue.close", "PersistentIssue", issue.id, old_values, issue_snapshot(issue))
-    db.session.commit()
-
-
-def reopen_issue(issue):
-    old_values = issue_snapshot(issue)
-    issue.status = IssueStatus.OPEN.value
-    issue.closed_date = None
-    audit("issue.reopen", "PersistentIssue", issue.id, old_values, issue_snapshot(issue))
-    db.session.commit()
 
 
 def delete_issue(issue):
@@ -244,6 +408,27 @@ def issue_snapshot(issue):
         "due_date": issue.due_date.isoformat() if issue.due_date else None,
         "closed_date": issue.closed_date.isoformat() if issue.closed_date else None,
     }
+
+
+def issue_section_snapshot(section):
+    return {
+        "report_category_id": section.report_category_id,
+        "severity": section.severity,
+        "status": section.status,
+        "due_date": section.due_date.isoformat() if section.due_date else None,
+        "owner_user_id": section.owner_user_id,
+        "description": section.description,
+        "proposed_solution": section.proposed_solution,
+        "created_at": section.created_at.isoformat() if section.created_at else None,
+        "created_by_id": section.created_by_id,
+    }
+
+
+def _issue_editable_values_changed(old_values, new_values):
+    return any(
+        old_values[field] != new_values[field]
+        for field in ("title", "description", "severity", "opened_date")
+    )
 
 
 def _assign_issue_fields(issue, form, project_id):
@@ -400,13 +585,22 @@ def replace_issue_sections(issue, section_inputs):
     unknown_ids = set(submitted_ids) - set(existing_sections)
     if unknown_ids:
         raise IssueValidationError("Hạng mục không thuộc vấn đề này.")
+    _validate_section_close_reopen_permission(issue, section_inputs, existing_sections)
     _validate_issue_section_categories(issue, section_inputs, existing_sections)
 
     submitted_id_set = set(submitted_ids)
     for section in existing_sections.values():
         if section.id not in submitted_id_set:
+            old_values = issue_section_snapshot(section)
             section.deleted_at = db.func.now()
             section.updated_by_id = current_user.id
+            audit(
+                "issue.section.delete",
+                "PersistentIssueSection",
+                section.id,
+                old_values,
+                {"deleted_at": True},
+            )
 
     for section_input in section_inputs:
         section = existing_sections.get(section_input["section_id"])
@@ -417,6 +611,8 @@ def replace_issue_sections(issue, section_inputs):
             )
             db.session.add(section)
         else:
+            old_values = issue_section_snapshot(section)
+            old_sort_order = section.sort_order
             section.updated_by_id = current_user.id
         section.deleted_at = None
         section.report_category_id = section_input["report_category_id"]
@@ -427,6 +623,41 @@ def replace_issue_sections(issue, section_inputs):
         section.description = section_input["description"]
         section.proposed_solution = section_input["proposed_solution"]
         section.sort_order = section_input["sort_order"]
+        if section_input["section_id"] is not None:
+            new_values = issue_section_snapshot(section)
+            if old_values != new_values or old_sort_order != section.sort_order:
+                audit(
+                    _section_audit_action(old_values["status"], new_values["status"]),
+                    "PersistentIssueSection",
+                    section.id,
+                    old_values,
+                    new_values,
+                )
+
+
+def _validate_section_close_reopen_permission(issue, section_inputs, existing_sections):
+    from app.auth.permissions import can_close_persistent_issue
+
+    requires_close_reopen_permission = False
+    for section_input in section_inputs:
+        section_id = section_input["section_id"]
+        old_status = existing_sections[section_id].status if section_id is not None else None
+        if (old_status == IssueStatus.CLOSED.value) != (section_input["status"] == IssueStatus.CLOSED.value):
+            requires_close_reopen_permission = True
+            break
+    if requires_close_reopen_permission and not can_close_persistent_issue(issue):
+        raise IssueValidationError(
+            "Bạn không có quyền đóng hoặc mở lại hạng mục.",
+            {"sections": "Bạn không có quyền đóng hoặc mở lại hạng mục."},
+        )
+
+
+def _section_audit_action(old_status, new_status):
+    if old_status != IssueStatus.CLOSED.value and new_status == IssueStatus.CLOSED.value:
+        return "issue.section.close"
+    if old_status == IssueStatus.CLOSED.value and new_status != IssueStatus.CLOSED.value:
+        return "issue.section.reopen"
+    return "issue.section.update"
 
 
 def _validate_issue_section_categories(issue, section_inputs, existing_sections):

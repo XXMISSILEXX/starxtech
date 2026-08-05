@@ -303,7 +303,7 @@ def test_reporter_cannot_access_unassigned_project_issues(client, app):
     login(client, "reporter")
     assert client.get("/reports/projects/2/issues").status_code == 403
     assert client.get("/reports/issues/203/edit").status_code == 403
-    assert client.post("/reports/issues/203/close").status_code == 403
+    assert client.post("/reports/issues/203/close").status_code == 404
 
 
 def test_project_section_status_api_is_additive_scoped_and_keeps_five_statuses(client, app):

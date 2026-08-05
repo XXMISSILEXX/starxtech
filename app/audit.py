@@ -65,8 +65,12 @@ AUDIT_ACTION_GROUPS = {
     "account.ui_preferences.updated": AUDIT_GROUP_MUTATION,
     "project.customer.move": AUDIT_GROUP_MUTATION,
     "document.folder.move": AUDIT_GROUP_MUTATION,
+    # Historical issue-level actions: their emitters were removed in Phase 14
+    # when closing and reopening moved to PersistentIssueSection.
     "issue.close": AUDIT_GROUP_MUTATION,
     "issue.reopen": AUDIT_GROUP_MUTATION,
+    "issue.section.close": AUDIT_GROUP_MUTATION,
+    "issue.section.reopen": AUDIT_GROUP_MUTATION,
     # Security actions include CLI-only seed actions.
     "auth.login_failed": AUDIT_GROUP_SECURITY,
     "user.seed_admin": AUDIT_GROUP_SECURITY,

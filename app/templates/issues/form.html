@@ -62,12 +62,14 @@
   </div>
   <div data-issue-sections
        data-can-write="{{ '1' if can_write else '0' }}"
-       data-categories='[{% for category in active_categories %}{"id":{{ category.id }},"name":{{ category.name|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]'
-       data-owners='[{% for owner in owners %}{"id":{{ owner.id }},"name":{{ owner.full_name|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]'>
+       data-categories='[{% for category in active_categories %}{"id":{{ category.id }},"name":{{ category.name|tojson }},"icon":{{ category_icon(category.icon)|string|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]'
+       data-owners='[{% for owner in owners %}{"id":{{ owner.id }},"name":{{ owner.full_name|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]'
+       data-severity-options='{{ section_severity_options|default([])|tojson }}'
+       data-status-options='{{ section_status_options|default([])|tojson }}'>
     {% for section in sections %}
       {% set section_index = section.form_index if section.form_index is defined else loop.index0 %}
       <section class="border rounded p-3 mb-3" data-issue-section-row>
-        <div class="d-flex justify-content-between align-items-center gap-2 mb-3"><h3 class="h6 mb-0">Hạng mục {{ loop.index }}</h3>{% if can_write %}<button class="btn btn-outline-danger btn-sm" type="button" data-remove-issue-section><i class="bi bi-trash me-1"></i>Xóa hạng mục</button>{% endif %}</div>
+        <div class="d-flex justify-content-between align-items-center gap-2 mb-3"><h3 class="h6 mb-0" data-issue-section-title><span class="me-1" data-issue-section-title-icon>{% for category in categories if category.id == section.report_category_id %}{{ category_icon(category.icon) }}{% endfor %}</span><span data-issue-section-title-text>Hạng mục {{ loop.index }}</span></h3>{% if can_write %}<button class="btn btn-outline-danger btn-sm" type="button" data-remove-issue-section><i class="bi bi-trash me-1"></i>Xóa hạng mục</button>{% endif %}</div>
         <input type="hidden" name="sections-{{ section_index }}-section-id" value="{{ section.id or '' }}">
         <div class="row g-3">
           <div class="col-md-6">

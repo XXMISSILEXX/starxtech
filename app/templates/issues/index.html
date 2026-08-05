@@ -4,12 +4,86 @@
 {% block page_title %}{% if project %}Vấn đề tồn đọng {{ project.code }}{% else %}Danh sách vấn đề tồn đọng{% endif %}{% endblock %}
 
 {% block content %}
+{% from "partials/_pagination.html" import pagination %}
+{% macro issue_page_url(page) -%}
+  {% if project -%}
+    {{ url_for('projects.issues', project_id=project.id, severity=issue_filter_state.severity, status=issue_filter_state.status, date_from=issue_filter_state.date_from, date_to=issue_filter_state.date_to, category_id=issue_filter_state.category_id, owner_user_id=issue_filter_state.owner_user_id, show_closed='1' if issue_filter_state.show_closed else '0', page=page) }}
+  {%- else -%}
+    {{ url_for('issues.index', severity=issue_filter_state.severity, status=issue_filter_state.status, date_from=issue_filter_state.date_from, date_to=issue_filter_state.date_to, category_id=issue_filter_state.category_id, owner_user_id=issue_filter_state.owner_user_id, show_closed='1' if issue_filter_state.show_closed else '0', page=page) }}
+  {%- endif %}
+{%- endmacro %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div class="text-muted">Theo dõi các vấn đề tồn đọng của dự án.</div>
   {% if can_create and create_url %}
     <a class="btn btn-primary issue-create-button" href="{{ create_url }}"><span class="d-none d-md-inline">+ Thêm vấn đề tồn đọng</span><span class="d-md-none">+ Thêm</span></a>
   {% endif %}
 </div>
+
+<form method="get" class="card card-body mb-3 issue-filter-form">
+  <div class="row g-3 align-items-end">
+    <div class="col-md-3 col-lg-2">
+      <label class="form-label" for="issue-filter-severity">Mức độ</label>
+      <select class="form-select" id="issue-filter-severity" name="severity">
+        <option value="">Tất cả</option>
+        {% for severity in issue_filter_state.severities %}
+          <option value="{{ severity }}" {% if issue_filter_state.severity == severity %}selected{% endif %}>{{ severity|issue_severity_label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3 col-lg-2">
+      <label class="form-label" for="issue-filter-status">Trạng thái</label>
+      <select class="form-select" id="issue-filter-status" name="status">
+        <option value="">Tất cả</option>
+        {% for status in issue_filter_state.statuses %}
+          <option value="{{ status }}" {% if issue_filter_state.status == status %}selected{% endif %}>{{ status|issue_status_label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3 col-lg-2">
+      <label class="form-label" for="issue-filter-date-from">Mở từ ngày</label>
+      <input class="form-control" id="issue-filter-date-from" name="date_from" type="date" value="{{ issue_filter_state.date_from }}">
+    </div>
+    <div class="col-md-3 col-lg-2">
+      <label class="form-label" for="issue-filter-date-to">Mở đến ngày</label>
+      <input class="form-control" id="issue-filter-date-to" name="date_to" type="date" value="{{ issue_filter_state.date_to }}">
+    </div>
+    <div class="col-md-4 col-lg-2">
+      <label class="form-label" for="issue-filter-category">Loại hạng mục</label>
+      <select class="form-select" id="issue-filter-category" name="category_id">
+        <option value="">Tất cả</option>
+        {% for category, category_project in issue_filter_state.categories %}
+          <option value="{{ category.id }}" {% if issue_filter_state.category_id == category.id|string %}selected{% endif %}>{% if not project %}{{ category_project.code }} — {% endif %}{{ category.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4 col-lg-2">
+      <label class="form-label" for="issue-filter-owner">Người phụ trách hạng mục</label>
+      <select class="form-select" id="issue-filter-owner" name="owner_user_id">
+        <option value="">Tất cả</option>
+        {% for owner in issue_filter_state.owners %}
+          <option value="{{ owner.id }}" {% if issue_filter_state.owner_user_id == owner.id|string %}selected{% endif %}>{{ owner.full_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4 col-lg-2">
+      <div class="form-check mb-2">
+        <input class="form-check-input" id="issue-filter-show-closed" name="show_closed" type="checkbox" value="1" {% if issue_filter_state.show_closed %}checked{% endif %}>
+        <input name="show_closed" type="hidden" value="0">
+        <label class="form-check-label" for="issue-filter-show-closed">Hiện vấn đề đã đóng</label>
+      </div>
+      <button class="btn btn-primary" type="submit">Lọc</button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('projects.issues', project_id=project.id) if project else url_for('issues.index') }}">Xóa lọc</a>
+    </div>
+  </div>
+</form>
+
+{% if issue_filter_state.errors %}
+  <div class="alert alert-warning" role="alert">
+    {% for error in issue_filter_state.errors %}<div>{{ error }}</div>{% endfor %}
+  </div>
+{% elif not issue_filter_state.show_closed %}
+  <div class="text-muted mb-3" data-hidden-closed-count>Đang ẩn {{ hidden_closed_total }} vấn đề đã đóng.</div>
+{% endif %}
 
 <div class="table-card table-responsive mobile-cards">
   <table class="table table-hover align-middle">
@@ -43,11 +117,6 @@
               {% if can_edit_by_issue.get(issue.id) %}
                 <a class="btn btn-sm btn-outline-secondary btn-action-mobile" href="{{ url_for('issues.edit', issue_id=issue.id) }}" aria-label="Sửa" title="Sửa"><i class="bi bi-pencil"></i><span class="action-label">Sửa</span></a>
               {% endif %}
-              {% if can_close_by_issue.get(issue.id) and issue.status != 'CLOSED' %}
-                <form method="post" action="{{ url_for('issues.close', issue_id=issue.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-secondary btn-action-mobile" type="submit" aria-label="Đóng" title="Đóng"><i class="bi bi-check2"></i><span class="action-label">Đóng</span></button></form>
-              {% elif can_close_by_issue.get(issue.id) %}
-                <form method="post" action="{{ url_for('issues.reopen', issue_id=issue.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-secondary btn-action-mobile" type="submit" aria-label="Mở lại" title="Mở lại"><i class="bi bi-arrow-counterclockwise"></i><span class="action-label">Mở lại</span></button></form>
-              {% endif %}
               {% if can_delete_by_issue.get(issue.id) %}
                 <form method="post" action="{{ url_for('issues.delete', issue_id=issue.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger btn-action-mobile" type="submit" data-confirm="Xóa vấn đề tồn đọng này?" aria-label="Xóa" title="Xóa"><i class="bi bi-trash"></i><span class="action-label">Xóa</span></button></form>
               {% endif %}
@@ -59,7 +128,7 @@
           <td colspan="9">
             <div class="empty-state">
               <i class="bi bi-exclamation-diamond"></i>
-              <div class="mb-3">Không có vấn đề tồn đọng.</div>
+              <div class="mb-3">{% if issue_filter_state.has_explicit_filters %}Không có vấn đề nào khớp bộ lọc.{% else %}Không có vấn đề tồn đọng.{% endif %}</div>
               {% if can_create and create_url %}
                 <a class="btn btn-primary issue-create-button" href="{{ create_url }}"><span class="d-none d-md-inline">+ Thêm vấn đề tồn đọng</span><span class="d-md-none">+ Thêm</span></a>
               {% endif %}
@@ -69,5 +138,6 @@
       {% endfor %}
     </tbody>
   </table>
+  {{ pagination(issue_filter_state.page, issue_total, issue_per_page, issue_page_url) }}
 </div>
 {% endblock %}

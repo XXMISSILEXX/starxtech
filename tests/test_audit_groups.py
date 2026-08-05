@@ -117,6 +117,10 @@ def test_explicit_authority_exceptions_win_over_suffix_rules():
         ("issue.delete", AUDIT_GROUP_DESTRUCTIVE),
         ("issue.close", AUDIT_GROUP_MUTATION),
         ("issue.reopen", AUDIT_GROUP_MUTATION),
+        ("issue.section.close", AUDIT_GROUP_MUTATION),
+        ("issue.section.reopen", AUDIT_GROUP_MUTATION),
+        ("issue.section.update", AUDIT_GROUP_MUTATION),
+        ("issue.section.delete", AUDIT_GROUP_DESTRUCTIVE),
     ],
 )
 def test_mapped_future_audit_actions(action, expected_group):
