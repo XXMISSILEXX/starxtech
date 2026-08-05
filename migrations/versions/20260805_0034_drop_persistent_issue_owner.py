@@ -19,21 +19,19 @@ depends_on = None
 
 
 def upgrade():
-    op.drop_column("persistent_issues", "owner_user_id")
+    with op.batch_alter_table("persistent_issues") as batch_op:
+        batch_op.drop_column("owner_user_id")
 
 
 def downgrade():
-    op.add_column(
-        "persistent_issues",
-        sa.Column("owner_user_id", sa.BigInteger(), nullable=True),
-    )
-    op.create_foreign_key(
-        "fk_persistent_issues_owner_user_id_users",
-        "persistent_issues",
-        "users",
-        ["owner_user_id"],
-        ["id"],
-    )
+    with op.batch_alter_table("persistent_issues") as batch_op:
+        batch_op.add_column(sa.Column("owner_user_id", sa.BigInteger(), nullable=True))
+        batch_op.create_foreign_key(
+            "fk_persistent_issues_owner_user_id_users",
+            "users",
+            ["owner_user_id"],
+            ["id"],
+        )
     op.get_bind().execute(
         sa.text(
             """
