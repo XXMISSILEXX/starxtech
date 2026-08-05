@@ -158,6 +158,7 @@ Do not generate a migration merely because SQLAlchemy metadata differs. First
 inspect the complete migration history, legacy compatibility requirements,
 production data implications, constraint naming, downgrade behavior, and
 whether the difference is intentional.
+Autogenerate has previously proposed dropping real indexes here, including two UNIQUE indexes that prevent duplicate names; read every generated migration line before applying it.
 
 ### Useful CLI commands (`app/cli.py`)
 

@@ -28,6 +28,7 @@ from app.customers.services import (
     can_manage_customer,
 )
 from app.permissions.services import permission_required
+from app.permissions.registry import DEFAULTS, PERMISSIONS
 from app.extensions import db
 from app.models import Customer, Permission, Project, ProjectDocumentFolder, ProjectStatus, ProjectUser, ReportCategory, Role, RolePermission, User, UserRole
 from app.project_memberships import (CAPABILITY_FIELDS, CAPABILITY_LABELS, PROJECT_ROLE_LABELS,
@@ -35,6 +36,9 @@ from app.project_memberships import (CAPABILITY_FIELDS, CAPABILITY_LABELS, PROJE
     is_owner_equivalent_membership, is_super_admin, manageable_project_capabilities,
     manageable_project_role_level, membership_capability_labels, membership_summary)
 from app.security import password_policy_errors
+
+
+REGISTRY_PERMISSION_CODES = frozenset(permission["code"] for permission in PERMISSIONS)
 
 DEPRECATED_GLOBAL_ROLE_CODES = ("PROJECT_MANAGER", "REPORTER")
 
@@ -185,7 +189,8 @@ def role_permissions(role_id):
         "projects.scope_all": "Dashboard",
     }
     grouped = {}
-    for permission in Permission.query.order_by(Permission.module, Permission.sort_order, Permission.code).all():
+    for permission in Permission.query.filter(Permission.code.in_(REGISTRY_PERMISSION_CODES)).order_by(
+            Permission.module, Permission.sort_order, Permission.code).all():
         group = phase9_group_labels.get(permission.code, group_labels.get(permission.module, permission.group_name))
         grouped.setdefault(group, []).append(permission)
     return render_template("admin/roles/permissions.html", role=role, grouped=grouped,
@@ -196,9 +201,10 @@ def role_permissions(role_id):
 @permission_required("roles.manage")
 def role_permissions_reset_defaults(role_id):
     role = db.get_or_404(Role, role_id)
-    from app.permissions.registry import DEFAULTS
     wanted = DEFAULTS.get(role.code, set())
-    permissions = Permission.query.filter(Permission.code.in_(wanted)).all()
+    permissions = Permission.query.filter(
+        Permission.code.in_(wanted), Permission.code.in_(REGISTRY_PERMISSION_CODES)
+    ).all()
     if len(permissions) != len(wanted) or not can_manage_role_permissions(current_user, role, permissions):
         abort(403)
     old = {item.permission_id for item in role.role_permissions}
@@ -252,7 +258,7 @@ def projects_edit(project_id):
 @permission_required("projects.manage")
 def projects_archive(project_id):
     project = db.get_or_404(Project, project_id)
-    old_values = {"status": project.status}
+    old_values = _project_snapshot(project)
     project.status = ProjectStatus.ARCHIVED.value
     audit("project.archive", "Project", project.id, old_values, {"status": project.status})
     db.session.commit()
@@ -669,14 +675,12 @@ def _save_project(project=None):
         root = ProjectDocumentFolder(project_id=project.id, name="__ROOT__", is_root=True, root_type="project", created_by_id=current_user.id)
         add_with_sqlite_id(root)
         db.session.flush()
-        audit("document.folder.create", "ProjectDocumentFolder", root.id, new_values={"root": True, "project_id": project.id})
-    audit(
-        "project.create" if is_new else "project.update",
-        "Project",
-        project.id,
-        old_values,
-        _project_snapshot(project),
-    )
+    if is_new:
+        # Retain project.create: Project has created_by_user_id, but this
+        # creation path does not assign it, so audit is the only provenance.
+        audit("project.create", "Project", project.id, old_values, _project_snapshot(project))
+    else:
+        audit("project.update", "Project", project.id, old_values, _project_snapshot(project))
     db.session.commit()
     flash("Đã lưu dự án.", "success")
     return redirect(url_for("admin.projects_index"))
@@ -745,13 +749,11 @@ def _save_category(project, category=None):
     category.is_required = form_bool("is_required")
 
     db.session.flush()
-    audit(
-        "category.create" if is_new else "category.update",
-        "ReportCategory",
-        category.id,
-        old_values,
-        _category_snapshot(category),
-    )
+    if is_new:
+        # Retain category.create: ReportCategory has no creator column.
+        audit("category.create", "ReportCategory", category.id, old_values, _category_snapshot(category))
+    else:
+        audit("category.update", "ReportCategory", category.id, old_values, _category_snapshot(category))
     db.session.commit()
     flash("Đã lưu hạng mục.", "success")
     return redirect(url_for("admin.categories_index", project_id=project.id))
@@ -790,7 +792,7 @@ def _requested_permissions():
     permissions = Permission.query.filter(Permission.id.in_(permission_ids)).all() if permission_ids else []
     if len(permissions) != len(permission_ids):
         abort(400)
-    return permissions
+    return [permission for permission in permissions if permission.code in REGISTRY_PERMISSION_CODES]
 
 
 def _require_can_view_categories(project_id):
@@ -851,6 +853,12 @@ def _project_snapshot(project):
         if project.expected_end_date
         else None,
         "customer_id": project.customer_id,
+        "customer": None if project.customer is None else {
+            "id": project.customer.id,
+            "name": project.customer.name,
+        },
+        "created_by_id": project.created_by_user_id,
+        "created_at": project.created_at.isoformat() if project.created_at else None,
     }
 
 

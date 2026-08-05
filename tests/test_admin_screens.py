@@ -1,5 +1,5 @@
 from app.extensions import db
-from app.models import AuditLog, Project, ProjectStatus, ProjectUser, ReportCategory, Role, User, UserRole
+from app.models import AuditLog, Customer, Project, ProjectStatus, ProjectUser, ReportCategory, Role, User, UserRole
 
 
 def login(client, username_or_email, password="password123"):
@@ -62,6 +62,23 @@ def test_users_view_is_read_only_and_users_manage_allows_admin_mutations(client,
     assert response.status_code == 302
     with app.app_context():
         assert User.query.filter_by(username="managed-user").one().is_active is True
+
+
+def test_super_admin_creates_role_with_audit(client, app):
+    login(client, "super")
+    with app.app_context():
+        before_audits = AuditLog.query.count()
+
+    response = client.post(
+        "/admin/roles/new",
+        data={"code": "AUDIT_ROLE", "name": "Audit role", "description": "Audit retention test"},
+    )
+
+    assert response.status_code == 302
+    with app.app_context():
+        role = Role.query.filter_by(code="AUDIT_ROLE").one()
+        assert AuditLog.query.count() == before_audits + 1
+        assert AuditLog.query.filter_by(action="role.create", entity_id=role.id).count() == 1
 
 
 def test_last_active_super_admin_cannot_be_deactivated_or_reassigned(client, app):
@@ -135,6 +152,12 @@ def test_super_admin_creates_user_and_duplicate_validation_fails(client, app):
 
 
 def test_super_admin_creates_and_archives_project(client, app):
+    with app.app_context():
+        customer = Customer(id=9905, name="Snapshot Customer", normalized_name="snapshot customer")
+        db.session.add(customer)
+        db.session.commit()
+        customer_id = customer.id
+
     login(client, "super")
 
     created = client.post(
@@ -146,6 +169,7 @@ def test_super_admin_creates_and_archives_project(client, app):
             "status": ProjectStatus.ACTIVE.value,
             "start_date": "2026-07-01",
             "expected_end_date": "2026-08-01",
+            "customer_id": str(customer_id),
         },
     )
 
@@ -160,7 +184,12 @@ def test_super_admin_creates_and_archives_project(client, app):
     with app.app_context():
         archived_project = db.session.get(Project, project.id)
         assert archived_project.status == ProjectStatus.ARCHIVED.value
-        assert AuditLog.query.filter_by(action="project.archive", entity_id=project.id).count() == 1
+        audit = AuditLog.query.filter_by(action="project.archive", entity_id=project.id).one()
+        assert audit.old_values_json["code"] == "P003"
+        assert audit.old_values_json["name"] == "New Project"
+        assert audit.old_values_json["customer"] == {"id": customer_id, "name": "Snapshot Customer"}
+        assert audit.old_values_json["created_by_id"] is None
+        assert audit.old_values_json["created_at"]
 
 
 def test_super_admin_assigns_and_removes_project_reporters(client, app):

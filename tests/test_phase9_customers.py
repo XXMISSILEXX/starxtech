@@ -8,7 +8,7 @@ from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 
 from app.extensions import db
-from app.models import Customer, DailyReport, Permission, Project, ProjectUser, ReportCategory, Role, RolePermission, User
+from app.models import AuditLog, Customer, DailyReport, Permission, Project, ProjectUser, ReportCategory, Role, RolePermission, User
 
 
 def login(client, username, password="password123"):
@@ -69,6 +69,9 @@ def test_customer_normalization_and_archive_preserves_project_history(client, ap
         assert DailyReport.query.filter_by(id=701).count() == 1
         assert ProjectUser.query.filter_by(project_id=1, user_id=3).count() == 1
         assert ReportCategory.query.filter_by(project_id=1).count() == 2
+        audit = AuditLog.query.filter_by(action="customer.archive", entity_id=customer_id).one()
+        assert audit.old_values_json["created_by_id"] == 1
+        assert audit.old_values_json["created_at"]
 
 
 def test_move_project_preserves_reports_memberships_and_categories(client, app):

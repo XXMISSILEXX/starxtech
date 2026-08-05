@@ -276,7 +276,11 @@ def _save_company(company, is_new=False):
     # active and an ordinary edit preserves the existing state.
     if is_new:
         company.is_active = True
-    audit("partner_company.create" if is_new else "partner_company.update", "Company", company.id, old_values, _company_snapshot(company))
+    if is_new:
+        # Retain partner_company.create: Company has no creator column.
+        audit("partner_company.create", "Company", company.id, old_values, _company_snapshot(company))
+    else:
+        audit("partner_company.update", "Company", company.id, old_values, _company_snapshot(company))
     db.session.commit()
     if request.files.get("photo") and request.files["photo"].filename:
         from app.partner_photos import replace_photo
@@ -386,7 +390,11 @@ def _save_department(company, department):
     if is_new:
         department.is_active = True
     department.is_special_department = request.form.get("is_special_department") == "on"
-    audit("partner_department.create" if is_new else "partner_department.update", "CompanyDepartment", department.id, old_values, _department_snapshot(department))
+    if is_new:
+        # Retain partner_department.create: CompanyDepartment has no creator column.
+        audit("partner_department.create", "CompanyDepartment", department.id, old_values, _department_snapshot(department))
+    else:
+        audit("partner_department.update", "CompanyDepartment", department.id, old_values, _department_snapshot(department))
     db.session.commit()
     flash("Đã lưu phòng ban.", "success")
     return redirect(url_for("partner_companies.departments", company_id=company.id))
@@ -442,12 +450,14 @@ def _can(code):
 
 
 def _company_snapshot(company):
-    return {"name": company.name, "industry": company.industry, "is_active": company.is_active}
+    return {"name": company.name, "industry": company.industry, "is_active": company.is_active,
+            "created_at": company.created_at.isoformat() if company.created_at else None}
 
 
 def _lifecycle_snapshot(company):
     return {"id": company.id, "type": "company", "name": company.name, "is_active": company.is_active,
-            "deleted_at": company.deleted_at is not None}
+            "deleted_at": company.deleted_at is not None,
+            "created_at": company.created_at.isoformat() if company.created_at else None}
 
 
 def _department_snapshot(department):

@@ -35,7 +35,7 @@ def _login(client, username):
 def _company_file(app, *, upload_status="active", deleted=False):
     with app.app_context():
         admin = db.session.get(User, 6)
-        album = CompanyMediaAlbum(name="Download contract", created_by_id=admin.id)
+        album = CompanyMediaAlbum(name=f"Download contract {uuid4().hex}", created_by_id=admin.id)
         db.session.add(album)
         db.session.flush()
         storage = StorageObject(

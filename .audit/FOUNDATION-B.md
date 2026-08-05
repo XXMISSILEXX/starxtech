@@ -337,6 +337,7 @@ been confirmed safe so far.
 Confirmed by reading `app/celery_app.py` (A1 scope, cross-referenced) that
 **no Celery beat schedule exists anywhere in this codebase** — no
 `beat_schedule` config, no periodic-task registration of any kind.
+> **Outdated note:** This assertion became outdated on 2026-07-28: `app/celery_app.py` has `beat_schedule`; the remaining debt is DEPLOY-002 evidence that the `beat` service runs in production, not absence of automated cleanup.
 Confirmed by grep across the whole repo that **exactly two `.delay()` call
 sites exist in total**:
 

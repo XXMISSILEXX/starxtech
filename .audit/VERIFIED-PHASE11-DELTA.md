@@ -14,8 +14,8 @@
 
 | ID | Classification | Severity | Status | Evidence / disposition |
 |---|---|---:|---|---|
-| REPORTS-007 | Confirmed product-contract regression | Medium | **Open** | `AGENTS.md` retains max 3 images/section; changed common constant and all create/edit paths enforce 10. Reproduced by `.audit/poc/REPORTS-007-section-image-limit.py`. Resolve by approved 3 or approved 10 contract decision before production. |
-| CONFIG-OP-001 | Confirmed documentation/operations defect | Low | Open with REPORTS-007 | `.env.example` says 3 while config ignores that setting and fixes 10. Resolve together with the product decision. |
+| REPORTS-007 | Confirmed product-contract regression | Medium | **Closed — 2026-08-04** | The project owner confirmed the 10-image-per-section contract. `AGENTS.md` now states 10 and `.env.example` no longer advertises a conflicting cap; the historical PoC is retained. |
+| CONFIG-OP-001 | Confirmed documentation/operations defect | Low | **Closed — 2026-08-04** | The dead `MAX_IMAGES_PER_SECTION` setting was removed from `app/config.py` and `.env.example`; the fixed product cap remains solely in `app/reports/constants.py`. |
 | CM-OP-001 | Accepted documented operational limitation | n/a | Requires owner evidence | DB-only cancellation intentionally leaves potential S3 pending bytes for external lifecycle/reconciliation. No S3 deletion/listing belongs in the HTTP path. |
 | STORAGE-OP-002 | Unverified operational capacity risk | n/a | Staging required | CloudFly multipart overhead allowance and pending-object lifecycle need observation with the real provider. |
 | DEPLOY-OP-001 | Unverified deployment condition | n/a | Staging required | Host cache mount permissions/UID 1000/Nginx internal routing cannot be proven from repository source. |

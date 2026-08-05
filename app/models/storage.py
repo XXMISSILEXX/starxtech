@@ -14,6 +14,7 @@ class StorageObject(CreatedAtMixin, SoftDeleteMixin, db.Model):
         db.Index("idx_storage_objects_upload_status_created", "upload_status", "created_at"),
         db.Index("idx_storage_objects_processing_status_created", "processing_status", "created_at"),
         db.Index("idx_storage_objects_uploader_status", "uploaded_by_id", "upload_status"),
+        db.Index("idx_storage_objects_created", "created_at"),
     )
 
     id = db.Column(STORAGE_ID, primary_key=True)
@@ -89,7 +90,13 @@ class UploadSelectionSession(TimestampMixin, db.Model):
 
 class DownloadEvent(CreatedAtMixin, db.Model):
     __tablename__ = "download_events"
-    __table_args__ = (db.Index("idx_download_events_user_created", "user_id", "created_at"),)
+    __table_args__ = (
+        db.Index("idx_download_events_user_created", "user_id", "created_at"),
+        db.Index("idx_download_events_created", "created_at"),
+        db.Index("idx_download_events_module_created", "module", "created_at"),
+        db.Index("idx_download_events_object_created", "storage_object_id", "created_at"),
+        db.Index("idx_download_events_source_type_created", "source_type", "created_at"),
+    )
     id = db.Column(STORAGE_ID, primary_key=True); user_id = db.Column(STORAGE_ID, db.ForeignKey("users.id"), nullable=False)
     storage_object_id = db.Column(STORAGE_ID, db.ForeignKey("storage_objects.id")); derivative_id = db.Column(STORAGE_ID, db.ForeignKey("storage_derivatives.id"))
     kind = db.Column(db.String(30), nullable=False); source_type = db.Column(db.String(30), nullable=True)

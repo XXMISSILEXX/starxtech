@@ -25,9 +25,10 @@ def _structure():
     return progress_type.id, group.id, first.id, second.id, outside.id
 
 
-def test_entry_batch_creates_multiple_entries_audits_and_recalculates_each_item(client, app):
+def test_entry_batch_creates_multiple_entries_without_audit_and_recalculates_each_item(client, app):
     with app.app_context():
         type_id, group_id, first_id, second_id, _ = _structure()
+        before_audits = AuditLog.query.count()
     _login(client)
     response = client.post(
         f"/projects/1/progress/types/{type_id}/entries/batch",
@@ -44,7 +45,7 @@ def test_entry_batch_creates_multiple_entries_audits_and_recalculates_each_item(
         assert first.completed_quantity == Decimal("2.5")
         assert second.completed_quantity == Decimal("3")
         assert ProgressEntry.query.filter_by(project_id=1, report_date=date(2026, 1, 3)).count() == 2
-        assert AuditLog.query.filter_by(action="construction_progress.entry.create").count() == 2
+        assert AuditLog.query.count() == before_audits
         assert group_percent(first.progress_group, "quantity") == Decimal("17.5")
         assert type_percent(first.progress_group.progress_type) == Decimal("17.5")
 

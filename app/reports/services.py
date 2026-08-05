@@ -217,11 +217,9 @@ def finalize_daily_report_create_v2(*, project, user, payload):
                 item = by_id[row["upload_item_id"]]; section = section_by_client[row["client_section_id"]]
                 attachment = ReportAttachment(daily_report_section_id=section.id, original_filename=item.original_filename, storage_object_id=item.storage_object_id, mime_type=item.mime_type, file_size=item.file_size, uploaded_by_user_id=user.id)
                 add_with_sqlite_id(attachment); item.storage_object.upload_status = "active"; item.finalized_at = datetime.utcnow(); jobs_objects.append(item.storage_object)
-                audit("attachment.create", "ReportAttachment", attachment.id, new_values={"daily_report_section_id": section.id})
             if attachments: finalize_session(session)
             from app.media_processing.services import stage_media_processing_jobs
             job_ids = stage_media_processing_jobs(jobs_objects)
-            audit("report.create", "DailyReport", report.id, new_values=report_snapshot(report))
         db.session.commit()
     except DailyReportCreateV2Error:
         db.session.rollback(); raise
@@ -360,7 +358,6 @@ def create_report(project, form, files=None):
     _replace_sections(report, section_inputs)
     db.session.flush()
     job_ids = _attach_direct_uploads(report, section_inputs, prepared_upload)
-    audit("report.create", "DailyReport", report.id, new_values=report_snapshot(report))
     try:
         db.session.commit()
     except IntegrityError as exc:
@@ -502,6 +499,7 @@ def delete_report(report):
 def delete_attachment(attachment):
     """Permanently remove an attachment and its unshared storage artifacts."""
     ensure_project_accepts_report_mutation(attachment.section.daily_report.project)
+    snapshot = attachment_delete_snapshot(attachment)
     storage_object = attachment.storage_object
     storage_id = attachment.storage_object_id
     derivatives = StorageDerivative.query.filter_by(storage_object_id=storage_id).all() if storage_id else []
@@ -538,7 +536,7 @@ def delete_attachment(attachment):
             "attachment.delete",
             "ReportAttachment",
             attachment_id,
-            old_values={"daily_report_section_id": attachment.daily_report_section_id},
+            old_values=snapshot,
             new_values={"deleted": "permanent"},
         )
         db.session.commit()
@@ -650,6 +648,25 @@ def report_snapshot(report):
         "overall_status": report.overall_status,
         "highlight": report.highlight,
         "summary_note": report.summary_note,
+        "created_by_id": report.created_by_user_id,
+        "created_at": report.created_at.isoformat() if report.created_at else None,
+    }
+
+
+def attachment_delete_snapshot(attachment):
+    storage = attachment.storage_object
+    report = attachment.section.daily_report
+    return {
+        "daily_report_section_id": attachment.daily_report_section_id,
+        "file_name": attachment.original_filename,
+        "original_filename": attachment.original_filename,
+        "created_by_id": attachment.uploaded_by_user_id,
+        "created_at": attachment.created_at.isoformat() if attachment.created_at else None,
+        "file_size": attachment.file_size,
+        "storage_object_id": attachment.storage_object_id,
+        "object_key": storage.object_key if storage else None,
+        "report_id": report.id,
+        "project_id": report.project_id,
     }
 
 
@@ -732,12 +749,13 @@ def _mark_requested_attachments_deleted(report, form):
     if {row.id for row in rows} != attachment_ids:
         raise ReportValidationError("Ảnh cần xóa không thuộc báo cáo này.")
     for attachment in rows:
+        snapshot = attachment_delete_snapshot(attachment)
         attachment.deleted_at = db.func.now()
         audit(
             "attachment.delete",
             "ReportAttachment",
             attachment.id,
-            old_values={"daily_report_section_id": attachment.daily_report_section_id},
+            old_values=snapshot,
             new_values={"deleted_at": True},
         )
 
@@ -763,12 +781,6 @@ def _save_section_uploads(report, files):
         for upload in uploads:
             attachment = _store_attachment(report, section, upload)
             db.session.flush()
-            audit(
-                "attachment.create",
-                "ReportAttachment",
-                attachment.id,
-                new_values={"daily_report_section_id": section.id},
-            )
 
 
 def _prepare_direct_uploads(project_id, form, section_inputs):
@@ -814,7 +826,6 @@ def _attach_direct_uploads(report, section_inputs, prepared_upload):
         item.storage_object.upload_status = "active"
         objects.append(item.storage_object)
         item.finalized_at = datetime.utcnow()
-        audit("attachment.create", "ReportAttachment", attachment.id, new_values={"daily_report_section_id": section.id})
     finalize_session(session)
     from app.media_processing.services import stage_media_processing_jobs
     return stage_media_processing_jobs(objects)

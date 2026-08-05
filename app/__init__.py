@@ -104,6 +104,7 @@ def create_app(config_class=Config):
 def register_blueprints(app):
     from app.admin import bp as admin_bp
     from app.account import bp as account_bp
+    from app.audit_log import bp as audit_log_bp
     from app.admin_storage import bp as admin_storage_bp
     from app.attachments import bp as attachments_bp
     from app.auth import bp as auth_bp
@@ -133,6 +134,7 @@ def register_blueprints(app):
     from app.account.routes import media_display_preview
     app.add_url_rule("/media-display-preview", endpoint="media_display_preview", view_func=media_display_preview, methods=["POST"])
     app.register_blueprint(admin_storage_bp)
+    app.register_blueprint(audit_log_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(modules_bp)
     app.register_blueprint(dashboard_bp)

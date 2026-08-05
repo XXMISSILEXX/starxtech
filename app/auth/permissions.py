@@ -90,6 +90,7 @@ def can_access_admin_module(user=None):
         "roles.view",
         "storage.dashboard.view",
         "settings.branding.view",
+        "audit_logs.view",
     )))
 
 

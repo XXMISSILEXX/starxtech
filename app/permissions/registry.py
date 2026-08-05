@@ -29,6 +29,7 @@ _RESOURCES = {
     "contractor_assignments": "Liên kết đối tác",
     "project_updates": "Báo cáo xuyên suốt",
     "construction_progress": "Tiến độ thi công",
+    "audit_logs": "Lịch sử thao tác",
     "dashboards": "Dashboard quản trị",
 }
 
@@ -51,7 +52,7 @@ PERMISSIONS = [
     _permission("users.manage", "Quản lý người dùng", dangerous=True),
     _permission("roles.view", "Xem vai trò và phân quyền"),
     _permission("roles.manage", "Quản lý vai trò và phân quyền", dangerous=True),
-    _permission("security.audit", "Xem nhật ký bảo mật", dangerous=True),
+    _permission("audit_logs.view", "Xem lịch sử thao tác"),
     _permission("system.settings", "Cấu hình hệ thống", dangerous=True),
     _permission("project_assignments.manage", "Quản lý phân quyền dự án", dangerous=True),
     _permission("modules.reports.access", "Truy cập phân hệ Quản lý dự án"),
@@ -102,7 +103,7 @@ PERMISSIONS = [
 DEFAULTS = {
     UserRole.ADMIN.value: {p["code"] for p in PERMISSIONS if p["code"] not in {"roles.view", "roles.manage", "system.settings", "storage.dashboard.export", "storage.dashboard.manage", "settings.branding.view", "settings.branding.manage"}},
     UserRole.VIEWER_ADMIN.value: {
-        *{p["code"] for p in PERMISSIONS if p["action"] == "view" and p["code"] != "roles.view"},
+        *{p["code"] for p in PERMISSIONS if p["action"] == "view" and p["code"] not in {"roles.view", "audit_logs.view"}},
         "modules.reports.access",
         "modules.partners.access",
         "modules.project_documents.access", "project_document_folders.view", "project_document_files.view", "project_document_files.download",

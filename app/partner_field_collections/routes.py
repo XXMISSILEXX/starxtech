@@ -89,7 +89,11 @@ def _save_collection(collection):
         )
         _add_with_sqlite_id(item)
         collection.items.append(item)
-    audit("partner_field_collection.create" if is_new else "partner_field_collection.update", "PartnerFieldCollection", collection.id, old_values, _snapshot(collection))
+    if is_new:
+        # Retain this configuration audit: PartnerFieldCollection has no creator column.
+        audit("partner_field_collection.create", "PartnerFieldCollection", collection.id, old_values, _snapshot(collection))
+    else:
+        audit("partner_field_collection.update", "PartnerFieldCollection", collection.id, old_values, _snapshot(collection))
     db.session.commit()
     flash("Đã lưu bộ trường dữ liệu.", "success")
     return redirect(url_for("partner_field_collections.index"))

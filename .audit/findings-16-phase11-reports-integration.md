@@ -9,6 +9,8 @@
 
 ## REPORTS-007 — Daily Report section attachment limit changed from three to ten without an approved product-contract update
 
+> **Distinction:** This is the Phase 11 3-versus-10 attachment-limit finding; the separate Phase 10 upload-session audit-trail finding with the same ID is in `findings-3a-reports.md`.
+
 - **Severity:** Medium.
 - **Confidence:** High.
 - **Category:** Product/integrity regression (not a confidentiality or authorization flaw).

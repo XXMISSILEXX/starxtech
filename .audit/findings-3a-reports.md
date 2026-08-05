@@ -172,6 +172,8 @@
 
 ### REPORTS-007 — Upload-session cancellation and cross-session cleanup have no audit trail
 
+> **Distinction:** This is the Phase 10 upload-session audit-trail finding; the separate Phase 11 3-versus-10 attachment-limit finding with the same ID is in `findings-16-phase11-reports-integration.md`.
+
 - **Severity:** Low
 - **Confidence:** High
 - **CWE:** CWE-778

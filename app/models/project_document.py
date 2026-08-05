@@ -1,4 +1,5 @@
 from sqlalchemy import event
+import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import JSON
 
@@ -14,6 +15,15 @@ class ProjectDocumentFolder(TimestampMixin, db.Model):
     __table_args__ = (
         db.Index("idx_project_document_folders_parent", "project_id", "parent_id", "deleted_at"),
         db.Index("idx_project_document_folders_root", "project_id", "is_root"),
+        db.Index(
+            "uq_project_document_folders_sibling_name",
+            "project_id",
+            "parent_id",
+            sa.text("lower(name)"),
+            unique=True,
+            postgresql_where=sa.text("deleted_at IS NULL AND is_active"),
+            sqlite_where=sa.text("deleted_at IS NULL AND is_active"),
+        ),
         db.Index("uq_project_document_folders_root", "project_id", unique=True,
                  postgresql_where=db.text("is_root = true AND deleted_at IS NULL"),
                  sqlite_where=db.text("is_root = 1 AND deleted_at IS NULL")),

@@ -56,7 +56,9 @@ def test_soft_delete_hides_timeline_and_keeps_audit_without_report_issue_side_ef
         soft_delete_project_update(update, actor_id=1); db.session.commit()
         assert updates_query(project_id=1).count() == 0
         assert ProjectUpdate.query.filter_by(id=update.id).one().deleted_at is not None
-        assert AuditLog.query.filter_by(action="project_update.delete", entity_id=update.id).count() == 1
+        audit = AuditLog.query.filter_by(action="project_update.delete", entity_id=update.id).one()
+        assert audit.old_values_json["created_by_id"] == 1
+        assert audit.old_values_json["created_at"]
         assert (DailyReport.query.count(), PersistentIssue.query.count()) == (report_count, issue_count)
 
 

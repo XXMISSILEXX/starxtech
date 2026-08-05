@@ -1,5 +1,6 @@
 from flask import abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
+from app.audit import audit
 from app.company_media import bp
 from app.company_media import permissions as p
 from app.company_media import services as s
@@ -17,6 +18,29 @@ from app.storage.limits import get_company_media_upload_limits
 from app.storage.downloads import SignedDownloadError, error_payload
 
 def _one(model, ident): return db.get_or_404(model, ident)
+
+
+def _file_audit_snapshot(media):
+    storage = media.storage_object
+    return {
+        "file_name": media.display_name,
+        "original_filename": storage.original_filename if storage else None,
+        "created_by_id": media.created_by_id,
+        "created_at": media.created_at.isoformat() if media.created_at else None,
+        "file_size": storage.file_size if storage else None,
+        "storage_object_id": media.storage_object_id,
+        "object_key": storage.object_key if storage else None,
+        "album_id": media.album_id,
+    }
+
+
+def _file_batch_audit_snapshot(album, snapshots):
+    return {
+        "album_id": album.id,
+        "file_count": len(snapshots),
+        "total_size_bytes": sum(snapshot["file_size"] or 0 for snapshot in snapshots),
+        "files": snapshots,
+    }
 
 
 def _format_upload_bytes(value):
@@ -221,24 +245,28 @@ def file_rename(file_id):
 def file_archive(file_id):
     f=_one(CompanyMediaFile, file_id)
     if not p.delete_file(current_user,f):abort(403)
-    f.is_active=False;f.deleted_at=__import__('datetime').datetime.utcnow();f.updated_by_id=current_user.id;s.db.session.commit();return redirect(url_for("company_media.album",album_id=f.album_id))
+    snapshot=_file_audit_snapshot(f);f.is_active=False;f.deleted_at=__import__('datetime').datetime.utcnow();f.updated_by_id=current_user.id;audit("company_media.file.delete","CompanyMediaFile",f.id,old_values=snapshot,new_values={"archived":True});s.db.session.commit();return redirect(url_for("company_media.album",album_id=f.album_id))
 @bp.post("/files/<int:file_id>/restore")
 def file_restore(file_id):
     f=_one(CompanyMediaFile, file_id)
     if not p.restore_file(current_user,f) or not f.album.is_active:abort(403)
-    f.is_active=True;f.deleted_at=None;f.updated_by_id=current_user.id;s.db.session.commit();return redirect(url_for("company_media.album",album_id=f.album_id))
+    snapshot=_file_audit_snapshot(f);f.is_active=True;f.deleted_at=None;f.updated_by_id=current_user.id;audit("company_media.file.restore","CompanyMediaFile",f.id,old_values=snapshot,new_values={"restored":True});s.db.session.commit();return redirect(url_for("company_media.album",album_id=f.album_id))
 def _bulk(album_id, action):
     a=_one(CompanyMediaAlbum, album_id)
     if not p.view_album(current_user,a):abort(403)
     try: ids=parse_file_ids(request)
     except BulkDownloadError as exc: return jsonify(error=str(exc)),400
-    items=CompanyMediaFile.query.filter(CompanyMediaFile.album_id==a.id,CompanyMediaFile.id.in_(ids)).all(); result={action:[] if action=="downloads" else 0,"skipped":0,"forbidden":0}
+    items=CompanyMediaFile.query.filter(CompanyMediaFile.album_id==a.id,CompanyMediaFile.id.in_(ids)).order_by(CompanyMediaFile.id).all(); result={action:0,"skipped":0,"forbidden":0}; snapshots=[]
     for f in items:
-        allowed={"archived":p.delete_file(current_user,f),"restored":p.restore_file(current_user,f) and a.is_active,"downloads":p.download_file(current_user,f)}[action]
+        allowed={"archived":p.delete_file(current_user,f),"restored":p.restore_file(current_user,f) and a.is_active}[action]
         if not allowed:result["forbidden"]+=1;continue
-        if action=="archived": f.is_active=False;f.deleted_at=__import__('datetime').datetime.utcnow();result[action]+=1
-        elif action=="restored": f.is_active=True;f.deleted_at=None;result[action]+=1
-        else: result["downloads"].append({"id":f.id,**s.signed_download(f)})
+        snapshot=_file_audit_snapshot(f)
+        if action=="archived": f.is_active=False;f.deleted_at=__import__('datetime').datetime.utcnow();f.updated_by_id=current_user.id;snapshots.append(snapshot);result[action]+=1
+        elif action=="restored": f.is_active=True;f.deleted_at=None;f.updated_by_id=current_user.id;snapshots.append(snapshot);result[action]+=1
+    if snapshots:
+        batch_snapshot=_file_batch_audit_snapshot(a,snapshots)
+        if action=="archived": audit("company_media.file.delete","CompanyMediaFile",old_values=batch_snapshot,new_values={"archived":True,"bulk":True})
+        elif action=="restored": audit("company_media.file.restore","CompanyMediaFile",old_values=batch_snapshot,new_values={"restored":True,"bulk":True})
     s.db.session.commit();return jsonify(ok=True,**result)
 @bp.post("/albums/<int:album_id>/files/bulk-archive")
 def bulk_archive(album_id): return _bulk(album_id,"archived")
@@ -249,7 +277,8 @@ def bulk_download(album_id):
     a=_one(CompanyMediaAlbum, album_id)
     if not p.view_album(current_user,a): abort(403)
     try:
-        result = request_media_download(current_user, a, parse_file_ids(request))
+        file_ids = parse_file_ids(request)
+        result = request_media_download(current_user, a, file_ids)
         return stream_zip_download(current_user, result) if result["kind"] == "zip" else jsonify(ok=True, **result)
     except PermissionError:
         abort(403)

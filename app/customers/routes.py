@@ -46,6 +46,8 @@ def _customer_snapshot(customer):
         "description": customer.description,
         "is_active": customer.is_active,
         "archived_at": customer.archived_at.isoformat() if customer.archived_at else None,
+        "created_by_id": customer.created_by_id,
+        "created_at": customer.created_at.isoformat() if customer.created_at else None,
     }
 
 
@@ -73,13 +75,14 @@ def _save_customer(customer=None):
     customer.description = description
     customer.updated_by_id = current_user.id
     db.session.flush()
-    log_audit(
-        "customer.create" if is_new else "customer.update",
-        "Customer",
-        customer.id,
-        old_values=old_values,
-        new_values=_customer_snapshot(customer),
-    )
+    if not is_new:
+        log_audit(
+            "customer.update",
+            "Customer",
+            customer.id,
+            old_values=old_values,
+            new_values=_customer_snapshot(customer),
+        )
     db.session.commit()
     flash("Đã lưu khách hàng.", "success")
     return redirect(url_for("customers.detail", customer_id=customer.id))

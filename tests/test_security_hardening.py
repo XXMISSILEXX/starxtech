@@ -8,7 +8,7 @@ from werkzeug.security import check_password_hash
 
 from app import create_app
 from app.extensions import db
-from app.models import DownloadEvent, ReportAttachment, Role, StorageDerivative, User, UserRole
+from app.models import AuditLog, DownloadEvent, ReportAttachment, Role, StorageDerivative, User, UserRole
 from app.security import password_policy_errors
 from tests.helpers.daily_report_create_v2 import DailyReportV2UploadFile, submit_daily_report_create_v2
 
@@ -99,11 +99,43 @@ def test_attachment_preview_is_authorized_signed_redirect_without_local_runtime(
 def test_attachment_original_download_is_signed_and_audited(client, app):
     _login(client, "reporter")
     attachment_id = _report_attachment(client, app)
+    with app.app_context():
+        before_audits = AuditLog.query.count()
+        before_events = DownloadEvent.query.count()
     response = client.get(f"/attachments/{attachment_id}/download")
     assert response.status_code == 302 and "fake-storage.invalid" in response.headers["Location"]
     with app.app_context():
         event = DownloadEvent.query.filter_by(module="daily-reports", source_type="original").one()
         assert event.storage_object_id == db.session.get(ReportAttachment, attachment_id).storage_object_id
+        audit = AuditLog.query.filter_by(action="attachment.download", entity_id=attachment_id).one()
+        assert AuditLog.query.count() == before_audits + 1
+        assert DownloadEvent.query.count() == before_events + 1
+        assert audit.new_values_json["file_name"] == "safe.jpg"
+        assert audit.new_values_json["storage_object_id"] == event.storage_object_id
+
+
+def test_attachment_preview_and_thumbnail_do_not_record_disclosure_audit(client, app):
+    _login(client, "reporter")
+    attachment_id = _report_attachment(client, app)
+    with app.app_context():
+        attachment = db.session.get(ReportAttachment, attachment_id)
+        derivative = StorageDerivative(storage_object_id=attachment.storage_object_id, derivative_type="preview",
+            bucket=attachment.storage_object.bucket, object_key="daily-reports/derivatives/audit-preview.webp",
+            mime_type="image/webp", file_ext="webp", file_size=4)
+        thumbnail = StorageDerivative(storage_object_id=attachment.storage_object_id, derivative_type="thumbnail",
+            bucket=attachment.storage_object.bucket, object_key="daily-reports/derivatives/audit-thumbnail.webp",
+            mime_type="image/webp", file_ext="webp", file_size=2)
+        db.session.add_all((derivative, thumbnail)); db.session.commit()
+        app.extensions["storage_provider"].put_bytes(derivative.bucket, derivative.object_key, b"webp", derivative.mime_type)
+        app.extensions["storage_provider"].put_bytes(thumbnail.bucket, thumbnail.object_key, b"webp", thumbnail.mime_type)
+        before_audits = AuditLog.query.count()
+
+    assert client.get(f"/attachments/{attachment_id}").status_code == 302
+    response = client.get(f"/attachments/{attachment_id}/thumbnail")
+    assert response.status_code == 302
+    response.close()
+    with app.app_context():
+        assert AuditLog.query.count() == before_audits
 
 
 def test_attachment_does_not_issue_signed_url_to_unauthorized_user(client, app):

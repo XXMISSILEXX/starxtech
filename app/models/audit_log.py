@@ -7,6 +7,12 @@ from app.models.mixins import CreatedAtMixin
 
 class AuditLog(CreatedAtMixin, db.Model):
     __tablename__ = "audit_logs"
+    __table_args__ = (
+        db.Index("idx_audit_logs_created_at", "created_at"),
+        db.Index("idx_audit_logs_action_created_at", "action", "created_at"),
+        db.Index("idx_audit_logs_actor_created_at", "actor_user_id", "created_at"),
+        db.Index("idx_audit_logs_entity", "entity_type", "entity_id"),
+    )
 
     id = db.Column(db.BigInteger, primary_key=True)
     actor_user_id = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=True)

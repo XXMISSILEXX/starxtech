@@ -52,7 +52,6 @@ def create_issue(project, form):
     issue = PersistentIssue(project_id=project.id, created_by_user_id=current_user.id)
     _assign_issue_fields(issue, form, project.id)
     add_with_sqlite_id(issue)
-    audit("issue.create", "PersistentIssue", issue.id, new_values=issue_snapshot(issue))
     db.session.commit()
     return issue
 

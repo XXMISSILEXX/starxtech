@@ -151,7 +151,7 @@ def test_custom_assignment_manager_needs_project_scope_and_can_mutate_only_assig
         assignment = ProjectContractorAssignment.query.filter_by(project_id=1, contractor_id=contractor_id).one()
         assert assignment.status == ProjectContractorAssignmentStatus.ACTIVE.value
         assert assignment.role == ProjectContractorRole.CONSTRUCTION.value
-        assert AuditLog.query.filter_by(action="project_contractor_assignment.create", entity_id=assignment.id).count() == 1
+        assert AuditLog.query.filter_by(action="project_contractor_assignment.create", entity_id=assignment.id).count() == 0
 
 
 def test_assignment_page_uses_modal_vietnamese_labels_and_removal_confirmation(client, app):

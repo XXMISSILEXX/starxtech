@@ -1,4 +1,5 @@
 from sqlalchemy import event
+import sqlalchemy as sa
 
 from app.extensions import db
 from app.models.mixins import TimestampMixin
@@ -7,6 +8,16 @@ from app.models.project_document import DOCUMENT_ID
 
 class CompanyMediaAlbum(TimestampMixin, db.Model):
     __tablename__ = "company_media_albums"
+    __table_args__ = (
+        db.Index("idx_company_media_albums_lifecycle", "deleted_at", "is_active"),
+        db.Index(
+            "uq_company_media_albums_active_name",
+            sa.text("lower(name)"),
+            unique=True,
+            postgresql_where=sa.text("deleted_at IS NULL AND is_active"),
+            sqlite_where=sa.text("deleted_at IS NULL AND is_active"),
+        ),
+    )
     id = db.Column(DOCUMENT_ID, primary_key=True)
     name = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text)
@@ -24,6 +35,9 @@ class CompanyMediaAlbum(TimestampMixin, db.Model):
 
 class CompanyMediaFile(TimestampMixin, db.Model):
     __tablename__ = "company_media_files"
+    __table_args__ = (
+        db.Index("idx_company_media_files_album", "album_id", "deleted_at", "is_active"),
+    )
     id = db.Column(DOCUMENT_ID, primary_key=True)
     album_id = db.Column(DOCUMENT_ID, db.ForeignKey("company_media_albums.id", ondelete="RESTRICT"), nullable=False)
     storage_object_id = db.Column(DOCUMENT_ID, db.ForeignKey("storage_objects.id"), nullable=False, unique=True)
