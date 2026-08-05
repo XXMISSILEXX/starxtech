@@ -98,20 +98,24 @@ def test_rollup_all_closed_sections_is_closed(app, monkeypatch):
         assert (result.status, result.closed_date) == ("CLOSED", date(2026, 8, 5))
 
 
-def test_rollup_all_resolved_sections_is_closed(app):
+def test_rollup_all_resolved_sections_is_resolved_without_closed_date(app):
     with app.app_context():
-        issue = make_issue()
+        issue = make_issue(status="CLOSED", closed_date=date(2026, 8, 1))
         add_sections(issue, [(1, "RESOLVED", None), (2, "RESOLVED", None)])
 
-        assert recalculate_and_commit(issue).status == "CLOSED"
+        result = recalculate_and_commit(issue)
+
+        assert (result.status, result.closed_date) == ("RESOLVED", None)
 
 
-def test_rollup_resolved_and_closed_sections_is_closed(app):
+def test_rollup_resolved_and_closed_sections_is_resolved_without_closed_date(app):
     with app.app_context():
-        issue = make_issue()
+        issue = make_issue(status="CLOSED", closed_date=date(2026, 8, 1))
         add_sections(issue, [(1, "RESOLVED", None), (2, "CLOSED", None)])
 
-        assert recalculate_and_commit(issue).status == "CLOSED"
+        result = recalculate_and_commit(issue)
+
+        assert (result.status, result.closed_date) == ("RESOLVED", None)
 
 
 def test_rollup_uses_earliest_due_date_from_open_sections(app):
@@ -140,6 +144,17 @@ def test_rollup_ignores_due_date_of_closed_section(app):
         assert recalculate_and_commit(issue).due_date == date(2026, 8, 10)
 
 
+def test_rollup_ignores_due_date_of_resolved_section(app):
+    with app.app_context():
+        issue = make_issue()
+        add_sections(
+            issue,
+            [(1, "RESOLVED", date(2026, 8, 1)), (2, "OPEN", date(2026, 8, 10))],
+        )
+
+        assert recalculate_and_commit(issue).due_date == date(2026, 8, 10)
+
+
 def test_rollup_returns_no_due_date_when_open_sections_have_no_due_date(app):
     with app.app_context():
         issue = make_issue(due_date=date(2026, 8, 1))
@@ -148,7 +163,7 @@ def test_rollup_returns_no_due_date_when_open_sections_have_no_due_date(app):
         assert recalculate_and_commit(issue).due_date is None
 
 
-def test_rollup_returns_no_due_date_when_all_sections_are_closed(app):
+def test_rollup_returns_no_due_date_when_all_sections_are_completed(app):
     with app.app_context():
         issue = make_issue(due_date=date(2026, 8, 1))
         add_sections(issue, [(1, "CLOSED", date(2026, 8, 2)), (2, "RESOLVED", date(2026, 8, 3))])
@@ -174,6 +189,38 @@ def test_rollup_clears_closed_date_when_section_reopens(app):
         db.session.commit()
 
         assert recalculate_and_commit(issue).closed_date is None
+
+
+def test_rollup_clears_closed_date_when_closed_section_becomes_resolved(app):
+    with app.app_context():
+        issue = make_issue(status="CLOSED", closed_date=date(2026, 8, 1))
+        add_sections(issue, [(1, "CLOSED", None), (2, "CLOSED", None)])
+        section = PersistentIssueSection.query.filter_by(
+            persistent_issue_id=issue.id,
+            report_category_id=1,
+        ).one()
+        section.status = "RESOLVED"
+        db.session.commit()
+
+        result = recalculate_and_commit(issue)
+
+        assert (result.status, result.closed_date) == ("RESOLVED", None)
+
+
+def test_rollup_processing_and_resolved_sections_is_processing(app):
+    with app.app_context():
+        issue = make_issue()
+        add_sections(issue, [(1, "PROCESSING", None), (2, "RESOLVED", None)])
+
+        assert recalculate_and_commit(issue).status == "PROCESSING"
+
+
+def test_rollup_open_and_resolved_sections_is_open(app):
+    with app.app_context():
+        issue = make_issue()
+        add_sections(issue, [(1, "OPEN", None), (2, "RESOLVED", None)])
+
+        assert recalculate_and_commit(issue).status == "OPEN"
 
 
 def test_rollup_keeps_existing_closed_date(app):

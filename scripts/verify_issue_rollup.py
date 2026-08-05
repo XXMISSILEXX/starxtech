@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 """Kiểm tra bất biến tổng hợp vấn đề tồn đọng trên dữ liệu thật.
 
-CHỈ ĐỌC. Script không ghi, không sửa, không xoá bất cứ thứ gì.
+Mặc định chỉ đọc. Dùng --recalculate để tính lại các trường tổng hợp đã lưu;
+chế độ này không tạo audit log.
 
 Dùng:
 
     .venv/bin/python scripts/verify_issue_rollup.py
     .venv/bin/python scripts/verify_issue_rollup.py --project-id 1
+    .venv/bin/python scripts/verify_issue_rollup.py --recalculate
 
 Mã thoát 0 nếu mọi bất biến đúng, 1 nếu có vi phạm.
 """
@@ -44,8 +46,10 @@ def expected_rollup(sections):
     statuses = {section.status for section in sections}
     if not sections:
         status = IssueStatus.OPEN.value
-    elif statuses <= COMPLETED_STATUSES:
+    elif statuses <= {IssueStatus.CLOSED.value}:
         status = IssueStatus.CLOSED.value
+    elif statuses <= COMPLETED_STATUSES:
+        status = IssueStatus.RESOLVED.value
     elif IssueStatus.PROCESSING.value in statuses:
         status = IssueStatus.PROCESSING.value
     else:
@@ -110,6 +114,20 @@ def check_rollups(report: Report, issues, sections):
         report.ok("Hạn xử lý", f"{len(issues)} vấn đề đều khớp")
 
 
+def recalculate_rollups(issues):
+    """Update stored derived fields without creating audit-log entries."""
+    from app.issues.services import recalculate_issue_rollup
+
+    changed = 0
+    for issue in issues:
+        before = (issue.status, issue.due_date, issue.closed_date)
+        recalculate_issue_rollup(issue)
+        after = (issue.status, issue.due_date, issue.closed_date)
+        changed += before != after
+    db.session.commit()
+    print(f"Đã tính lại {len(issues)} vấn đề; {changed} vấn đề thay đổi.")
+
+
 def check_closed_dates(report: Report, issues):
     print("\n2. Ngày đóng nhất quán với status")
     mismatches = [
@@ -155,6 +173,11 @@ def summarise(issues, sections):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-id", type=int, default=None, help="Chỉ kiểm một dự án")
+    parser.add_argument(
+        "--recalculate",
+        action="store_true",
+        help="Tính lại status, due_date và closed_date từ hạng mục sống (không ghi audit)",
+    )
     args = parser.parse_args()
 
     app = create_app()
@@ -168,6 +191,11 @@ def main() -> int:
 
         issues = scoped_issues(args.project_id)
         sections = sections_by_issue(issues)
+        if args.recalculate:
+            recalculate_rollups(issues)
+            db.session.expire_all()
+            issues = scoped_issues(args.project_id)
+            sections = sections_by_issue(issues)
         check_rollups(report, issues, sections)
         check_closed_dates(report, issues)
         check_duplicate_categories(report, sections)

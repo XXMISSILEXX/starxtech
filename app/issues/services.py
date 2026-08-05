@@ -49,8 +49,10 @@ def recalculate_issue_rollup(issue):
 
     if not sections:
         issue.status = IssueStatus.OPEN.value
-    elif statuses <= completed_statuses:
+    elif statuses <= {IssueStatus.CLOSED.value}:
         issue.status = IssueStatus.CLOSED.value
+    elif statuses <= completed_statuses:
+        issue.status = IssueStatus.RESOLVED.value
     elif IssueStatus.PROCESSING.value in statuses:
         issue.status = IssueStatus.PROCESSING.value
     else:
@@ -77,6 +79,46 @@ def project_issues_query(project_id):
         PersistentIssue.project_id == project_id,
         PersistentIssue.deleted_at.is_(None),
     ).order_by(PersistentIssue.opened_date.desc(), PersistentIssue.id.desc())
+
+
+def issue_list_context(issues, *, project, can_create, create_url, actor=None):
+    """Build shared list-template context without per-issue section queries."""
+    from app.auth.permissions import (
+        can_close_persistent_issue,
+        can_delete_persistent_issue,
+        can_edit_persistent_issue,
+    )
+
+    actor = actor or current_user
+    issue_ids = [issue.id for issue in issues]
+    section_counts = {}
+    if issue_ids:
+        section_counts = dict(
+            db.session.query(
+                PersistentIssueSection.persistent_issue_id,
+                db.func.count(PersistentIssueSection.id),
+            )
+            .filter(
+                PersistentIssueSection.persistent_issue_id.in_(issue_ids),
+                PersistentIssueSection.deleted_at.is_(None),
+            )
+            .group_by(PersistentIssueSection.persistent_issue_id)
+            .all()
+        )
+    for issue in issues:
+        issue.section_count = section_counts.get(issue.id, 0)
+
+    return {
+        "issues": issues,
+        "project": project,
+        "can_write": False,
+        "can_delete": False,
+        "can_create": can_create,
+        "create_url": create_url,
+        "can_edit_by_issue": {issue.id: can_edit_persistent_issue(issue, actor) for issue in issues},
+        "can_close_by_issue": {issue.id: can_close_persistent_issue(issue, actor) for issue in issues},
+        "can_delete_by_issue": {issue.id: can_delete_persistent_issue(issue, actor) for issue in issues},
+    }
 
 
 def issue_viewable_projects_query(actor=None):
@@ -201,7 +243,6 @@ def issue_snapshot(issue):
         "opened_date": issue.opened_date.isoformat() if issue.opened_date else None,
         "due_date": issue.due_date.isoformat() if issue.due_date else None,
         "closed_date": issue.closed_date.isoformat() if issue.closed_date else None,
-        "owner_user_id": issue.owner_user_id,
     }
 
 
