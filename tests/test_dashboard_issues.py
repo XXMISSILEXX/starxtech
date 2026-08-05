@@ -79,15 +79,12 @@ def seed_dashboard_data():
     db.session.commit()
 
 
-def issue_form(title="New persistent issue", status="OPEN"):
+def issue_form(title="New persistent issue"):
     return {
         "title": title,
         "description": "Needs follow-up.",
         "severity": "MEDIUM",
-        "status": status,
         "opened_date": "2026-07-08",
-        "due_date": "2026-07-15",
-        "owner_user_id": "3",
     }
 
 

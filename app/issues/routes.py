@@ -16,7 +16,8 @@ from app.issues.services import (
     close_issue,
     create_issue,
     delete_issue,
-    owner_choices,
+    issue_form_context,
+    issue_sections,
     reopen_issue,
     issue_viewable_projects_query,
     update_issue,
@@ -157,31 +158,34 @@ def delete(issue_id):
 
 
 def _render_form(issue, form_errors=None):
+    sections = getattr(issue, "sections", None) if form_errors else None
+    sections = sections if sections is not None else issue_sections(issue)
     return render_template(
         "issues/form.html",
         issue=issue,
         project=issue.project,
-        owners=owner_choices(issue.project_id),
-        severities=[severity.value for severity in IssueSeverity],
-        statuses=[status.value for status in IssueStatus],
+        sections=sections,
         can_write=can_edit_persistent_issue(issue),
         can_delete=can_delete_persistent_issue(issue),
         form_errors=form_errors or {},
+        **issue_form_context(issue.project_id, issue, sections),
     )
 
 
 def _render_new_form(issue, projects, selected_project, form_errors=None):
+    sections = getattr(issue, "sections", [])
     return render_template(
         "issues/form.html",
         issue=issue,
         project=selected_project,
         projects=projects,
-        owners=owner_choices(selected_project.id) if selected_project else [],
-        severities=[severity.value for severity in IssueSeverity],
-        statuses=[status.value for status in IssueStatus],
+        sections=sections,
         can_write=bool(selected_project and can_create_persistent_issue(selected_project.id)),
         can_delete=False,
         form_errors=form_errors or {},
+        **(issue_form_context(selected_project.id, issue, sections) if selected_project else {
+            "categories": [], "active_categories": [], "owners": [], "severities": [severity.value for severity in IssueSeverity], "section_statuses": [status.value for status in IssueStatus],
+        }),
     )
 
 

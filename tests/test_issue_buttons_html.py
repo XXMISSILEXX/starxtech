@@ -82,9 +82,9 @@ def test_persistent_issue_form_contains_icon_options(client):
     assert response.status_code == 200
     assert "🟢 Thấp".encode() in response.data
     assert "🔴 Nghiêm trọng".encode() in response.data
-    assert "🟡 Đang mở".encode() in response.data
     assert "🏗️".encode() in response.data
-    assert "👤".encode() in response.data
+    assert "Trạng thái và hạn xử lý được tính tự động từ các hạng mục bên dưới.".encode() in response.data
+    assert b'data-issue-sections' in response.data
 
 
 def test_issue_create_missing_title_preserves_entered_data(client):
@@ -97,10 +97,7 @@ def test_issue_create_missing_title_preserves_entered_data(client):
             "title": "",
             "description": "Mô tả vẫn phải được giữ lại.",
             "severity": "HIGH",
-            "status": "PROCESSING",
             "opened_date": "2026-07-08",
-            "due_date": "2026-07-15",
-            "owner_user_id": "3",
         },
     )
 
@@ -108,5 +105,4 @@ def test_issue_create_missing_title_preserves_entered_data(client):
     assert "Vui lòng nhập tiêu đề.".encode() in response.data
     assert "🏗️ P001 - Assigned Project".encode() in response.data
     assert "🟠 Cao".encode() in response.data
-    assert "🔵 Đang xử lý".encode() in response.data
     assert "Mô tả vẫn phải được giữ lại.".encode() in response.data

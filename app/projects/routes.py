@@ -22,7 +22,8 @@ from app.issues.services import (
     IssueValidationError,
     build_issue_form_data,
     create_issue,
-    owner_choices,
+    issue_form_context,
+    issue_sections,
     project_issues_query,
 )
 from app.models import DailyReport, DailyReportStatus, Project, SectionStatus
@@ -293,16 +294,17 @@ def _reject_legacy_multipart_files(*, project, report):
 
 
 def _render_issue_form(project, issue, form_errors=None):
+    sections = getattr(issue, "sections", None) if form_errors else None
+    sections = sections if sections is not None else issue_sections(issue)
     return render_template(
         "issues/form.html",
         project=project,
         issue=issue,
-        owners=owner_choices(project.id),
-        severities=[severity.value for severity in IssueSeverity],
-        statuses=[status.value for status in IssueStatus],
+        sections=sections,
         can_write=can_create_persistent_issue(project.id, current_user),
         can_delete=False,
         form_errors=form_errors or {},
+        **issue_form_context(project.id, issue, sections),
     )
 
 

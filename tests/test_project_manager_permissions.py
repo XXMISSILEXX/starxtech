@@ -14,15 +14,12 @@ def login(client, username_or_email, password="password123"):
     )
 
 
-def issue_form(title="PM issue", owner_user_id="5"):
+def issue_form(title="PM issue"):
     return {
         "title": title,
         "description": "Theo dõi xử lý.",
         "severity": "CRITICAL",
-        "status": "OPEN",
         "opened_date": "2026-07-08",
-        "due_date": "2026-07-15",
-        "owner_user_id": owner_user_id,
     }
 
 
@@ -116,7 +113,7 @@ def test_project_manager_can_manage_issues_only_for_assigned_project(client, app
 
     created = client.post("/reports/projects/1/issues/create", data=issue_form())
     assert created.status_code == 302
-    blocked = client.post("/reports/projects/2/issues/create", data=issue_form(owner_user_id=""))
+    blocked = client.post("/reports/projects/2/issues/create", data=issue_form())
     assert blocked.status_code == 403
 
     with app.app_context():
