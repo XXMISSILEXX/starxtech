@@ -29,6 +29,14 @@ def is_project_domain_endpoint(endpoint=None):
     return is_project_configuration_endpoint(endpoint) or endpoint.startswith("project_operations.")
 
 
+def is_project_operations_overview_endpoint(endpoint=None):
+    """Whether the project-operations overview is the only sidebar owner."""
+    endpoint = endpoint or request.endpoint or ""
+    return (endpoint.startswith("project_operations.")
+            and not is_project_configuration_endpoint(endpoint)
+            and endpoint != "project_operations.project_updates_index")
+
+
 def get_active_module():
     blueprint = request.blueprint or ""
     if is_project_domain_endpoint():
@@ -71,7 +79,7 @@ def get_sidebar_items(user, active_module=None):
         add("Tất cả báo cáo xuyên suốt", "project_operations.project_updates_index", "bi-list-check", "project_updates.view",
             desktop_active=current_endpoint == "project_operations.project_updates_index")
         add("Quản lý dự án & đối tác", "project_operations.operations_index", "bi-diagram-3", "project_operations.view",
-            desktop_active=current_endpoint.startswith("project_operations."))
+            desktop_active=is_project_operations_overview_endpoint(current_endpoint))
         add("Cấu hình", "reports.configuration_hub", "bi-gear", "reports.configuration.view",
             desktop_active=current_endpoint == "reports.configuration_hub" or is_project_configuration_endpoint(current_endpoint))
     elif active_module == "partners":

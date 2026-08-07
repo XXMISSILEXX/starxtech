@@ -332,3 +332,35 @@ def test_module_navigation_keeps_each_link_active_state(client, app, sidebar_use
     desktop, mobile = _sidebar_blocks(response.get_data(as_text=True))
     assert _module_nav_states(app, desktop)[endpoint] is desktop_active
     assert _module_nav_states(app, mobile)[endpoint] is mobile_active
+
+
+def test_project_configuration_page_is_owned_by_configuration_navigation(client, app, sidebar_users):
+    _authenticate(client, 1)
+
+    response = client.get("/project-operations/contractors")
+
+    assert response.status_code == 200
+    desktop, mobile = _sidebar_blocks(response.get_data(as_text=True))
+    for states in (_module_nav_states(app, desktop), _module_nav_states(app, mobile)):
+        assert states["reports.configuration_hub"] is True
+        assert states["project_operations.operations_index"] is False
+
+
+@pytest.mark.parametrize("url", (
+    "/reports/today",
+    "/partners/dashboard",
+    "/project-documents/",
+    "/company-media/",
+    "/admin/roles",
+    "/project-operations/updates",
+    "/project-operations/contractors",
+))
+def test_module_navigation_has_at_most_one_active_link_per_sidebar(client, app, sidebar_users, url):
+    _authenticate(client, 1)
+
+    response = client.get(url)
+
+    assert response.status_code == 200
+    desktop, mobile = _sidebar_blocks(response.get_data(as_text=True))
+    assert sum(_module_nav_states(app, desktop).values()) <= 1
+    assert sum(_module_nav_states(app, mobile).values()) <= 1
