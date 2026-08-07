@@ -10,6 +10,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}StarX Daily Report{% endblock %}</title>
+    <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico', v=static_asset_version) }}" sizes="any">
+    <link rel="icon" type="image/png" sizes="96x96" href="{{ url_for('static', filename='img/favicon-96x96.png', v=static_asset_version) }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/apple-touch-icon.png', v=static_asset_version) }}">
+    <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest', v=static_asset_version) }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">

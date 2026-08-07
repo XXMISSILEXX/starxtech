@@ -1,44 +1,51 @@
 {% extends "base.html" %}
 
-{% block title %}Đăng nhập - StarX Daily Report{% endblock %}
+{% block title %}Đăng nhập - StarX Technology{% endblock %}
 
 {% block public_content %}
-  <div class="card shadow-sm">
-    <div class="card-body p-4">
-      <div class="brand mb-4">
-        <div class="brand-mark">SX</div>
-        <div>
-          <h1 class="h4 mb-0">StarX Daily Report</h1>
+  <div class="login-page">
+    <div class="login-background" aria-hidden="true">
+      <video muted autoplay loop playsinline preload="metadata" poster="{{ url_for('static', filename='img/login-background-poster.webp', v=static_asset_version) }}" aria-hidden="true" tabindex="-1">
+        <source src="{{ url_for('static', filename='video/login-background.webm', v=static_asset_version) }}" type="video/webm">
+      </video>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <div class="login-brand text-center mb-4">
+          <img src="{{ url_for('static', filename='img/starx-logo.webp', v=static_asset_version) }}" alt="Logo StarX Technology" width="120" height="47">
+          <h1 class="h4 mt-3 mb-1">StarX Technology</h1>
           <p class="text-muted mb-0">Đăng nhập để tiếp tục.</p>
         </div>
+
+        <form method="post">
+          {{ form.hidden_tag() }}
+
+          <div class="mb-3">
+            {{ form.username_or_email.label(class="form-label") }}
+            {{ form.username_or_email(class="form-control", autocomplete="username", autofocus=True) }}
+            {% for error in form.username_or_email.errors %}
+              <div class="invalid-feedback d-block">{{ error }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="mb-3">
+            {{ form.password.label(class="form-label") }}
+            {{ form.password(class="form-control", autocomplete="current-password") }}
+            {% for error in form.password.errors %}
+              <div class="invalid-feedback d-block">{{ error }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="form-check mb-3">
+            {{ form.remember(class="form-check-input") }}
+            {{ form.remember.label(class="form-check-label") }}
+          </div>
+
+          {{ form.submit(class="btn btn-primary w-100") }}
+        </form>
       </div>
-
-      <form method="post">
-        {{ form.hidden_tag() }}
-
-        <div class="mb-3">
-          {{ form.username_or_email.label(class="form-label") }}
-          {{ form.username_or_email(class="form-control", autocomplete="username", autofocus=True) }}
-          {% for error in form.username_or_email.errors %}
-            <div class="invalid-feedback d-block">{{ error }}</div>
-          {% endfor %}
-        </div>
-
-        <div class="mb-3">
-          {{ form.password.label(class="form-label") }}
-          {{ form.password(class="form-control", autocomplete="current-password") }}
-          {% for error in form.password.errors %}
-            <div class="invalid-feedback d-block">{{ error }}</div>
-          {% endfor %}
-        </div>
-
-        <div class="form-check mb-3">
-          {{ form.remember(class="form-check-input") }}
-          {{ form.remember.label(class="form-check-label") }}
-        </div>
-
-        {{ form.submit(class="btn btn-primary w-100") }}
-      </form>
     </div>
+    <p class="login-credit mb-0 mt-4 text-center">Made by Tran Hieu <span class="login-credit-slayer"><img src="{{ url_for('static', filename='img/crossed-swords.svg', v=static_asset_version) }}" alt="" aria-hidden="true" tabindex="-1"><span class="login-credit-slayer-text">Slayer</span></span></p>
   </div>
 {% endblock %}
