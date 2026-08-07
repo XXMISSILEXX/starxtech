@@ -82,6 +82,17 @@ def type_percent(progress_type):
     return sum(values, Decimal()) / len(values) if values else None
 
 
+def filtered_item_percent(items, value_mode):
+    """Calculate a selected item's total using the type's established mode rules."""
+    items = list(items)
+    if value_mode == "money":
+        planned = sum((Decimal(item.planned_quantity or 0) for item in items), Decimal())
+        return None if planned <= 0 else sum((Decimal(item.completed_quantity or 0) for item in items), Decimal()) / planned * 100
+    values = [item_percent(item) for item in items]
+    values = [value for value in values if value is not None]
+    return sum(values, Decimal()) / len(values) if values else None
+
+
 def item_gantt_timeline(item, entries=()):
     """Derive one item's planned and actual timeline without database access."""
     entry_dates = sorted(

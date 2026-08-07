@@ -22,16 +22,32 @@
 
   <section class="card mb-4" data-progress-dashboard-chart-selection>
     <div class="card-body">
-      <form method="get" data-progress-dashboard-type-form>
-        <label class="form-label" for="progress-dashboard-type">Giai đoạn</label>
-        <select class="form-select" id="progress-dashboard-type" name="type_id" data-progress-dashboard-type-select onchange="this.form.submit()">
-          {% for progress_type in selector_types %}
-          <option value="{{ progress_type.id }}" {% if progress_type.id == selected_type.id %}selected{% endif %}>{{ progress_type.project.code }} · {{ progress_type.project.name }} — {{ progress_type.name }}</option>
-          {% endfor %}
-        </select>
+      <form method="get" data-progress-dashboard-filter-form>
+        <div class="row g-3 align-items-end">
+          <div class="col-md-6">
+            <label class="form-label" for="progress-dashboard-type">Giai đoạn</label>
+            <select class="form-select" id="progress-dashboard-type" name="type_id" data-progress-dashboard-filter-select data-progress-dashboard-type-select>
+              {% for progress_type in selector_types %}
+              <option value="{{ progress_type.id }}" {% if progress_type.id == selected_type.id %}selected{% endif %}>{{ progress_type.project.code }} · {{ progress_type.project.name }} — {{ progress_type.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="progress-dashboard-item">Hạng mục</label>
+            <select class="form-select" id="progress-dashboard-item" name="item_name" data-progress-dashboard-filter-select>
+              <option value="">Tất cả hạng mục</option>
+              {% for item_name in selector_item_names %}
+              <option value="{{ item_name }}" {% if item_name == selected_item_name %}selected{% endif %}>{{ item_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2 d-grid">
+            <button class="btn btn-primary" type="submit">Lọc</button>
+          </div>
+        </div>
       </form>
       {% if selected_type.groups %}
-      <div class="mt-3" data-progress-dashboard-chart data-chart-url="{{ url_for('construction_progress.chart_data', project_id=selected_type.project_id, type_id=selected_type.id) }}">
+      <div class="mt-3" data-progress-dashboard-chart data-chart-url="{{ url_for('construction_progress.chart_data', project_id=selected_type.project_id, type_id=selected_type.id, item_name=selected_item_name) }}">
         <div style="height: 320px; position: relative;">
           <canvas data-progress-dashboard-chart-canvas role="img" aria-label="Biểu đồ phần trăm hoàn thành theo khu vực của {{ selected_type.name }}">Biểu đồ phần trăm hoàn thành theo khu vực.</canvas>
         </div>
@@ -68,7 +84,7 @@
       </table>
     </div>
     {% if has_previous or has_next %}
-    <div class="card-footer d-flex justify-content-between align-items-center"><span class="small text-muted">{{ total_rows }} giai đoạn</span><div class="btn-group">{% if has_previous %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dashboard.progress_dashboard', page=page - 1, type_id=selected_type.id) }}">Trước</a>{% endif %}{% if has_next %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dashboard.progress_dashboard', page=page + 1, type_id=selected_type.id) }}">Sau</a>{% endif %}</div></div>
+    <div class="card-footer d-flex justify-content-between align-items-center"><span class="small text-muted">{{ total_rows }} giai đoạn</span><div class="btn-group">{% if has_previous %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dashboard.progress_dashboard', page=page - 1, type_id=selected_type.id, item_name=selected_item_name) }}">Trước</a>{% endif %}{% if has_next %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dashboard.progress_dashboard', page=page + 1, type_id=selected_type.id, item_name=selected_item_name) }}">Sau</a>{% endif %}</div></div>
     {% endif %}
   </div>
   {% else %}
@@ -78,5 +94,6 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/progress-dashboard-filter.js', v=static_asset_version) }}"></script>
 <script src="{{ url_for('static', filename='js/progress-dashboard-chart.js', v=static_asset_version) }}"></script>
 {% endblock %}

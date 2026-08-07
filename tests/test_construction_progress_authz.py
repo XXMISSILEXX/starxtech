@@ -190,7 +190,7 @@ def test_progress_route_matrix(client, app, username, expected):
     results = (
         client.get("/projects/1/progress").status_code,
         client.post("/projects/1/progress/types", data={"name": f"Cấu trúc {username}"}).status_code,
-        client.get(f"/projects/1/progress/types/{type_id}/chart-data").status_code,
+        client.get(f"/projects/1/progress/types/{type_id}/chart-data?item_name=Hạng%20mục%20A%20bí%20mật").status_code,
         client.get(f"/projects/1/progress/types/{type_id}?tab=entries").status_code,
         client.get(f"/projects/1/progress/types/{type_id}?tab=gantt").status_code,
     )
