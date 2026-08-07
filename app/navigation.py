@@ -1,6 +1,9 @@
 """Request-first navigation policy; session is only a landing fallback."""
 from flask import request, session, url_for
 
+from app.auth.permissions import (can_access_company_media_module,
+    can_access_project_documents_module)
+
 
 # These endpoints retain their existing URLs for compatibility, but they are
 # permanently part of the Reports/project-management shell.  Keeping this
@@ -45,7 +48,8 @@ def get_sidebar_items(user, active_module=None):
     active_module = active_module or get_active_module()
     items = []
     def add(label, endpoint, icon, permission=None):
-        if permission is None or user.can(permission):
+        allowed = permission if isinstance(permission, bool) else permission is None or user.can(permission)
+        if allowed:
             items.append({"label": label, "url": url_for(endpoint), "icon": icon, "endpoint": endpoint})
     if active_module == "reports":
         if user.can("dashboards.system.view") and user.can("projects.scope_all"):
@@ -61,12 +65,13 @@ def get_sidebar_items(user, active_module=None):
         add("Bộ trường dữ liệu", "partner_field_collections.index", "bi-collection", "partner_field_collections.view")
         add("Sơ đồ quan hệ", "partner_relations.index", "bi-diagram-3", "partner_relations.view")
     elif active_module == "project_documents":
-        add("Hồ sơ tài liệu", "project_documents.index", "bi-folder2-open", "modules.project_documents.access")
+        add("Hồ sơ dự án", "project_documents.index", "bi-folder2-open", can_access_project_documents_module(user))
     elif active_module == "company_media":
-        add("Thư viện ảnh/video công ty", "company_media.index", "bi-images", "modules.company_media.access")
+        add("Thư viện ảnh/video công ty", "company_media.index", "bi-images", can_access_company_media_module(user))
     elif active_module == "admin":
         add("Người dùng", "admin.users_index", "bi-people", "users.view")
         add("Dung lượng & băng thông", "admin_storage.index", "bi-device-ssd", "storage.dashboard.view")
+        add("Lịch sử thao tác", "audit_log.index", "bi-journal-text", "audit_logs.view")
         add("Vai trò & phân quyền", "admin.roles_index", "bi-shield-lock", "roles.view")
         add("Nhận diện hệ thống", "admin.branding", "bi-palette", "settings.branding.view")
     return items
