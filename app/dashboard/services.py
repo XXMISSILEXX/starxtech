@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import Enum
+import unicodedata
 from zoneinfo import ZoneInfo
 
 from flask_login import current_user
@@ -249,7 +250,13 @@ def project_progress_dashboard_context(project):
     }
 
 
-def progress_dashboard_context(*, page=1, selected_type_id=None, today=None):
+def _vietnamese_name_sort_key(value):
+    """Provide a stable Vietnamese-friendly order without relying on DB collation."""
+    normalized = unicodedata.normalize("NFD", value.casefold()).replace("đ", "d")
+    return ("".join(character for character in normalized if not unicodedata.combining(character)), value)
+
+
+def progress_dashboard_context(*, page=1, selected_type_id=None, selected_item_name=None, today=None):
     """Build the cross-project progress dashboard from SQL-paginated rows."""
     from app.project_memberships import accessible_project_ids
 
@@ -301,11 +308,21 @@ def progress_dashboard_context(*, page=1, selected_type_id=None, today=None):
     selected_type = next((progress_type for progress_type in selector_types if progress_type.id == selected_type_id), None)
     if selected_type is None and selector_types:
         selected_type = selector_types[0]
+    selector_item_names = []
     if selected_type is not None:
         selected_type = ProgressType.query.options(
             joinedload(ProgressType.project),
             joinedload(ProgressType.groups),
         ).filter(ProgressType.id == selected_type.id).one()
+        selector_item_names = [
+            name
+            for (name,) in db.session.query(ProgressItem.name).join(ProgressGroup).filter(
+                ProgressGroup.progress_type_id == selected_type.id,
+                ProgressItem.project_id == selected_type.project_id,
+            ).distinct().all()
+        ]
+        selector_item_names.sort(key=_vietnamese_name_sort_key)
+    selected_item_name = selected_item_name if selected_item_name in selector_item_names else None
     progress_types = []
     entries_by_item_id = {}
     if type_ids:
@@ -343,7 +360,9 @@ def progress_dashboard_context(*, page=1, selected_type_id=None, today=None):
     return {
         "summaries": summaries,
         "selector_types": selector_types,
+        "selector_item_names": selector_item_names,
         "selected_type": selected_type,
+        "selected_item_name": selected_item_name,
         "cards": {
             "projects_with_progress": projects_with_progress,
             "overdue_types": overdue_types,

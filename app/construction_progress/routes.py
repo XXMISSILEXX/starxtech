@@ -357,6 +357,32 @@ def change_entry(project_id, entry_id, action):
 def chart_data(project_id, type_id):
     value = _type(project_id, type_id)
     groups = list(value.groups)
+    selected_item_name = request.args.get("item_name")
+    item_names = {
+        item.name
+        for group in groups
+        for item in group.items
+    }
+    selected_item_name = selected_item_name if selected_item_name in item_names else None
+    if selected_item_name:
+        matching_items = [
+            next((item for item in group.items if item.name == selected_item_name), None)
+            for group in groups
+        ]
+        percentages = []
+        for item in matching_items:
+            percent = services.item_percent(item) if item is not None else None
+            percentages.append(round(float(percent), 1) if percent is not None else None)
+        overall_percent = services.filtered_item_percent(
+            (item for item in matching_items if item is not None),
+            value.value_mode,
+        )
+        return jsonify({
+            "labels": [group.name for group in groups],
+            "percentages": percentages,
+            "overall_percent": round(float(overall_percent), 1) if overall_percent is not None else None,
+            "item_name": selected_item_name,
+        })
     payload = {
         "labels": [group.name for group in groups],
         "percentages": [round(float(services.group_percent(group, value.value_mode) or 0), 1) for group in groups],

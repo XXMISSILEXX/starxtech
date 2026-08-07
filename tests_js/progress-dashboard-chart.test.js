@@ -29,6 +29,7 @@ test("loads chart data and renders one vertical bar for every area", async () =>
   assert.equal(charts[0].config.data.datasets[0].backgroundColor.startsWith("var("), false);
   assert.equal(charts[0].config.options.maintainAspectRatio, false);
   assert.equal(charts[0].config.options.scales.y.max, 100);
+  assert.equal(charts[0].config.plugins[0].id, "progressDashboardPercentageLabels");
   assert.match(dom.window.document.querySelector("[data-progress-dashboard-chart-summary]").textContent, /50%/);
   assert.match(source, /fetch\(root\.dataset\.chartUrl, \{headers: \{Accept: 'application\/json'\}\}\)/);
 });
@@ -49,4 +50,28 @@ test("uses completed and remaining stacked datasets for money progress", async (
   assert.equal(charts[0].config.data.datasets[1].backgroundColor.startsWith("var("), false);
   assert.equal(charts[0].config.data.datasets[1].borderWidth, 2);
   assert.equal(charts[0].config.options.scales.y.stacked, true);
+});
+
+test("uses a larger percentage axis and a filtered-item summary when a value exceeds 100%", async () => {
+  const {charts, dom} = await page({labels: ["C1"], percentages: [105.8], overall_percent: 105.8, item_name: "Điện"});
+
+  assert.equal(charts[0].config.options.scales.y.max, 110);
+  assert.match(dom.window.document.querySelector("[data-progress-dashboard-chart-summary]").textContent, /Hạng mục “Điện”: 105,8%/i);
+});
+
+test("percentage label plugin draws values but skips null bars", async () => {
+  const {charts} = await page({labels: ["C1", "C2"], percentages: [25, null], overall_percent: 25, item_name: "Điện"});
+  const config = charts[0].config;
+  const drawn = [];
+  const context = {
+    save() {}, restore() {},
+    fillText: (...args) => drawn.push(args),
+  };
+  config.plugins[0].afterDatasetsDraw({
+    data: config.data,
+    ctx: context,
+    getDatasetMeta: () => ({data: [{x: 20, y: 30}, {x: 40, y: 50}]}),
+  }, {}, config.options.plugins.progressDashboardPercentageLabels);
+
+  assert.deepEqual(drawn, [["25%", 20, 24]]);
 });
