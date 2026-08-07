@@ -1,6 +1,7 @@
 from app.extensions import db
 from app.models import Company, CompanyDepartment, Partner, PartnerFieldDefinition, PartnerFieldValue, UserRole
 from tests.test_auth_permissions import login
+from tests.test_phase15_login_ui import LoginPageParser
 
 
 def test_multi_module_login_redirects_to_module_selection(client):
@@ -27,7 +28,9 @@ def test_module_selection_sets_active_module_and_sidebar(client):
     page = client.get("/partners/dashboard")
     assert "Tổng quan đối tác".encode() in page.data
     assert "Trường dữ liệu đối tác".encode() in page.data
-    assert b"Made by Tran Hieu Slayer" in page.data
+    parser = LoginPageParser()
+    parser.feed(page.get_data(as_text=True))
+    assert "Made by Tran Hieu Slayer" in parser.text
     assert "Báo cáo</span>".encode() not in page.data
 
 
