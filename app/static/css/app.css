@@ -241,6 +241,10 @@ html.sidebar-collapsed .sidebar-watermark {
 
 .module-switch-link:focus-visible { outline: 3px solid rgba(37, 99, 235, .35); outline-offset: 2px; }
 
+[data-module-card] { position: relative; }
+.module-card-link { display: block; height: 100%; }
+.module-card-navigation-trigger { position: absolute; top: .75rem; right: .75rem; z-index: 1; }
+
 .display-image-preview {
   width: 128px;
   aspect-ratio: 1 / 1;

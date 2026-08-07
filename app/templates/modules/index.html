@@ -4,5 +4,27 @@
 {% block page_title %}Chọn phân hệ làm việc{% endblock %}
 
 {% block content %}
-{% if modules %}<div class="row g-3">{% for module in modules %}<div class="col-md-6 col-xl-4"><a class="text-decoration-none text-reset" href="{{ module.url }}"><div class="card h-100" data-module-card="{{ module.key }}"><div class="card-body"><div class="d-flex align-items-center gap-3"><div class="stat-icon"><i class="bi {{ module.icon }}"></i></div><div><h2 class="h5 mb-1">{{ module.label }}</h2><div class="text-muted">{{ module.description }}</div></div></div></div></div></a></div>{% endfor %}</div>{% else %}<div class="alert alert-info mb-0">Bạn chưa được cấp quyền truy cập phân hệ nào. Vui lòng liên hệ quản trị viên.</div>{% endif %}
+{% if modules %}
+<div class="row g-3">
+  {% for module in modules %}
+  {% set navigation_items = module["items"] %}
+  {% set show_navigation_overlay = navigation_items|length > 1 or (navigation_items|length == 1 and navigation_items[0].url != module.url) %}
+  <div class="col-md-6 col-xl-4">
+    <div class="card h-100" data-module-card="{{ module.key }}">
+      <a class="module-card-link text-decoration-none text-reset" href="{{ module.url }}">
+        <div class="card-body"><div class="d-flex align-items-center gap-3"><div class="stat-icon"><i class="bi {{ module.icon }}"></i></div><div><h2 class="h5 mb-1">{{ module.label }}</h2><div class="text-muted">{{ module.description }}</div></div></div></div>
+      </a>
+      {% if show_navigation_overlay %}
+      <button class="btn btn-sm btn-light module-card-navigation-trigger" type="button" data-module-nav-trigger data-bs-toggle="modal" data-bs-target="#moduleQuickNav{{ loop.index }}" aria-controls="moduleQuickNav{{ loop.index }}" aria-label="Mở điều hướng {{ module.label }}"><i class="bi bi-list" aria-hidden="true"></i></button>
+      <div class="modal fade" id="moduleQuickNav{{ loop.index }}" tabindex="-1" aria-labelledby="moduleQuickNavLabel{{ loop.index }}" aria-hidden="true" data-module-nav-overlay="{{ module.key }}">
+        <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 class="modal-title h5 mb-0" id="moduleQuickNavLabel{{ loop.index }}">{{ module.label }}</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button></div><div class="list-group list-group-flush">{% for item in navigation_items %}<a class="list-group-item list-group-item-action d-flex align-items-center gap-2" data-module-nav-overlay-link href="{{ item.url }}"><i class="bi {{ item.icon }}"></i><span>{{ item.label }}</span></a>{% endfor %}</div></div></div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info mb-0">Bạn chưa được cấp quyền truy cập phân hệ nào. Vui lòng liên hệ quản trị viên.</div>
+{% endif %}
 {% endblock %}

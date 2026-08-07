@@ -3,6 +3,7 @@ from flask import url_for
 from app.auth.permissions import (can_access_partners_module, can_access_project_documents_module,
     can_access_reports_module, can_access_admin_module)
 from app.company_media import permissions as company_media_permissions
+from app.navigation import get_sidebar_items
 
 
 MODULES = (
@@ -35,5 +36,6 @@ def get_accessible_modules(user):
         "admin": url_for("modules.select_admin"),
     }
     return [{"key": key, "label": label, "description": description, "icon": icon,
-             "url": urls[key], "reason": reasons.get(key, "role_access")}
+             "url": urls[key], "reason": reasons.get(key, "role_access"),
+             "items": get_sidebar_items(user, key)}
             for key, label, description, icon in MODULES if access[key]]
