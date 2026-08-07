@@ -5,7 +5,7 @@
       data-resolved-theme="light"
       data-accent="{{ ui_preferences.accent }}"
       data-bs-theme="light"
-      {% if current_user.is_authenticated %}data-theme-storage-key="starx.ui-preferences.{{ current_user.id }}"{% endif %}>
+      {% if current_user.is_authenticated %}data-theme-storage-key="starx.ui-preferences.{{ current_user.id }}" data-sidebar-storage-key="starx.sidebar.{{ current_user.id }}"{% endif %}>
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -18,6 +18,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="{{ url_for('static', filename='js/theme-preload.js', v=static_asset_version) }}"></script>
+    <script src="{{ url_for('static', filename='js/sidebar-toggle.js', v=static_asset_version) }}"></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/app.css', v=static_asset_version) }}" rel="stylesheet">
@@ -41,37 +42,39 @@
           </div>
         </a>
         <nav class="nav flex-column gap-1">
-          <div class="module-switch-section"><a class="nav-link module-switch-link {% if endpoint.startswith('modules.') %}active{% endif %}" data-testid="desktop-module-switch-link" href="{{ url_for('modules.index') }}"><i class="bi bi-arrow-left-right"></i><span>Đổi phân hệ</span></a></div>
+          <div class="module-switch-section"><a class="nav-link module-switch-link {% if endpoint.startswith('modules.') %}active{% endif %}" data-testid="desktop-module-switch-link" href="{{ url_for('modules.index') }}" title="Đổi phân hệ"><i class="bi bi-arrow-left-right"></i><span>Đổi phân hệ</span></a></div>
           {% if active_module == 'partners' %}
-            {% if current_user.can('partners.view') %}<a class="nav-link {% if endpoint == 'partners.dashboard' %}active{% endif %}" href="{{ url_for('partners.dashboard') }}"><i class="bi bi-grid-1x2"></i><span>Tổng quan đối tác</span></a>
-            <a class="nav-link {% if endpoint.startswith('partners.') and endpoint != 'partners.dashboard' %}active{% endif %}" href="{{ url_for('partners.index') }}"><i class="bi bi-person-vcard"></i><span>Đối tác</span></a>{% endif %}
-            {% if current_user.can('partner_companies.view') %}<a class="nav-link {% if endpoint.startswith('partner_companies.') %}active{% endif %}" href="{{ url_for('partner_companies.index') }}"><i class="bi bi-buildings"></i><span>Công ty</span></a>{% endif %}
+            {% if current_user.can('partners.view') %}<a class="nav-link {% if endpoint == 'partners.dashboard' %}active{% endif %}" href="{{ url_for('partners.dashboard') }}" title="Tổng quan đối tác"><i class="bi bi-grid-1x2"></i><span>Tổng quan đối tác</span></a>
+            <a class="nav-link {% if endpoint.startswith('partners.') and endpoint != 'partners.dashboard' %}active{% endif %}" href="{{ url_for('partners.index') }}" title="Đối tác"><i class="bi bi-person-vcard"></i><span>Đối tác</span></a>{% endif %}
+            {% if current_user.can('partner_companies.view') %}<a class="nav-link {% if endpoint.startswith('partner_companies.') %}active{% endif %}" href="{{ url_for('partner_companies.index') }}" title="Công ty"><i class="bi bi-buildings"></i><span>Công ty</span></a>{% endif %}
             {% if current_user.can('partner_fields.view') or current_user.can('partner_fields.manage') %}
-              <a class="nav-link {% if endpoint.startswith('partner_fields.') %}active{% endif %}" href="{{ url_for('partner_fields.index') }}"><i class="bi bi-sliders"></i><span>Trường dữ liệu đối tác</span></a>
-              <a class="nav-link {% if endpoint.startswith('partner_field_collections.') %}active{% endif %}" href="{{ url_for('partner_field_collections.index') }}"><i class="bi bi-collection"></i><span>Bộ trường dữ liệu</span></a>
+              <a class="nav-link {% if endpoint.startswith('partner_fields.') %}active{% endif %}" href="{{ url_for('partner_fields.index') }}" title="Trường dữ liệu đối tác"><i class="bi bi-sliders"></i><span>Trường dữ liệu đối tác</span></a>
+              <a class="nav-link {% if endpoint.startswith('partner_field_collections.') %}active{% endif %}" href="{{ url_for('partner_field_collections.index') }}" title="Bộ trường dữ liệu"><i class="bi bi-collection"></i><span>Bộ trường dữ liệu</span></a>
             {% endif %}
-            {% if current_user.can('partner_relations.view') %}<a class="nav-link {% if endpoint.startswith('partner_relations.') %}active{% endif %}" href="{{ url_for('partner_relations.index') }}"><i class="bi bi-diagram-3"></i><span>Sơ đồ quan hệ</span></a>{% endif %}
+            {% if current_user.can('partner_relations.view') %}<a class="nav-link {% if endpoint.startswith('partner_relations.') %}active{% endif %}" href="{{ url_for('partner_relations.index') }}" title="Sơ đồ quan hệ"><i class="bi bi-diagram-3"></i><span>Sơ đồ quan hệ</span></a>{% endif %}
           {% elif active_module == 'reports' %}
-            {% if current_user.can('dashboards.system.view') and current_user.can('projects.scope_all') %}<a class="nav-link {% if endpoint.startswith('dashboard.') or endpoint == 'projects.dashboard' %}active{% endif %}" href="{{ url_for('dashboard.system_dashboard') }}"><i class="bi bi-grid-1x2"></i><span>Dashboard quản trị</span></a>{% endif %}
-            {% if current_user.can('reports.today.view') %}<a class="nav-link {% if endpoint == 'reports.today' %}active{% endif %}" href="{{ url_for('reports.today') }}"><i class="bi bi-calendar-check"></i><span>Hôm nay</span></a>{% endif %}
-            {% if current_user.can('project_operations.view') %}<a class="nav-link {% if endpoint.startswith('project_operations.') %}active{% endif %}" href="{{ url_for('project_operations.operations_index') }}"><i class="bi bi-diagram-3"></i><span>Quản lý dự án &amp; đối tác</span></a>{% endif %}
-            {% if current_user.can('reports.configuration.view') %}<a class="nav-link {% if endpoint == 'reports.configuration_hub' or nav_project_configuration %}active{% endif %}" href="{{ url_for('reports.configuration_hub') }}"><i class="bi bi-gear"></i><span>Cấu hình</span></a>{% endif %}
+            {% if current_user.can('dashboards.system.view') and current_user.can('projects.scope_all') %}<a class="nav-link {% if endpoint.startswith('dashboard.') or endpoint == 'projects.dashboard' %}active{% endif %}" href="{{ url_for('dashboard.system_dashboard') }}" title="Dashboard quản trị"><i class="bi bi-grid-1x2"></i><span>Dashboard quản trị</span></a>{% endif %}
+            {% if current_user.can('reports.today.view') %}<a class="nav-link {% if endpoint == 'reports.today' %}active{% endif %}" href="{{ url_for('reports.today') }}" title="Hôm nay"><i class="bi bi-calendar-check"></i><span>Hôm nay</span></a>{% endif %}
+            {% if current_user.can('project_operations.view') %}<a class="nav-link {% if endpoint.startswith('project_operations.') %}active{% endif %}" href="{{ url_for('project_operations.operations_index') }}" title="Quản lý dự án &amp; đối tác"><i class="bi bi-diagram-3"></i><span>Quản lý dự án &amp; đối tác</span></a>{% endif %}
+            {% if current_user.can('reports.configuration.view') %}<a class="nav-link {% if endpoint == 'reports.configuration_hub' or nav_project_configuration %}active{% endif %}" href="{{ url_for('reports.configuration_hub') }}" title="Cấu hình"><i class="bi bi-gear"></i><span>Cấu hình</span></a>{% endif %}
           {% elif active_module == 'project_documents' %}
-            {% if can_access_project_documents_module() %}<a class="nav-link active" href="{{ url_for('project_documents.index') }}"><i class="bi bi-folder2-open"></i><span>Hồ sơ dự án</span></a>{% endif %}
+            {% if can_access_project_documents_module() %}<a class="nav-link active" href="{{ url_for('project_documents.index') }}" title="Hồ sơ dự án"><i class="bi bi-folder2-open"></i><span>Hồ sơ dự án</span></a>{% endif %}
           {% elif active_module == 'company_media' %}
-            {% if can_access_company_media_module() %}<a class="nav-link active" href="{{ url_for('company_media.index') }}"><i class="bi bi-images"></i><span>Thư viện ảnh/video công ty</span></a>{% endif %}
+            {% if can_access_company_media_module() %}<a class="nav-link active" href="{{ url_for('company_media.index') }}" title="Thư viện ảnh/video công ty"><i class="bi bi-images"></i><span>Thư viện ảnh/video công ty</span></a>{% endif %}
           {% endif %}
           {% if active_module == 'admin' %}
-            {% if can_view_admin_users %}<a class="nav-link" href="{{ url_for('admin.users_index') }}"><i class="bi bi-people"></i><span>Người dùng</span></a>{% endif %}
-            {% if can_view_storage_dashboard %}<a class="nav-link" href="{{ url_for('admin_storage.index') }}"><i class="bi bi-device-ssd"></i><span>Dung lượng & băng thông</span></a>{% endif %}
-            {% if can_view_audit_logs %}<a class="nav-link {% if endpoint.startswith('audit_log.') %}active{% endif %}" href="{{ url_for('audit_log.index') }}"><i class="bi bi-journal-text"></i><span>Lịch sử thao tác</span></a>{% endif %}
-            {% if can_view_roles %}<a class="nav-link {% if request.path.startswith('/admin/roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>{% endif %}
-            {% if current_user.can('settings.branding.view') %}<a class="nav-link" href="{{ url_for('admin.branding') }}"><i class="bi bi-palette"></i><span>Nhận diện hệ thống</span></a>{% endif %}
+            {% if can_view_admin_users %}<a class="nav-link" href="{{ url_for('admin.users_index') }}" title="Người dùng"><i class="bi bi-people"></i><span>Người dùng</span></a>{% endif %}
+            {% if can_view_storage_dashboard %}<a class="nav-link" href="{{ url_for('admin_storage.index') }}" title="Dung lượng & băng thông"><i class="bi bi-device-ssd"></i><span>Dung lượng & băng thông</span></a>{% endif %}
+            {% if can_view_audit_logs %}<a class="nav-link {% if endpoint.startswith('audit_log.') %}active{% endif %}" href="{{ url_for('audit_log.index') }}" title="Lịch sử thao tác"><i class="bi bi-journal-text"></i><span>Lịch sử thao tác</span></a>{% endif %}
+            {% if can_view_roles %}<a class="nav-link {% if request.path.startswith('/admin/roles') %}active{% endif %}" href="{{ url_for('admin.roles_index') }}" title="Vai trò & phân quyền"><i class="bi bi-shield-lock"></i><span>Vai trò & phân quyền</span></a>{% endif %}
+            {% if current_user.can('settings.branding.view') %}<a class="nav-link" href="{{ url_for('admin.branding') }}" title="Nhận diện hệ thống"><i class="bi bi-palette"></i><span>Nhận diện hệ thống</span></a>{% endif %}
           {% endif %}
-          <div class="mt-auto pt-3 border-top"><a class="nav-link" href="{{ url_for('account.profile') }}"><i class="bi bi-person-gear"></i><span>Cài đặt cá nhân</span></a></div>
+          <div class="mt-auto pt-3 border-top"><a class="nav-link" href="{{ url_for('account.profile') }}" title="Cài đặt cá nhân"><i class="bi bi-person-gear"></i><span>Cài đặt cá nhân</span></a></div>
         </nav>
-        <div class="sidebar-watermark">Made by Tran Hieu Slayer</div>
+        <div class="sidebar-watermark">Made by Tran Hieu <span class="sidebar-watermark-slayer"><img src="{{ url_for('static', filename='img/crossed-swords.svg', v=static_asset_version) }}" alt="" aria-hidden="true" tabindex="-1"><span class="sidebar-watermark-slayer-text">Slayer</span></span></div>
       </aside>
+
+      <button class="sidebar-toggle" type="button" data-sidebar-toggle aria-expanded="true" aria-label="Thu gọn thanh điều hướng"><i class="bi bi-chevron-left" aria-hidden="true"></i></button>
 
       <div class="offcanvas offcanvas-start" tabindex="-1" id="mobileSidebar" aria-labelledby="mobileSidebarLabel">
         <div class="offcanvas-header">
@@ -130,7 +133,7 @@
               <button class="nav-link mobile-logout-button" type="submit"><i class="bi bi-box-arrow-right"></i><span>Đăng xuất</span></button>
             </form>
           </nav>
-          <div class="sidebar-watermark">Made by Tran Hieu Slayer</div>
+          <div class="sidebar-watermark">Made by Tran Hieu <span class="sidebar-watermark-slayer"><img src="{{ url_for('static', filename='img/crossed-swords.svg', v=static_asset_version) }}" alt="" aria-hidden="true" tabindex="-1"><span class="sidebar-watermark-slayer-text">Slayer</span></span></div>
         </div>
       </div>
 
