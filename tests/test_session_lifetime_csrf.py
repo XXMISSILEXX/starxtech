@@ -9,10 +9,11 @@ import pytest
 from flask import jsonify, session
 from flask_login import current_user
 from werkzeug.security import check_password_hash
+from app.date_utils import local_today
 
 from app import create_app
 from app.extensions import db
-from app.models import User
+from app.models import DailyReport, UploadSelectionSession, User
 from conftest import TestConfig, seed_test_data
 
 
@@ -216,6 +217,86 @@ def test_csrf_missing_logout_token_has_no_side_effect(csrf_client):
     assert response.status_code == 400
     with csrf_client.session_transaction() as client_session:
         assert client_session["_user_id"] == "3"
+
+
+def test_csrf_missing_json_logout_returns_json_without_side_effect(csrf_client):
+    _login(csrf_client)
+
+    response = csrf_client.post("/logout", json={})
+
+    assert response.status_code == 400
+    assert response.is_json
+    payload = response.get_json()
+    assert "Phiên đã hết hiệu lực" in payload["message"]
+    assert "chưa được thực hiện" in payload["message"]
+    assert "tải lại trang rồi thực hiện lại" in payload["message"]
+    assert payload["error"]["message"] == payload["message"]
+    assert "CSRF" not in payload["message"]
+    assert "token" not in payload["message"].lower()
+    assert response.headers["Cache-Control"] == "no-store"
+    with csrf_client.session_transaction() as client_session:
+        assert client_session["_user_id"] == "3"
+
+
+def test_csrf_json_daily_report_finalize_returns_json_without_upload_side_effect(csrf_client, csrf_app):
+    _login(csrf_client)
+    with csrf_app.app_context():
+        upload_session = UploadSelectionSession(
+            module_type="daily_reports",
+            target_type="project",
+            target_id=1,
+            created_by_id=3,
+            declared_files=0,
+            declared_size_bytes=0,
+            status="ready",
+            expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1),
+        )
+        db.session.add(upload_session)
+        db.session.commit()
+        upload_session_id = upload_session.id
+        report_count = DailyReport.query.count()
+        upload_session_count = UploadSelectionSession.query.count()
+
+    response = csrf_client.post(
+        "/api/projects/1/daily-reports/finalize",
+        json={
+            "client_request_id": "7cf6d3c9-75e9-4bbd-9328-c1314a2aebef",
+            "report_date": local_today().isoformat(),
+            "overall_status": "UPDATED",
+            "highlight": "Báo cáo không được tạo khi phiên đã hết hạn.",
+            "summary_note": "",
+            "upload_session_id": upload_session_id,
+            "attachments": [],
+            "sections": [{
+                "client_section_id": "ef5a91fe-a329-4ea4-8213-73c15e8d58ec",
+                "report_category_id": 1,
+                "status": "GOOD",
+                "content": "Không được lưu.",
+                "sort_order": 0,
+            }],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.is_json
+    assert "Phiên đã hết hiệu lực" in response.get_json()["message"]
+    with csrf_app.app_context():
+        assert DailyReport.query.count() == report_count
+        assert UploadSelectionSession.query.count() == upload_session_count
+        assert db.session.get(UploadSelectionSession, upload_session_id).status == "ready"
+
+
+def test_csrf_missing_form_logout_keeps_the_vietnamese_html_error_page(csrf_client):
+    _login(csrf_client)
+
+    response = csrf_client.post("/logout", data={})
+
+    assert response.status_code == 400
+    assert response.mimetype == "text/html"
+    assert "Phiên đã hết hiệu lực nên yêu cầu vừa rồi chưa được thực hiện".encode() in response.data
+    assert "Vui lòng tải lại trang rồi thực hiện lại thao tác.".encode() in response.data
+    assert b"CSRF" not in response.data
+    assert response.headers["Cache-Control"] == "no-store"
 
 
 def test_csrf_token_from_another_session_has_no_logout_side_effect(csrf_app):

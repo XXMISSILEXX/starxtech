@@ -271,7 +271,11 @@ def register_security_headers(app):
 def register_error_handlers(app):
     @app.errorhandler(CSRFError)
     def csrf_error(_error):
-        response = app.make_response((render_template("errors/400.html"), 400))
+        message = "Phiên đã hết hiệu lực nên yêu cầu vừa rồi chưa được thực hiện. Vui lòng tải lại trang rồi thực hiện lại thao tác."
+        if request.is_json or request.accept_mimetypes.best == "application/json":
+            response = jsonify(message=message, error={"message": message}); response.status_code = 400
+        else:
+            response = app.make_response((render_template("errors/400.html"), 400))
         response.headers["Cache-Control"] = "no-store"
         return response
 
