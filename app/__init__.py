@@ -1,5 +1,6 @@
-from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user
+from flask_wtf.csrf import CSRFError
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.config import Config
@@ -82,6 +83,7 @@ def create_app(config_class=Config):
     register_blueprints(app)
     register_health_route(app)
     register_trusted_host_guard(app)
+    register_session_lifetime(app)
     register_auth_guard(app)
     register_security_headers(app)
     register_error_handlers(app)
@@ -211,6 +213,14 @@ def register_auth_guard(app):
                 abort(403, description=REPORTS_MODULE_DENY_MESSAGE)
 
 
+def register_session_lifetime(app):
+    @app.before_request
+    def mark_authenticated_session_permanent():
+        """Give authenticated sessions a sliding, server-enforced lifetime."""
+        if current_user.is_authenticated and "_permanent" not in session:
+            session.permanent = True
+
+
 def register_trusted_host_guard(app):
     configured_hosts = set(app.config.get("TRUSTED_HOSTS", ()))
     if not configured_hosts:
@@ -259,6 +269,16 @@ def register_security_headers(app):
 
 
 def register_error_handlers(app):
+    @app.errorhandler(CSRFError)
+    def csrf_error(_error):
+        message = "Phiên đã hết hiệu lực nên yêu cầu vừa rồi chưa được thực hiện. Vui lòng tải lại trang rồi thực hiện lại thao tác."
+        if request.is_json or request.accept_mimetypes.best == "application/json":
+            response = jsonify(message=message, error={"message": message}); response.status_code = 400
+        else:
+            response = app.make_response((render_template("errors/400.html"), 400))
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.errorhandler(403)
     def forbidden(_error):
         response = app.make_response((render_template("errors/403.html"), 403))

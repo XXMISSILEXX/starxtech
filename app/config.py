@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -74,6 +75,17 @@ class Config:
     SESSION_COOKIE_HTTPONLY = os.getenv("SESSION_COOKIE_HTTPONLY", "true").lower() == "true"
     SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
     SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
+    PERMANENT_SESSION_LIFETIME = timedelta(seconds=int(os.getenv("PERMANENT_SESSION_LIFETIME", str(12 * 60 * 60))))
+    REMEMBER_COOKIE_DURATION = timedelta(seconds=int(os.getenv("REMEMBER_COOKIE_DURATION", str(14 * 24 * 60 * 60))))
+    REMEMBER_COOKIE_SAMESITE = os.getenv("REMEMBER_COOKIE_SAMESITE", SESSION_COOKIE_SAMESITE)
+    REMEMBER_COOKIE_SECURE = SESSION_COOKIE_SECURE
+    # CSRF tokens have no separate timeout because permanent sessions expire after 12 hours.
+    # Removing that session lifetime would make this token lifetime unlimited.
+    WTF_CSRF_TIME_LIMIT = (
+        None
+        if os.getenv("WTF_CSRF_TIME_LIMIT") is None
+        else int(os.environ["WTF_CSRF_TIME_LIMIT"])
+    )
     RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
     RATELIMIT_LOGIN_LIMIT = os.getenv("RATELIMIT_LOGIN_LIMIT", "5 per minute")
     RATELIMIT_EXPORT_LIMIT = os.getenv("RATELIMIT_EXPORT_LIMIT", "10 per hour")
