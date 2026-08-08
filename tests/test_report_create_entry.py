@@ -1,7 +1,8 @@
 from werkzeug.security import generate_password_hash
+from datetime import date, datetime
 
 from app.extensions import db
-from app.models import ProjectUser, Role, User
+from app.models import DailyReport, DailyReportStatus, ProjectUser, Role, User
 from app.project_memberships import preset_flags
 
 
@@ -23,6 +24,30 @@ def test_reports_page_contains_create_report_entry_for_admin(client):
     assert response.status_code == 200
     assert "Tạo báo cáo".encode() in response.data
     assert b"create_report=1" in response.data
+
+
+def test_reports_list_formats_updated_at_with_vn_datetime(client, app):
+    with app.app_context():
+        db.session.add(
+            DailyReport(
+                id=1,
+                project_id=1,
+                report_date=date(2026, 8, 6),
+                overall_status=DailyReportStatus.UPDATED.value,
+                highlight="Báo cáo định dạng thời gian",
+                created_by_user_id=1,
+                updated_at=datetime(2026, 8, 6, 21, 38),
+            )
+        )
+        db.session.commit()
+
+    login(client, "super")
+    response = client.get("/reports")
+    page = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "06/08/2026 lúc 21:38" in page
+    assert "2026-08-06 21:38" not in page
 
 
 def test_projects_create_report_query_shows_flash_message(client):

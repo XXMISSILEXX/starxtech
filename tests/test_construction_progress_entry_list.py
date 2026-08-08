@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from app.extensions import db
@@ -27,12 +27,18 @@ def _entries():
 
 
 def test_entry_tab_uses_sql_page_filters_and_distinguishes_empty_states(client, app):
-    with app.app_context(): type_id, first_group_id, _ = _entries()
+    with app.app_context():
+        type_id, first_group_id, _ = _entries()
+        entry = ProgressEntry.query.filter_by(note="phiếu 45").one()
+        entry.updated_at = datetime(2026, 8, 6, 21, 38)
+        db.session.commit()
     _login(client)
     first_page = client.get(f"/projects/1/progress/types/{type_id}?tab=entries&group_id={first_group_id}&date_from=2026-01-01")
     page = first_page.get_data(as_text=True)
     assert first_page.status_code == 200
     assert "Tổng quan" in page and "Cập nhật ngày" in page
+    assert "<th class=\"text-nowrap\">Cập nhật</th>" in page
+    assert "06/08/2026 lúc 21:38" in page
     assert "phiếu 45" in page and "phiếu 5" not in page
     assert "group_id=" + str(first_group_id) in page
     second_page = client.get(f"/projects/1/progress/types/{type_id}?tab=entries&page=2&group_id={first_group_id}&date_from=2026-01-01")

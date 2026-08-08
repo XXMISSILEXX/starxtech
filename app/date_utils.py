@@ -1,11 +1,25 @@
 """Date helpers shared by HTML forms, APIs, and readable UI values."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 
 VN_DATE_FORMAT = "%d/%m/%Y"
 APP_TIMEZONE = ZoneInfo("Asia/Ho_Chi_Minh")
+
+
+def utc_to_vietnam_time(value):
+    """Convert a UTC datetime, naive or aware, to Vietnam time.
+
+    Naive values are treated as UTC because they are persisted that way by the
+    login flow.  ``None`` stays ``None`` so templates can retain their normal
+    empty-value presentation.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(APP_TIMEZONE)
 
 
 def format_vn_date(value):

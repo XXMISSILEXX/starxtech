@@ -19,6 +19,7 @@
         <th>Tên đăng nhập</th>
         <th>Email</th>
         <th>Vai trò</th>
+        <th class="text-nowrap">Đăng nhập cuối</th>
         <th>Trạng thái</th>
         {% if current_user.can('users.manage') %}<th class="text-end">Thao tác</th>{% endif %}
       </tr>
@@ -30,6 +31,7 @@
           <td>{{ user.username }}</td>
           <td>{{ user.email or '-' }}</td>
           <td><span class="badge status-badge status-muted">{{ user.role_code|role_label }}</span></td>
+          <td class="text-nowrap">{{ user.last_login_at|vn_utc_datetime }}</td>
           <td>
             {% if user.is_active %}
               <span class="badge status-badge status-good">Hoạt động</span>
@@ -61,7 +63,7 @@
           {% endif %}
         </tr>
       {% else %}
-        <tr><td colspan="{{ 6 if current_user.can('users.manage') else 5 }}"><div class="empty-state"><i class="bi bi-people"></i>Chưa có người dùng.</div></td></tr>
+        <tr><td colspan="{{ 7 if current_user.can('users.manage') else 6 }}"><div class="empty-state"><i class="bi bi-people"></i>Chưa có người dùng.</div></td></tr>
       {% endfor %}
     </tbody>
   </table>

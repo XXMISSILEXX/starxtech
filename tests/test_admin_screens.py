@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from app.extensions import db
 from app.models import AuditLog, Customer, Project, ProjectStatus, ProjectUser, ReportCategory, Role, User, UserRole
 
@@ -62,6 +64,24 @@ def test_users_view_is_read_only_and_users_manage_allows_admin_mutations(client,
     assert response.status_code == 302
     with app.app_context():
         assert User.query.filter_by(username="managed-user").one().is_active is True
+
+
+def test_users_list_displays_last_login_in_vietnam_time_and_dash_for_never_logged_in(client, app):
+    login(client, "super")
+    with app.app_context():
+        reporter = User.query.filter_by(username="reporter").one()
+        reporter.last_login_at = datetime(2026, 8, 6, 14, 38)
+        db.session.commit()
+
+    response = client.get("/admin/users")
+    page = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Đăng nhập cuối" in page
+    assert "06/08/2026 lúc 21:38" in page
+    inactive_row_start = page.index("Inactive")
+    inactive_row = page[inactive_row_start:page.index("</tr>", inactive_row_start)]
+    assert ">—</td>" in inactive_row
 
 
 def test_super_admin_creates_role_with_audit(client, app):

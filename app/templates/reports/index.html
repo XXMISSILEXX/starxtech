@@ -66,7 +66,7 @@
           {% set report_status = status_presentation(report.overall_status) %}<td data-label="Trạng thái"><span class="badge status-badge {{ report_status.css_class }}" data-status-icon-key="{{ report_status.icon_key }}">{{ report_status.label }}</span></td>
           <td data-label="Điểm nổi bật" class="text-truncate" style="max-width: 360px;">{{ report.highlight }}</td>
           <td data-label="Người tạo">{{ report.created_by.full_name }}</td>
-          <td data-label="Cập nhật">{{ report.updated_at.strftime('%Y-%m-%d %H:%M') if report.updated_at else '-' }}</td>
+          <td data-label="Cập nhật">{{ report.updated_at|vn_datetime }}</td>
           <td data-label="Thao tác" class="text-end">
             <div class="mobile-card-actions">
               <a class="btn btn-sm btn-outline-primary btn-action-mobile" href="{{ url_for('reports.detail', report_id=report.id) }}" aria-label="Xem chi tiết" title="Xem chi tiết"><i class="bi bi-eye"></i><span class="action-label">Xem chi tiết</span></a>
