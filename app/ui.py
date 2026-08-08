@@ -14,7 +14,7 @@ from app.models import (
     SectionStatus,
     UserRole,
 )
-from app.date_utils import format_vn_date
+from app.date_utils import format_vn_date, utc_to_vietnam_time
 
 
 ROLE_LABELS = {
@@ -167,6 +167,11 @@ def vn_datetime(value):
     return value.strftime("%d/%m/%Y lúc %H:%M") if value else "—"
 
 
+def vn_utc_datetime(value):
+    """Format a UTC timestamp for display in the application's timezone."""
+    return vn_datetime(utc_to_vietnam_time(value))
+
+
 def vn_number(value, places=0):
     """Format Decimal-compatible values using Vietnamese separators."""
     if value is None:
@@ -241,6 +246,7 @@ def register_template_helpers(app):
     app.jinja_env.filters["contractor_role_label"] = contractor_role_label
     app.jinja_env.filters["assignment_status_label"] = assignment_status_label
     app.jinja_env.filters["vn_datetime"] = vn_datetime
+    app.jinja_env.filters["vn_utc_datetime"] = vn_utc_datetime
     app.jinja_env.filters["vn_number"] = vn_number
     app.jinja_env.filters["status_icon"] = status_icon
     app.jinja_env.filters["status_tone"] = status_tone
